@@ -1,26 +1,463 @@
 @import "tailwindcss";
 
+@variant dark (&:where(.dark, .dark *));
+
+/* ============================================================
+   iOS 26 Liquid Glass Design System
+   Inspired by: Apple Liquid Glass, einui/einui, Figma community
+   ============================================================ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f5f5f7;
+  --foreground: #1d1d1f;
+  --card: rgba(255, 255, 255, 0.6);
+  --card-foreground: #1d1d1f;
+  --primary: #1d1d1f;
+  --primary-foreground: #ffffff;
+  --secondary: rgba(245, 245, 247, 0.8);
+  --secondary-foreground: #6e6e73;
+  --accent: #34c759;
+  --accent-foreground: #ffffff;
+  --destructive: #ff3b30;
+  --muted: rgba(245, 245, 247, 0.6);
+  --muted-foreground: #86868b;
+  --border: rgba(255, 255, 255, 0.4);
+  --radius: 1.25rem;
+
+  /* Liquid Glass tokens */
+  --glass-bg: rgba(255, 255, 255, 0.55);
+  --glass-border: rgba(255, 255, 255, 0.8);
+  --glass-blur: 24px;
+  --glass-saturate: 180%;
+  --glass-shadow: 0 2px 16px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
+  --glass-highlight: rgba(255, 255, 255, 0.9);
+  --glass-inner-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.7);
+  --glass-refraction: linear-gradient(135deg, rgba(255, 255, 255, 0.6) 0%, rgba(255, 255, 255, 0.05) 50%, rgba(255, 255, 255, 0.3) 100%);
+}
+
+.dark {
+  --background: #0a0a0a;
+  --foreground: #f5f5f7;
+  --card: rgba(30, 30, 32, 0.6);
+  --card-foreground: #f5f5f7;
+  --primary: #f5f5f7;
+  --primary-foreground: #0a0a0a;
+  --secondary: rgba(44, 44, 46, 0.5);
+  --secondary-foreground: #aeaeb2;
+  --accent: #30d158;
+  --accent-foreground: #ffffff;
+  --destructive: #ff453a;
+  --muted: rgba(44, 44, 46, 0.4);
+  --muted-foreground: #98989d;
+  --border: rgba(255, 255, 255, 0.1);
+
+  --glass-bg: rgba(38, 38, 40, 0.75);
+  --glass-border: rgba(255, 255, 255, 0.14);
+  --glass-shadow: 0 2px 16px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.2);
+  --glass-highlight: rgba(255, 255, 255, 0.1);
+  --glass-inner-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.08);
+  --glass-refraction: linear-gradient(135deg, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0.02) 50%, rgba(255, 255, 255, 0.05) 100%);
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans), -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
+
+.dark body {
+  background: #0a0a0a;
+}
+
+/* Minimal scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 3px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Safe area for mobile */
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+.safe-top {
+  padding-top: env(safe-area-inset-top, 0px);
+}
+
+/* ============================================================
+   LIQUID GLASS CARD
+   Based on einui GlassCard: translucent, real-time blur,
+   specular highlight (before), inner glow (after), deep shadow
+   ============================================================ */
+.liquid-glass {
+  position: relative;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius);
+  box-shadow:
+    var(--glass-inner-shadow),
+    var(--glass-shadow),
+    0 0 0 1px rgba(0, 0, 0, 0.03);
+  transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              box-shadow 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  transform: perspective(1200px) translateZ(0);
+}
+
+/* Specular highlight - top refraction layer */
+.liquid-glass::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--glass-refraction);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Inner edge glow */
+.liquid-glass::after {
+  content: '';
+  position: absolute;
+  inset: 1px;
+  border-radius: calc(var(--radius) - 1px);
+  box-shadow: inset 0 0.5px 0 var(--glass-highlight);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Hover: lift + intensify shadow */
+.liquid-glass:hover {
+  transform: perspective(1200px) translateZ(10px) translateY(-2px);
+  box-shadow:
+    var(--glass-inner-shadow),
+    0 8px 32px rgba(0, 0, 0, 0.1),
+    0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.dark .liquid-glass:hover {
+  box-shadow:
+    var(--glass-inner-shadow),
+    0 8px 32px rgba(0, 0, 0, 0.5),
+    0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* ============================================================
+   LIQUID GLASS BUTTON
+   Based on einui GlassButton: translucent, scale on hover,
+   press down on active, specular highlight
+   ============================================================ */
+.liquid-glass-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem;
+  background: var(--glass-bg);
+  backdrop-filter: blur(20px) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(20px) saturate(var(--glass-saturate));
+  border: 1px solid var(--glass-border);
+  border-radius: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--foreground);
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.5),
+    0 4px 16px rgba(0, 0, 0, 0.08);
+  transition: all 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  transform: translateZ(0);
+}
+
+.liquid-glass-btn::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.3) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+.liquid-glass-btn:hover {
+  transform: scale(1.04) translateY(-1px);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.6),
+    0 8px 24px rgba(0, 0, 0, 0.12);
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.liquid-glass-btn:active {
+  transform: scale(0.97);
+  box-shadow:
+    inset 0 2px 4px rgba(0, 0, 0, 0.06),
+    0 2px 8px rgba(0, 0, 0, 0.06);
+}
+
+.dark .liquid-glass-btn {
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.06),
+    0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.dark .liquid-glass-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+  box-shadow:
+    inset 0 1px 1px rgba(255, 255, 255, 0.1),
+    0 8px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* Primary button - solid with glass highlight */
+.liquid-glass-btn-primary {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.625rem 1.25rem;
+  background: var(--primary);
+  border: none;
+  border-radius: 0.75rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--primary-foreground);
+  cursor: pointer;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.15),
+    0 4px 16px rgba(0, 0, 0, 0.15);
+  transition: all 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  transform: translateZ(0);
+}
+
+.liquid-glass-btn-primary::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12) 0%, transparent 50%);
+  pointer-events: none;
+}
+
+.liquid-glass-btn-primary:hover {
+  transform: scale(1.04) translateY(-1px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 8px 24px rgba(0, 0, 0, 0.2);
+}
+
+.liquid-glass-btn-primary:active {
+  transform: scale(0.97);
+}
+
+/* ============================================================
+   ELEVATED GLASS - Navigation / Sidebar / Modals
+   Stronger blur, more opaque for readability
+   ============================================================ */
+.glass-elevated {
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(60px) saturate(200%);
+  -webkit-backdrop-filter: blur(60px) saturate(200%);
+  border: 1px solid rgba(0, 0, 0, 0.04);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.8),
+    0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+.dark .glass-elevated {
+  background: rgba(22, 22, 24, 0.88);
+  backdrop-filter: blur(60px) saturate(200%);
+  -webkit-backdrop-filter: blur(60px) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.04),
+    4px 0 24px rgba(0, 0, 0, 0.4);
+}
+
+/* ============================================================
+   GLASS INPUT
+   ============================================================ */
+.glass-input {
+  background: rgba(255, 255, 255, 0.5);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: 0.75rem;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s ease;
+}
+
+.glass-input:focus {
+  background: rgba(255, 255, 255, 0.7);
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.04),
+    0 0 0 3px rgba(29, 29, 31, 0.08);
+}
+
+.dark .glass-input {
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.dark .glass-input:focus {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+  box-shadow:
+    inset 0 1px 2px rgba(0, 0, 0, 0.2),
+    0 0 0 3px rgba(245, 245, 247, 0.06);
+}
+
+/* ============================================================
+   UTILITY CLASSES
+   ============================================================ */
+
+/* Smooth transitions */
+.transition-ios {
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+/* Bottom nav safe area */
+.bottom-nav {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+
+/* Mesh gradient background - more colorful so glass translucency shows */
+.mesh-bg {
+  background-image:
+    radial-gradient(at 10% 10%, rgba(0, 113, 227, 0.08) 0px, transparent 50%),
+    radial-gradient(at 90% 20%, rgba(147, 51, 234, 0.06) 0px, transparent 45%),
+    radial-gradient(at 80% 80%, rgba(52, 199, 89, 0.07) 0px, transparent 50%),
+    radial-gradient(at 40% 90%, rgba(255, 149, 0, 0.05) 0px, transparent 45%),
+    radial-gradient(at 50% 50%, rgba(88, 86, 214, 0.04) 0px, transparent 60%);
+}
+
+.dark .mesh-bg {
+  background-image:
+    radial-gradient(at 10% 10%, rgba(10, 132, 255, 0.1) 0px, transparent 50%),
+    radial-gradient(at 90% 20%, rgba(147, 51, 234, 0.07) 0px, transparent 45%),
+    radial-gradient(at 80% 80%, rgba(48, 209, 88, 0.06) 0px, transparent 50%),
+    radial-gradient(at 40% 90%, rgba(255, 159, 10, 0.05) 0px, transparent 45%),
+    radial-gradient(at 50% 50%, rgba(94, 92, 230, 0.06) 0px, transparent 60%);
+}
+
+/* Legacy card-3d (fallback, same as liquid-glass hover) */
+.card-3d {
+  transform: perspective(1200px) translateZ(0);
+  transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94), box-shadow 0.3s ease;
+}
+.card-3d:hover {
+  transform: perspective(1200px) translateZ(10px) translateY(-2px);
+}
+
+/* ============================================================
+   TEXT VISIBILITY
+   #86868b and #6e6e73 are Apple's secondary text colors -
+   too light on translucent glass backgrounds, darken them.
+   ============================================================ */
+.text-\[\#86868b\] { color: #48484a !important; }
+.text-\[\#6e6e73\] { color: #3a3a3c !important; }
+.dark .text-\[\#86868b\], .dark .text-\[\#6e6e73\] { color: #aeaeb2 !important; }
+
+/* Secondary text utility - use instead of hardcoded grays */
+.text-secondary {
+  color: #48484a;
+}
+.dark .text-secondary {
+  color: #aeaeb2;
+}
+
+/* ============================================================
+   SKELETON LOADING (Boneyard style)
+   Shimmering skeleton with gradient animation
+   ============================================================ */
+@keyframes skeleton-shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(0, 0, 0, 0.06) 25%,
+    rgba(0, 0, 0, 0.10) 37%,
+    rgba(0, 0, 0, 0.06) 63%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: 0.75rem;
+}
+.dark .skeleton {
+  background: linear-gradient(
+    90deg,
+    rgba(255, 255, 255, 0.04) 25%,
+    rgba(255, 255, 255, 0.08) 37%,
+    rgba(255, 255, 255, 0.04) 63%
+  );
+  background-size: 200% 100%;
+}
+
+/* ============================================================
+   DARK MODE OVERRIDES
+   For inline Tailwind classes that use hardcoded colors
+   ============================================================ */
+.dark .bg-white\/60 { background: rgba(38, 38, 40, 0.75) !important; }
+.dark .bg-white\/50 { background: rgba(38, 38, 40, 0.65) !important; }
+.dark .bg-white\/45 { background: rgba(38, 38, 40, 0.6) !important; }
+.dark .bg-white\/40 { background: rgba(38, 38, 40, 0.55) !important; }
+.dark .bg-white\/70 { background: rgba(42, 42, 44, 0.8) !important; }
+.dark .bg-white\/80 { background: rgba(42, 42, 44, 0.88) !important; }
+.dark .border-white\/40 { border-color: rgba(255, 255, 255, 0.12) !important; }
+.dark .border-white\/55 { border-color: rgba(255, 255, 255, 0.12) !important; }
+.dark .border-white\/30 { border-color: rgba(255, 255, 255, 0.08) !important; }
+.dark .border-white\/20 { border-color: rgba(255, 255, 255, 0.06) !important; }
+.dark .text-\[\#1d1d1f\] { color: #f5f5f7 !important; }
+.dark .text-\[\#6e6e73\] { color: #c7c7cc !important; }
+.dark .text-\[\#86868b\] { color: #aeaeb2 !important; }
+.dark .bg-\[\#1d1d1f\] { background: #f5f5f7 !important; color: #0a0a0a !important; }
+.dark .bg-\[\#f5f5f7\] { background: rgba(255, 255, 255, 0.06) !important; }
+.dark .bg-\[\#1d1d1f\]\/\[0\.08\] { background: rgba(245, 245, 247, 0.1) !important; }
+.dark .hover\:bg-\[\#f5f5f7\]:hover { background: rgba(255, 255, 255, 0.08) !important; }
+.dark .hover\:bg-white\/60:hover { background: rgba(255, 255, 255, 0.12) !important; }
+.dark .hover\:bg-white\/50:hover { background: rgba(255, 255, 255, 0.1) !important; }
+.dark .shadow-lg { box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4) !important; }
+.dark .shadow-black\/\[0\.03\] { --tw-shadow-color: rgba(0, 0, 0, 0.3) !important; }
+.dark .hover\:shadow-xl:hover { box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5) !important; }
+.dark .placeholder\:text-\[\#86868b\]::placeholder { color: #636366 !important; }
+.dark .focus\:ring-\[\#1d1d1f\]\/10:focus { --tw-ring-color: rgba(245, 245, 247, 0.12) !important; }
+.dark .bg-\[\#e8e8ed\] { background: rgba(255, 255, 255, 0.08) !important; }
+.dark .hover\:bg-\[\#e8e8ed\]:hover { background: rgba(255, 255, 255, 0.1) !important; }
+.dark .hover\:bg-\[\#2d2d2f\]:hover { background: rgba(220, 220, 225, 0.9) !important; }
