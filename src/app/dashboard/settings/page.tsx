@@ -1,15 +1,16 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useUser, useClerk } from "@clerk/nextjs"
+import { useUser, useAuth } from "@/hooks/use-auth"
 import { createClient } from "@/utils/supabase/client"
 import { Settings, Download, Globe, Trash2, Users, LogOut, Moon, Sun } from "lucide-react"
 import { CURRENCIES } from "@/lib/constants"
 import type { SharedAccess } from "@/lib/types"
+import { CustomSelect } from "@/components/custom-select"
 
 export default function SettingsPage() {
   const { user } = useUser()
-  const { signOut } = useClerk()
+  const { signOut } = useAuth()
   const [currency, setCurrency] = useState("INR")
   const [theme, setTheme] = useState<"light" | "dark" | "system">(() => {
     if (typeof window !== "undefined") {
@@ -45,15 +46,9 @@ export default function SettingsPage() {
   async function loadSettings() {
     const supabase = createClient()
 
-    // Load profile settings
-    const { data: profile } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("user_id", user!.id)
-      .eq("type", "personal")
-      .single()
-
-    if (profile?.currency) setCurrency(profile.currency)
+    // Load profile settings (currency stored in localStorage)
+    const savedCurrency = localStorage.getItem("finboom-currency")
+    if (savedCurrency) setCurrency(savedCurrency)
 
     // Load shared access
     const { data: shared } = await supabase
@@ -68,12 +63,7 @@ export default function SettingsPage() {
 
   async function saveCurrency(newCurrency: string) {
     setCurrency(newCurrency)
-    const supabase = createClient()
-    await supabase
-      .from("profiles")
-      .update({ currency: newCurrency })
-      .eq("user_id", user!.id)
-      .eq("type", "personal")
+    localStorage.setItem("finboom-currency", newCurrency)
   }
 
   async function exportData(format: "csv" | "json") {
@@ -179,29 +169,29 @@ export default function SettingsPage() {
     <div className="space-y-4">
       {/* Header */}
       <div>
-        <h1 className="text-xl font-bold text-[#1d1d1f]">Settings</h1>
+        <h1 className="text-xl font-bold text-[#1d1d1f] dark:text-white">Settings</h1>
         <p className="text-sm text-[#86868b]">Manage your preferences</p>
       </div>
 
       {/* Account */}
       <div className="liquid-glass rounded-2xl p-5">
-        <h3 className="font-semibold text-[#1d1d1f] mb-3 flex items-center gap-2">
+        <h3 className="font-semibold text-[#1d1d1f] dark:text-white mb-3 flex items-center gap-2">
           <Settings className="w-4 h-4" /> Account
         </h3>
         <div className="flex items-center gap-3">
           {user?.imageUrl && (
-            <img src={user.imageUrl} alt="" className="w-10 h-10 rounded-full" />
+            <img src={user.imageUrl} alt="" className="w-10 h-10 rounded-full" referrerPolicy="no-referrer" />
           )}
           <div>
-            <p className="text-sm font-medium text-[#1d1d1f]">{user?.fullName || "User"}</p>
-            <p className="text-xs text-[#86868b]">{user?.primaryEmailAddress?.emailAddress}</p>
+            <p className="text-sm font-medium text-[#1d1d1f] dark:text-white">{user?.fullName || "User"}</p>
+            <p className="text-xs text-[#86868b]">{user?.email}</p>
           </div>
         </div>
       </div>
 
       {/* Theme */}
       <div className="liquid-glass rounded-2xl p-5">
-        <h3 className="font-semibold text-[#1d1d1f] mb-3 flex items-center gap-2">
+        <h3 className="font-semibold text-[#1d1d1f] dark:text-white mb-3 flex items-center gap-2">
           {theme === "dark" ? <Moon className="w-4 h-4" /> : <Sun className="w-4 h-4" />} Appearance
         </h3>
         <div className="grid grid-cols-3 gap-2">
@@ -211,8 +201,8 @@ export default function SettingsPage() {
               onClick={() => setTheme(t)}
               className={`px-3 py-2.5 rounded-xl text-xs font-medium capitalize transition-all ${
                 theme === t
-                  ? "bg-[#1d1d1f] text-white"
-                  : "bg-[#f5f5f7] text-[#86868b] hover:text-[#1d1d1f]"
+                  ? "bg-[#1d1d1f] dark:bg-white text-white dark:text-[#1d1d1f]"
+                  : "bg-[#f5f5f7] dark:bg-[#2c2c2e] text-[#86868b] hover:text-[#1d1d1f] dark:hover:text-white"
               }`}
             >
               {t}
@@ -223,25 +213,19 @@ export default function SettingsPage() {
 
       {/* Currency */}
       <div className="liquid-glass rounded-2xl p-5">
-        <h3 className="font-semibold text-[#1d1d1f] mb-3 flex items-center gap-2">
+        <h3 className="font-semibold text-[#1d1d1f] dark:text-white mb-3 flex items-center gap-2">
           <Globe className="w-4 h-4" /> Currency
         </h3>
-        <select
+        <CustomSelect
           value={currency}
-          onChange={(e) => saveCurrency(e.target.value)}
-          className="w-full px-4 py-2.5 rounded-xl bg-[#f5f5f7] border-0 text-sm text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
-        >
-          {CURRENCIES.map(c => (
-            <option key={c.code} value={c.code}>
-              {c.symbol} {c.code} - {c.name}
-            </option>
-          ))}
-        </select>
+          onChange={(val) => saveCurrency(val)}
+          options={CURRENCIES.map(c => ({ value: c.code, label: `${c.symbol} ${c.code} - ${c.name}` }))}
+        />
       </div>
 
       {/* Export Data */}
       <div className="liquid-glass rounded-2xl p-5">
-        <h3 className="font-semibold text-[#1d1d1f] mb-3 flex items-center gap-2">
+        <h3 className="font-semibold text-[#1d1d1f] dark:text-white mb-3 flex items-center gap-2">
           <Download className="w-4 h-4" /> Export Data
         </h3>
         <p className="text-xs text-[#86868b] mb-3">Download all your financial data</p>
@@ -249,14 +233,14 @@ export default function SettingsPage() {
           <button
             onClick={() => exportData("json")}
             disabled={exporting}
-            className="px-4 py-2.5 rounded-xl bg-[#f5f5f7] text-[#1d1d1f] text-sm font-medium hover:bg-[#e8e8ed] transition-all disabled:opacity-50"
+            className="px-4 py-2.5 rounded-xl bg-[#f5f5f7] dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-white text-sm font-medium hover:bg-[#e8e8ed] dark:hover:bg-[#3a3a3c] transition-all disabled:opacity-50"
           >
             Export JSON
           </button>
           <button
             onClick={() => exportData("csv")}
             disabled={exporting}
-            className="px-4 py-2.5 rounded-xl bg-[#f5f5f7] text-[#1d1d1f] text-sm font-medium hover:bg-[#e8e8ed] transition-all disabled:opacity-50"
+            className="px-4 py-2.5 rounded-xl bg-[#f5f5f7] dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-white text-sm font-medium hover:bg-[#e8e8ed] dark:hover:bg-[#3a3a3c] transition-all disabled:opacity-50"
           >
             Export CSV
           </button>
@@ -265,7 +249,7 @@ export default function SettingsPage() {
 
       {/* Shared Access */}
       <div className="liquid-glass rounded-2xl p-5">
-        <h3 className="font-semibold text-[#1d1d1f] mb-3 flex items-center gap-2">
+        <h3 className="font-semibold text-[#1d1d1f] dark:text-white mb-3 flex items-center gap-2">
           <Users className="w-4 h-4" /> Shared Access
         </h3>
         <p className="text-xs text-[#86868b] mb-3">
@@ -278,7 +262,7 @@ export default function SettingsPage() {
             value={shareEmail}
             onChange={(e) => setShareEmail(e.target.value)}
             placeholder="email@example.com"
-            className="flex-1 px-4 py-2.5 rounded-xl bg-[#f5f5f7] border-0 text-sm text-[#1d1d1f] placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
+            className="flex-1 px-4 py-2.5 rounded-xl bg-[#f5f5f7] dark:bg-[#2c2c2e] border-0 text-sm text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10"
           />
           <button
             type="submit"
@@ -291,8 +275,8 @@ export default function SettingsPage() {
         {sharedAccess.length > 0 && (
           <div className="space-y-2">
             {sharedAccess.map(access => (
-              <div key={access.id} className="flex items-center justify-between py-2 px-3 bg-[#f5f5f7] rounded-xl">
-                <span className="text-sm text-[#1d1d1f]">{access.shared_with_email}</span>
+              <div key={access.id} className="flex items-center justify-between py-2 px-3 bg-[#f5f5f7] dark:bg-[#2c2c2e] rounded-xl">
+                <span className="text-sm text-[#1d1d1f] dark:text-white">{access.shared_with_email}</span>
                 <button
                   onClick={() => removeSharedAccess(access.id)}
                   className="p-1 rounded hover:bg-white transition-all"
@@ -308,7 +292,7 @@ export default function SettingsPage() {
       {/* Sign Out */}
       <button
         onClick={() => signOut()}
-        className="w-full py-3 rounded-xl bg-[#f5f5f7] text-[#1d1d1f] text-sm font-medium hover:bg-[#e8e8ed] transition-all flex items-center justify-center gap-2"
+        className="w-full py-3 rounded-xl bg-[#f5f5f7] dark:bg-[#2c2c2e] text-[#1d1d1f] dark:text-white text-sm font-medium hover:bg-[#e8e8ed] dark:hover:bg-[#3a3a3c] transition-all flex items-center justify-center gap-2"
       >
         <LogOut className="w-4 h-4" />
         Sign Out
@@ -316,7 +300,7 @@ export default function SettingsPage() {
 
       {/* Danger Zone */}
       <div className="liquid-glass rounded-2xl p-5">
-        <h3 className="font-semibold text-[#1d1d1f] mb-2 flex items-center gap-2">
+        <h3 className="font-semibold text-[#1d1d1f] dark:text-white mb-2 flex items-center gap-2">
           <Trash2 className="w-4 h-4" /> Danger Zone
         </h3>
         <p className="text-xs text-[#86868b] mb-3">

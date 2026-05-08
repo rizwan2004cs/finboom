@@ -1,10 +1,10 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useUser } from "@clerk/nextjs"
-import { createClient } from "@/utils/supabase/client"
+import { useUser } from "@/hooks/use-auth"
+import { useProfile } from "@/hooks/use-profile"
 import { fetchTable, insertRow, deleteRow } from "@/lib/offline"
-import { Users, Plus, Trash2, Building2, User2, ArrowRight } from "lucide-react"
+import { Users, Plus, Trash2, Building2, User2, CheckCircle } from "lucide-react"
 import type { Profile, Asset, Liability } from "@/lib/types"
 
 function formatCurrency(amount: number) {
@@ -16,6 +16,7 @@ function formatCurrency(amount: number) {
 
 export default function ProfilesPage() {
   const { user } = useUser()
+  const { activeProfile, switchProfile, reloadProfiles } = useProfile()
   const [profiles, setProfiles] = useState<Profile[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
@@ -57,13 +58,19 @@ export default function ProfilesPage() {
 
     setForm({ name: "", type: "spouse" })
     setShowForm(false)
+    await reloadProfiles()
     loadProfiles()
   }
 
   async function deleteProfile(id: string) {
+    if (id === activeProfile?.id) {
+      alert("Cannot delete the active profile. Switch to another profile first.")
+      return
+    }
     if (!confirm("Delete this profile and all associated data?")) return
     await deleteRow("profiles", id)
     setProfiles(prev => prev.filter(p => p.id !== id))
+    await reloadProfiles()
   }
 
   const totalNetWorth = Object.values(profileSummaries).reduce(
@@ -184,30 +191,40 @@ export default function ProfilesPage() {
           {profiles.map(profile => {
             const summary = profileSummaries[profile.id] || { assets: 0, liabilities: 0 }
             const netWorth = summary.assets - summary.liabilities
+            const isActive = profile.id === activeProfile?.id
             const icon = profile.type === "business" ? (
-              <Building2 className="w-5 h-5 text-[#1d1d1f]" strokeWidth={1.5} />
+              <Building2 className="w-5 h-5 text-[#1d1d1f] dark:text-white" strokeWidth={1.5} />
             ) : profile.type === "spouse" || profile.type === "parent" || profile.type === "child" ? (
-              <Users className="w-5 h-5 text-[#1d1d1f]" strokeWidth={1.5} />
+              <Users className="w-5 h-5 text-[#1d1d1f] dark:text-white" strokeWidth={1.5} />
             ) : (
-              <User2 className="w-5 h-5 text-[#1d1d1f]" strokeWidth={1.5} />
+              <User2 className="w-5 h-5 text-[#1d1d1f] dark:text-white" strokeWidth={1.5} />
             )
 
             return (
-              <div key={profile.id} className="liquid-glass rounded-2xl p-5">
+              <div
+                key={profile.id}
+                className={`liquid-glass rounded-2xl p-5 transition-all cursor-pointer ${isActive ? "ring-2 ring-[#34c759]" : ""}`}
+                onClick={() => switchProfile(profile.id)}
+              >
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-white/50 backdrop-blur-sm flex items-center justify-center">
+                  <div className="w-10 h-10 rounded-xl bg-white/50 dark:bg-white/[0.08] backdrop-blur-sm flex items-center justify-center">
                     {icon}
                   </div>
                   <div className="flex-1">
-                    <p className="font-semibold text-[#1d1d1f]">{profile.name}</p>
-                    <p className="text-xs text-[#86868b] capitalize">{profile.type}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-[#1d1d1f] dark:text-white">{profile.name}</p>
+                      {isActive && <CheckCircle className="w-4 h-4 text-[#34c759]" />}
+                    </div>
+                    <p className="text-xs text-[#86868b] capitalize">{profile.type}{isActive ? " · Active" : ""}</p>
                   </div>
-                  <button
-                    onClick={() => deleteProfile(profile.id)}
-                    className="p-2 rounded-lg hover:bg-[#f5f5f7] transition-all"
-                  >
-                    <Trash2 className="w-4 h-4 text-[#86868b]" />
-                  </button>
+                  {!isActive && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); deleteProfile(profile.id) }}
+                      className="p-2 rounded-lg hover:bg-[#f5f5f7] dark:hover:bg-white/[0.08] transition-all"
+                    >
+                      <Trash2 className="w-4 h-4 text-[#86868b]" />
+                    </button>
+                  )}
                 </div>
 
                 <div className="grid grid-cols-3 gap-2 mt-4">

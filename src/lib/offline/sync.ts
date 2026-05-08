@@ -11,6 +11,8 @@ type SyncListener = (status: "syncing" | "synced" | "error" | "offline" | "onlin
 
 const listeners = new Set<SyncListener>()
 let syncing = false
+let lastSyncAttempt = 0
+const SYNC_COOLDOWN = 30_000 // 30 seconds between sync attempts
 
 export function onSyncStatus(fn: SyncListener): () => void {
   listeners.add(fn)
@@ -90,20 +92,24 @@ export async function pullAllData(userId: string): Promise<void> {
     { table: "profiles", store: "profiles" },
   ]
 
-  const results = await Promise.allSettled(
-    tables.map(async ({ table, store, order, limit }) => {
-      let query = supabase.from(table).select("*").eq("user_id", userId)
-      if (order) query = query.order(order.column, { ascending: order.ascending })
-      if (limit) query = query.limit(limit)
-      const { data, error } = await query
-      if (error) throw error
-      await putAll(store, data || [])
-    })
-  )
+  // Fetch in batches of 3 to avoid exhausting browser connections
+  for (let i = 0; i < tables.length; i += 3) {
+    const batch = tables.slice(i, i + 3)
+    const results = await Promise.allSettled(
+      batch.map(async ({ table, store, order, limit }) => {
+        let query = supabase.from(table).select("*").eq("user_id", userId)
+        if (order) query = query.order(order.column, { ascending: order.ascending })
+        if (limit) query = query.limit(limit)
+        const { data, error } = await query
+        if (error) throw error
+        await putAll(store, data || [])
+      })
+    )
 
-  const failed = results.filter(r => r.status === "rejected")
-  if (failed.length > 0) {
-    console.warn("[sync] Some tables failed to pull:", failed)
+    const failed = results.filter(r => r.status === "rejected")
+    if (failed.length > 0) {
+      console.warn("[sync] Some tables failed to pull:", failed)
+    }
   }
 
   await setMeta("lastSync", new Date().toISOString())
@@ -112,6 +118,9 @@ export async function pullAllData(userId: string): Promise<void> {
 /** Full sync: replay queue → pull fresh data */
 export async function fullSync(userId: string): Promise<void> {
   if (syncing) return
+  const now = Date.now()
+  if (now - lastSyncAttempt < SYNC_COOLDOWN) return
+  lastSyncAttempt = now
   syncing = true
   notify("syncing")
 

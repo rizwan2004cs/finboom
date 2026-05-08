@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useUser } from "@clerk/nextjs"
+import { useUser } from "@/hooks/use-auth"
+import { useProfile } from "@/hooks/use-profile"
 import { fetchTable, deleteRow, insertRow, updateRow } from "@/lib/offline"
 import { Plus, Trash2, Edit2, CreditCard } from "lucide-react"
 import type { Liability } from "@/lib/types"
@@ -17,18 +18,19 @@ function formatCurrency(amount: number) {
 
 export default function LiabilitiesPage() {
   const { user } = useUser()
+  const { activeProfile } = useProfile()
   const [liabilities, setLiabilities] = useState<Liability[]>([])
   const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
   const [editLiability, setEditLiability] = useState<Liability | null>(null)
 
   useEffect(() => {
-    if (!user) return
+    if (!user || !activeProfile) return
     loadLiabilities()
-  }, [user])
+  }, [user, activeProfile])
 
   async function loadLiabilities() {
-    const data = await fetchTable<Liability>("liabilities", user!.id, { order: { column: "outstanding_amount", ascending: false } })
+    const data = await fetchTable<Liability>("liabilities", user!.id, { order: { column: "outstanding_amount", ascending: false }, filters: [{ column: "profile_id", op: "eq", value: activeProfile!.id }] })
     setLiabilities(data)
     setLoading(false)
   }
@@ -67,7 +69,7 @@ export default function LiabilitiesPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-[#1d1d1f]">Liabilities</h1>
+          <h1 className="text-xl font-bold text-[#1d1d1f] dark:text-white">Liabilities</h1>
           <p className="text-sm text-[#86868b]">{liabilities.length} active loans</p>
         </div>
         <button
@@ -83,19 +85,19 @@ export default function LiabilitiesPage() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
         <div className="liquid-glass rounded-2xl p-4">
           <p className="text-xs text-[#86868b] font-medium">Total Outstanding</p>
-          <p className="text-xl font-bold text-[#1d1d1f] mt-1">{formatCurrency(totalOutstanding)}</p>
+          <p className="text-xl font-bold text-[#1d1d1f] dark:text-white mt-1">{formatCurrency(totalOutstanding)}</p>
         </div>
         <div className="liquid-glass rounded-2xl p-4">
           <p className="text-xs text-[#86868b] font-medium">Monthly EMI</p>
-          <p className="text-xl font-bold text-[#1d1d1f] mt-1">{formatCurrency(totalEmi)}</p>
+          <p className="text-xl font-bold text-[#1d1d1f] dark:text-white mt-1">{formatCurrency(totalEmi)}</p>
         </div>
         <div className="liquid-glass rounded-2xl p-4">
           <p className="text-xs text-[#86868b] font-medium">Paid Off</p>
-          <p className="text-xl font-bold text-[#1d1d1f] mt-1">{formatCurrency(paidOff)}</p>
+          <p className="text-xl font-bold text-[#1d1d1f] dark:text-white mt-1">{formatCurrency(paidOff)}</p>
           {totalOriginal > 0 && (
-            <div className="mt-2 h-1.5 bg-white/50 rounded-full overflow-hidden">
+            <div className="mt-2 h-1.5 bg-white/50 dark:bg-white/[0.08] rounded-full overflow-hidden">
               <div
-                className="h-full bg-[#1d1d1f] rounded-full transition-all"
+                className="h-full bg-[#1d1d1f] dark:bg-white rounded-full transition-all"
                 style={{ width: `${Math.min((paidOff / totalOriginal) * 100, 100)}%` }}
               />
             </div>
@@ -109,7 +111,7 @@ export default function LiabilitiesPage() {
           <div className="w-12 h-12 rounded-xl bg-white/50 backdrop-blur-sm flex items-center justify-center mx-auto mb-3">
             <CreditCard className="w-6 h-6 text-[#86868b]" strokeWidth={1.5} />
           </div>
-          <p className="font-medium text-[#1d1d1f]">No liabilities</p>
+          <p className="font-medium text-[#1d1d1f] dark:text-white">No liabilities</p>
           <p className="text-sm text-[#86868b] mt-1">Track your loans and EMIs</p>
           <button
             onClick={() => setShowAddModal(true)}
@@ -128,15 +130,15 @@ export default function LiabilitiesPage() {
             return (
               <div key={liability.id} className="liquid-glass rounded-2xl p-4 transition-all">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-white/50 backdrop-blur-sm flex items-center justify-center">
-                    <CategoryIcon name={type?.icon || "MoreHorizontal"} className="w-4.5 h-4.5 text-[#1d1d1f]" />
+                  <div className="w-10 h-10 rounded-xl bg-white/50 dark:bg-white/[0.06] backdrop-blur-sm flex items-center justify-center">
+                    <CategoryIcon name={type?.icon || "MoreHorizontal"} className="w-4.5 h-4.5 text-[#1d1d1f] dark:text-white" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-[#1d1d1f] truncate">{liability.name}</p>
+                    <p className="font-medium text-[#1d1d1f] dark:text-white truncate">{liability.name}</p>
                     <p className="text-xs text-[#86868b]">{type?.label || liability.liability_type}</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-semibold text-[#1d1d1f]">{formatCurrency(Number(liability.outstanding_amount))}</p>
+                    <p className="font-semibold text-[#1d1d1f] dark:text-white">{formatCurrency(Number(liability.outstanding_amount))}</p>
                     <p className="text-xs text-[#86868b]">
                       {liability.interest_rate}% p.a.
                       {liability.emi_amount ? ` · ₹${Number(liability.emi_amount).toLocaleString("en-IN")}/mo` : ""}
@@ -145,13 +147,13 @@ export default function LiabilitiesPage() {
                   <div className="flex gap-1 ml-2">
                     <button
                       onClick={() => { setEditLiability(liability); setShowAddModal(true) }}
-                      className="p-1.5 rounded-lg hover:bg-white/60 transition-all"
+                      className="p-1.5 rounded-lg hover:bg-white/60 dark:hover:bg-white/[0.08] transition-all"
                     >
                       <Edit2 className="w-3.5 h-3.5 text-[#86868b]" />
                     </button>
                     <button
                       onClick={() => deleteLiability(liability.id)}
-                      className="p-1.5 rounded-lg hover:bg-white/60 transition-all"
+                      className="p-1.5 rounded-lg hover:bg-white/60 dark:hover:bg-white/[0.08] transition-all"
                     >
                       <Trash2 className="w-3.5 h-3.5 text-[#86868b]" />
                     </button>
@@ -198,6 +200,7 @@ function AddLiabilityModal({
   onSave: () => void
 }) {
   const { user } = useUser()
+  const { activeProfile } = useProfile()
   const [form, setForm] = useState({
     name: liability?.name || "",
     liability_type: liability?.liability_type || "home_loan",
@@ -218,8 +221,8 @@ function AddLiabilityModal({
 
     const payload = {
       user_id: user.id,
+      profile_id: activeProfile!.id,
       name: form.name,
-      liability_type: form.liability_type,
       outstanding_amount: parseFloat(form.outstanding_amount) || 0,
       original_amount: parseFloat(form.original_amount) || 0,
       interest_rate: parseFloat(form.interest_rate) || 0,
@@ -244,26 +247,26 @@ function AddLiabilityModal({
       <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={onClose} />
       <form
         onSubmit={handleSubmit}
-        className="relative w-full max-w-md bg-white/80 backdrop-blur-2xl rounded-2xl p-6 border border-white/40 shadow-2xl shadow-black/[0.08] space-y-4 max-h-[90vh] overflow-y-auto"
+        className="relative w-full max-w-md bg-white/80 dark:bg-[#1c1c1e]/95 backdrop-blur-2xl rounded-2xl p-6 border border-white/40 dark:border-white/[0.08] shadow-2xl shadow-black/[0.08] space-y-4 max-h-[90vh] overflow-y-auto"
       >
-        <h2 className="text-lg font-bold text-[#1d1d1f]">
+        <h2 className="text-lg font-bold text-[#1d1d1f] dark:text-white">
           {liability ? "Edit Liability" : "Add Liability"}
         </h2>
 
         <div>
-          <label className="text-sm font-medium text-[#1d1d1f]">Name</label>
+          <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">Name</label>
           <input
             type="text"
             value={form.name}
             onChange={(e) => setForm(prev => ({ ...prev, name: e.target.value }))}
             placeholder="e.g. Home Loan - SBI"
-            className="mt-1 w-full px-4 py-3 rounded-xl bg-white/50 border border-white/40 text-sm text-[#1d1d1f] placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
+            className="mt-1 w-full px-4 py-3 rounded-xl bg-white/50 dark:bg-[#2c2c2e] border border-white/40 dark:border-white/[0.06] text-sm text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10"
             required
           />
         </div>
 
         <div>
-          <label className="text-sm font-medium text-[#1d1d1f]">Type</label>
+          <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">Type</label>
           <div className="grid grid-cols-3 gap-2 mt-2">
             {LIABILITY_TYPES.map(type => (
               <button
@@ -272,11 +275,11 @@ function AddLiabilityModal({
                 onClick={() => setForm(prev => ({ ...prev, liability_type: type.id }))}
                 className={`flex flex-col items-center gap-1 p-2.5 rounded-xl text-center transition-all ${
                   form.liability_type === type.id
-                    ? "bg-[#1d1d1f]/[0.08] border-2 border-[#1d1d1f]"
-                    : "bg-white/50 border-2 border-transparent"
+                    ? "bg-[#1d1d1f]/[0.08] dark:bg-white/[0.12] border-2 border-[#1d1d1f] dark:border-white"
+                    : "bg-white/50 dark:bg-[#2c2c2e] border-2 border-transparent"
                 }`}
               >
-                <CategoryIcon name={type.icon} className="w-4 h-4 text-[#1d1d1f]" />
+                <CategoryIcon name={type.icon} className="w-4 h-4 text-[#1d1d1f] dark:text-white" />
                 <span className="text-[10px] text-[#86868b] leading-tight">{type.label}</span>
               </button>
             ))}
@@ -285,81 +288,83 @@ function AddLiabilityModal({
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-sm font-medium text-[#1d1d1f]">Outstanding Amount</label>
+            <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">Outstanding Amount</label>
             <input
               type="number"
               value={form.outstanding_amount}
               onChange={(e) => setForm(prev => ({ ...prev, outstanding_amount: e.target.value }))}
               placeholder="₹"
-              className="mt-1 w-full px-4 py-3 rounded-xl bg-white/50 border border-white/40 text-sm text-[#1d1d1f] placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
+              className="mt-1 w-full px-4 py-3 rounded-xl bg-white/50 dark:bg-[#2c2c2e] border border-white/40 dark:border-white/[0.06] text-sm text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10"
               required
             />
           </div>
           <div>
-            <label className="text-sm font-medium text-[#1d1d1f]">Original Amount</label>
+            <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">Original Amount</label>
             <input
               type="number"
               value={form.original_amount}
               onChange={(e) => setForm(prev => ({ ...prev, original_amount: e.target.value }))}
               placeholder="₹"
-              className="mt-1 w-full px-4 py-3 rounded-xl bg-white/50 border border-white/40 text-sm text-[#1d1d1f] placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
+              className="mt-1 w-full px-4 py-3 rounded-xl bg-white/50 dark:bg-[#2c2c2e] border border-white/40 dark:border-white/[0.06] text-sm text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10"
             />
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-sm font-medium text-[#1d1d1f]">Interest Rate (%)</label>
+            <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">Interest Rate (%)</label>
             <input
               type="number"
               step="0.01"
               value={form.interest_rate}
               onChange={(e) => setForm(prev => ({ ...prev, interest_rate: e.target.value }))}
               placeholder="8.5"
-              className="mt-1 w-full px-4 py-3 rounded-xl bg-white/50 border border-white/40 text-sm text-[#1d1d1f] placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
+              className="mt-1 w-full px-4 py-3 rounded-xl bg-white/50 dark:bg-[#2c2c2e] border border-white/40 dark:border-white/[0.06] text-sm text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10"
             />
           </div>
           <div>
-            <label className="text-sm font-medium text-[#1d1d1f]">EMI Amount</label>
+            <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">EMI Amount</label>
             <input
               type="number"
               value={form.emi_amount}
               onChange={(e) => setForm(prev => ({ ...prev, emi_amount: e.target.value }))}
               placeholder="₹/month"
-              className="mt-1 w-full px-4 py-3 rounded-xl bg-white/50 border border-white/40 text-sm text-[#1d1d1f] placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
+              className="mt-1 w-full px-4 py-3 rounded-xl bg-white/50 dark:bg-[#2c2c2e] border border-white/40 dark:border-white/[0.06] text-sm text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10"
             />
           </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-sm font-medium text-[#1d1d1f]">Start Date</label>
+            <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">Start Date</label>
             <input
               type="date"
               value={form.start_date}
               onChange={(e) => setForm(prev => ({ ...prev, start_date: e.target.value }))}
-              className="mt-1 w-full px-4 py-3 rounded-xl bg-white/50 border border-white/40 text-sm text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
+              onFocus={(e) => setTimeout(() => e.target.scrollIntoView({ behavior: "smooth", block: "center" }), 100)}
+              className="mt-1 w-full px-4 py-3 rounded-xl bg-white/50 dark:bg-[#2c2c2e] border border-white/40 dark:border-white/[0.06] text-sm text-[#1d1d1f] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10 dark:[color-scheme:dark]"
             />
           </div>
           <div>
-            <label className="text-sm font-medium text-[#1d1d1f]">End Date</label>
+            <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">End Date</label>
             <input
               type="date"
               value={form.end_date}
               onChange={(e) => setForm(prev => ({ ...prev, end_date: e.target.value }))}
-              className="mt-1 w-full px-4 py-3 rounded-xl bg-white/50 border border-white/40 text-sm text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
+              onFocus={(e) => setTimeout(() => e.target.scrollIntoView({ behavior: "smooth", block: "center" }), 100)}
+              className="mt-1 w-full px-4 py-3 rounded-xl bg-white/50 dark:bg-[#2c2c2e] border border-white/40 dark:border-white/[0.06] text-sm text-[#1d1d1f] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10 dark:[color-scheme:dark]"
             />
           </div>
         </div>
 
         <div>
-          <label className="text-sm font-medium text-[#1d1d1f]">Notes (optional)</label>
+          <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">Notes (optional)</label>
           <textarea
             value={form.notes}
             onChange={(e) => setForm(prev => ({ ...prev, notes: e.target.value }))}
             placeholder="Any additional details..."
             rows={2}
-            className="mt-1 w-full px-4 py-3 rounded-xl bg-white/50 border border-white/40 text-sm text-[#1d1d1f] placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 resize-none"
+            className="mt-1 w-full px-4 py-3 rounded-xl bg-white/50 dark:bg-[#2c2c2e] border border-white/40 dark:border-white/[0.06] text-sm text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10 resize-none"
           />
         </div>
 
@@ -367,7 +372,7 @@ function AddLiabilityModal({
           <button
             type="button"
             onClick={onClose}
-            className="flex-1 py-3 rounded-xl text-sm font-medium text-[#1d1d1f] bg-white/50 border border-white/40 hover:bg-white/70 transition-all"
+            className="flex-1 py-3 rounded-xl text-sm font-medium text-[#1d1d1f] dark:text-white bg-white/50 dark:bg-[#2c2c2e] border border-white/40 dark:border-white/[0.06] hover:bg-white/70 dark:hover:bg-[#3a3a3c] transition-all"
           >
             Cancel
           </button>

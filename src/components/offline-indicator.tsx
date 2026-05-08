@@ -1,8 +1,9 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { WifiOff, RefreshCw, CloudOff, Check } from "lucide-react"
+import { WifiOff, RefreshCw, CloudOff, Check, Download } from "lucide-react"
 import { onSyncStatus, getPendingCount } from "@/lib/offline"
+import { useAppUpdate } from "@/components/offline-provider"
 
 type Status = "online" | "offline" | "syncing" | "synced" | "error"
 
@@ -10,6 +11,7 @@ export function OfflineIndicator() {
   const [status, setStatus] = useState<Status>("online")
   const [pending, setPending] = useState(0)
   const [visible, setVisible] = useState(false)
+  const { updateReady, applyUpdate } = useAppUpdate()
 
   useEffect(() => {
     // Check initial state
@@ -39,21 +41,37 @@ export function OfflineIndicator() {
     }
   }, [])
 
-  if (!visible) return null
+  if (!visible && !updateReady) return null
 
   return (
-    <div
-      className={`
-        fixed top-16 left-1/2 -translate-x-1/2 z-[100] px-4 py-2 rounded-full
-        flex items-center gap-2 text-sm font-medium shadow-lg backdrop-blur-xl
-        transition-all duration-300 animate-in slide-in-from-top
-        ${status === "offline" ? "bg-amber-500/90 text-white" : ""}
-        ${status === "syncing" ? "bg-blue-500/90 text-white" : ""}
-        ${status === "synced" ? "bg-green-500/90 text-white" : ""}
-        ${status === "error" ? "bg-red-500/90 text-white" : ""}
-        ${status === "online" ? "bg-green-500/90 text-white" : ""}
-      `}
-    >
+    <>
+      {/* App update banner */}
+      {updateReady && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[101] animate-in slide-in-from-top">
+          <button
+            onClick={applyUpdate}
+            className="flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-500/90 text-white text-sm font-medium shadow-lg backdrop-blur-xl hover:bg-indigo-600/90 transition-colors cursor-pointer"
+          >
+            <Download size={16} />
+            <span>New version available · Tap to update</span>
+          </button>
+        </div>
+      )}
+
+      {/* Sync status pill */}
+      {visible && (
+        <div
+          className={`
+            fixed ${updateReady ? "top-28" : "top-16"} left-1/2 -translate-x-1/2 z-[100] px-4 py-2 rounded-full
+            flex items-center gap-2 text-sm font-medium shadow-lg backdrop-blur-xl
+            transition-all duration-300 animate-in slide-in-from-top
+            ${status === "offline" ? "bg-amber-500/90 text-white" : ""}
+            ${status === "syncing" ? "bg-blue-500/90 text-white" : ""}
+            ${status === "synced" ? "bg-green-500/90 text-white" : ""}
+            ${status === "error" ? "bg-red-500/90 text-white" : ""}
+            ${status === "online" ? "bg-green-500/90 text-white" : ""}
+          `}
+        >
       {status === "offline" && (
         <>
           <WifiOff size={16} />
@@ -84,6 +102,8 @@ export function OfflineIndicator() {
           <span>Back online</span>
         </>
       )}
-    </div>
+        </div>
+      )}
+    </>
   )
 }

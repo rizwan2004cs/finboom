@@ -2,9 +2,9 @@
 
 import { Suspense } from "react"
 import { useEffect, useState, useMemo } from "react"
-import { useUser } from "@clerk/nextjs"
+import { useUser } from "@/hooks/use-auth"
 import { createClient } from "@/utils/supabase/client"
-import { fetchTable, deleteRow } from "@/lib/offline"
+import { fetchTable, deleteRow, getAll } from "@/lib/offline"
 import { useSearchParams } from "next/navigation"
 import {
   Plus,
@@ -13,6 +13,7 @@ import {
   ArrowDownRight,
   ArrowUpLeft,
   Trash2,
+  Pencil,
   Clock,
   AlertCircle,
   CheckCircle2,
@@ -23,6 +24,7 @@ import {
 import type { Party, PartyTransaction } from "@/lib/types"
 import { AddPartyTransactionModal } from "@/components/modals/add-party-transaction-modal"
 import { AddPartyModal } from "@/components/modals/add-party-modal"
+import { EditPartyModal } from "@/components/modals/edit-party-modal"
 
 function formatCurrency(amount: number) {
   if (amount >= 10000000) return `₹${(amount / 10000000).toFixed(2)} Cr`
@@ -50,10 +52,34 @@ function PartiesPageInner() {
   const [settlePartyId, setSettlePartyId] = useState<string | null>(null)
   const [settleType, setSettleType] = useState<"received_back" | "paid_back">("received_back")
   const [selectedPartyId, setSelectedPartyId] = useState<string | null>(null)
+  const [editingParty, setEditingParty] = useState<Party | null>(null)
+  const [deletingPartyId, setDeletingPartyId] = useState<string | null>(null)
 
   async function loadData() {
     if (!user) return
 
+    // Show cached data immediately for instant load
+    try {
+      const [cachedParties, cachedTx] = await Promise.all([
+        getAll<Party>("parties"),
+        getAll<PartyTransaction>("party_transactions"),
+      ])
+      if (cachedParties.length > 0 || cachedTx.length > 0) {
+        const userParties = cachedParties.filter(p => p.user_id === user.id)
+        const userTx = cachedTx.filter(t => t.user_id === user.id)
+        const partyMap = new Map(userParties.map(p => [p.id, p]))
+        setParties(userParties.sort((a, b) => a.name.localeCompare(b.name)))
+        setTransactions(
+          userTx
+            .map(tx => ({ ...tx, party: partyMap.get(tx.party_id) as Party }))
+            .filter(tx => tx.party)
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        )
+        setLoading(false)
+      }
+    } catch {}
+
+    // Then fetch fresh data from Supabase
     const [partiesData, txData] = await Promise.all([
       fetchTable<Party>("parties", user.id, { order: { column: "name", ascending: true } }),
       fetchTable<PartyTransaction>("party_transactions", user.id, { order: { column: "date", ascending: false } }),
@@ -80,7 +106,77 @@ function PartiesPageInner() {
   }, [searchParams])
 
   async function handleDelete(id: string) {
+    const ptx = transactions.find(tx => tx.id === id)
+    if (ptx) {
+      if (ptx.linked_transaction_id) {
+        // Direct link exists
+        await deleteRow("transactions", ptx.linked_transaction_id)
+      } else {
+        // Fallback: match auto-created transaction by description pattern
+        const partyName = ptx.party?.name || ""
+        const descMap: Record<string, { type: string; desc: string }> = {
+          lent: { type: "expense", desc: `Lent to ${partyName}` },
+          received_back: { type: "income", desc: `Received back from ${partyName}` },
+          borrowed: { type: "income", desc: `Borrowed from ${partyName}` },
+          paid_back: { type: "expense", desc: `Paid back to ${partyName}` },
+        }
+        const match = descMap[ptx.type]
+        if (match && partyName) {
+          const supabase = createClient()
+          const { data: linked } = await supabase
+            .from("transactions")
+            .select("id")
+            .eq("user_id", ptx.user_id)
+            .eq("type", match.type)
+            .eq("description", match.desc)
+            .eq("amount", ptx.amount)
+            .eq("date", ptx.date)
+            .limit(1)
+          if (linked && linked.length > 0) {
+            await deleteRow("transactions", linked[0].id)
+          }
+        }
+      }
+    }
     await deleteRow("party_transactions", id)
+    loadData()
+  }
+
+  async function handleDeleteParty(id: string) {
+    // Delete linked transactions for all party_transactions of this party
+    const partyTxs = transactions.filter(tx => tx.party_id === id)
+    for (const ptx of partyTxs) {
+      if (ptx.linked_transaction_id) {
+        await deleteRow("transactions", ptx.linked_transaction_id)
+      } else {
+        const partyName = ptx.party?.name || ""
+        const descMap: Record<string, { type: string; desc: string }> = {
+          lent: { type: "expense", desc: `Lent to ${partyName}` },
+          received_back: { type: "income", desc: `Received back from ${partyName}` },
+          borrowed: { type: "income", desc: `Borrowed from ${partyName}` },
+          paid_back: { type: "expense", desc: `Paid back to ${partyName}` },
+        }
+        const match = descMap[ptx.type]
+        if (match && partyName) {
+          const supabase = createClient()
+          const { data: linked } = await supabase
+            .from("transactions")
+            .select("id")
+            .eq("user_id", ptx.user_id)
+            .eq("type", match.type)
+            .eq("description", match.desc)
+            .eq("amount", ptx.amount)
+            .eq("date", ptx.date)
+            .limit(1)
+          if (linked && linked.length > 0) {
+            await deleteRow("transactions", linked[0].id)
+          }
+        }
+      }
+    }
+    await deleteRow("parties", id)
+    setDeletingPartyId(null)
+    setSelectedPartyId(null)
     loadData()
   }
 
@@ -166,16 +262,16 @@ function PartiesPageInner() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-[24px] font-semibold tracking-[-0.3px] text-[#1d1d1f]">Parties</h1>
+          <h1 className="text-[24px] font-semibold tracking-[-0.3px] text-[#1d1d1f] dark:text-white">Parties</h1>
           <p className="text-[14px] text-[#86868b] mt-0.5">Track money given & received</p>
         </div>
         <div className="flex gap-2">
           <button
             onClick={() => setShowAddParty(true)}
-            className="p-2.5 rounded-xl bg-white/50 backdrop-blur-sm border border-white/40 hover:bg-white/70 transition-all"
+            className="p-2.5 rounded-xl bg-white/50 dark:bg-white/[0.06] backdrop-blur-sm border border-white/40 dark:border-white/[0.08] hover:bg-white/70 dark:hover:bg-white/[0.1] transition-all"
             title="Add party"
           >
-            <User className="w-5 h-5 text-[#1d1d1f]" />
+            <User className="w-5 h-5 text-[#1d1d1f] dark:text-white" />
           </button>
           <button
             onClick={() => { setSettlePartyId(null); setShowAddTransaction(true) }}
@@ -248,11 +344,11 @@ function PartiesPageInner() {
       )}
 
       {/* Tab switcher */}
-      <div className="flex bg-[#f5f5f7] rounded-xl p-1">
+      <div className="flex bg-[#f5f5f7] dark:bg-[#2c2c2e] rounded-xl p-1">
         <button
           onClick={() => setTab("transactions")}
           className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all ${
-            tab === "transactions" ? "bg-white text-[#1d1d1f] shadow-sm" : "text-[#86868b]"
+            tab === "transactions" ? "bg-[#ffffff] dark:bg-[#3a3a3c] text-[#1d1d1f] dark:text-white shadow-sm" : "text-[#86868b] dark:text-[#98989d]"
           }`}
         >
           Transactions
@@ -260,7 +356,7 @@ function PartiesPageInner() {
         <button
           onClick={() => setTab("parties")}
           className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all ${
-            tab === "parties" ? "bg-white text-[#1d1d1f] shadow-sm" : "text-[#86868b]"
+            tab === "parties" ? "bg-[#ffffff] dark:bg-[#3a3a3c] text-[#1d1d1f] dark:text-white shadow-sm" : "text-[#86868b] dark:text-[#98989d]"
           }`}
         >
           Parties ({parties.length})
@@ -273,7 +369,7 @@ function PartiesPageInner() {
           {transactions.length === 0 ? (
             <div className="liquid-glass rounded-2xl p-8 text-center">
               <HandCoins className="w-10 h-10 text-[#86868b] mx-auto" />
-              <p className="text-[15px] font-medium text-[#1d1d1f] mt-3">No party transactions yet</p>
+              <p className="text-[15px] font-medium text-[#1d1d1f] dark:text-white mt-3">No party transactions yet</p>
               <p className="text-[13px] text-[#86868b] mt-1">Start tracking money given & received</p>
               <button
                 onClick={() => setShowAddTransaction(true)}
@@ -294,7 +390,7 @@ function PartiesPageInner() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="text-[14px] font-medium text-[#1d1d1f] truncate">{tx.party?.name}</p>
+                      <p className="text-[14px] font-medium text-[#1d1d1f] dark:text-white truncate">{tx.party?.name}</p>
                       <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-md ${config.bg} ${config.color}`}>
                         {config.label}
                       </span>
@@ -342,7 +438,7 @@ function PartiesPageInner() {
           {partyBalances.length === 0 ? (
             <div className="liquid-glass rounded-2xl p-8 text-center">
               <User className="w-10 h-10 text-[#86868b] mx-auto" />
-              <p className="text-[15px] font-medium text-[#1d1d1f] mt-3">No parties yet</p>
+              <p className="text-[15px] font-medium text-[#1d1d1f] dark:text-white mt-3">No parties yet</p>
               <p className="text-[13px] text-[#86868b] mt-1">Add people you exchange money with</p>
               <button
                 onClick={() => setShowAddParty(true)}
@@ -368,18 +464,35 @@ function PartiesPageInner() {
                   <div className="flex items-center gap-3">
                     <button
                       onClick={() => setSelectedPartyId(null)}
-                      className="p-1.5 rounded-lg hover:bg-[#f5f5f7] transition-all"
+                      className="p-1.5 rounded-lg hover:bg-[#f5f5f7] dark:hover:bg-white/[0.08] transition-all"
                     >
-                      <ChevronLeft className="w-5 h-5 text-[#1d1d1f]" />
+                      <ChevronLeft className="w-5 h-5 text-[#1d1d1f] dark:text-white" />
                     </button>
-                    <div className="w-10 h-10 rounded-xl bg-[#f5f5f7] flex items-center justify-center flex-shrink-0">
-                      <span className="text-[15px] font-semibold text-[#1d1d1f]">
+                    <div className="w-10 h-10 rounded-xl bg-[#f5f5f7] dark:bg-[#2c2c2e] flex items-center justify-center flex-shrink-0">
+                      <span className="text-[15px] font-semibold text-[#1d1d1f] dark:text-white">
                         {party.name.charAt(0).toUpperCase()}
                       </span>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[16px] font-semibold text-[#1d1d1f]">{party.name}</p>
+                      <p className="text-[16px] font-semibold text-[#1d1d1f] dark:text-white">{party.name}</p>
                       {party.phone && <p className="text-[12px] text-[#86868b]">{party.phone}</p>}
+                      {party.notes && <p className="text-[12px] text-[#86868b]">{party.notes}</p>}
+                    </div>
+                    <div className="flex items-center gap-1 mr-2">
+                      <button
+                        onClick={() => setEditingParty(party)}
+                        className="p-2 rounded-lg hover:bg-[#f5f5f7] dark:hover:bg-white/[0.08] transition-all"
+                        title="Edit party"
+                      >
+                        <Pencil className="w-4 h-4 text-[#86868b]" />
+                      </button>
+                      <button
+                        onClick={() => setDeletingPartyId(party.id)}
+                        className="p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-500/10 transition-all"
+                        title="Delete party"
+                      >
+                        <Trash2 className="w-4 h-4 text-[#86868b] hover:text-red-600" />
+                      </button>
                     </div>
                     <div className="text-right">
                       {balance === 0 ? (
@@ -426,7 +539,7 @@ function PartiesPageInner() {
                   {balance !== 0 && (
                     <button
                       onClick={() => handleSettle(party.id, balance)}
-                      className="flex-1 py-2.5 rounded-xl bg-[#f5f5f7] text-[13px] font-medium text-[#1d1d1f] hover:bg-[#e8e8ed] transition-all"
+                      className="flex-1 py-2.5 rounded-xl bg-[#f5f5f7] dark:bg-[#2c2c2e] text-[13px] font-medium text-[#1d1d1f] dark:text-white hover:bg-[#e8e8ed] dark:hover:bg-[#3a3a3c] transition-all"
                     >
                       {balance > 0 ? "Record Payment Received" : "Record Payment Made"}
                     </button>
@@ -487,7 +600,7 @@ function PartiesPageInner() {
                         </p>
                         <button
                           onClick={() => handleDelete(tx.id)}
-                          className="p-2 rounded-lg hover:bg-[#f5f5f7] transition-all flex-shrink-0"
+                          className="p-2 rounded-lg hover:bg-[#f5f5f7] dark:hover:bg-white/[0.08] transition-all flex-shrink-0"
                         >
                           <Trash2 className="w-4 h-4 text-[#86868b]" />
                         </button>
@@ -504,13 +617,13 @@ function PartiesPageInner() {
                 className="liquid-glass rounded-2xl p-4 flex items-center gap-3 cursor-pointer hover:shadow-md transition-all"
                 onClick={() => setSelectedPartyId(party.id)}
               >
-                <div className="w-10 h-10 rounded-xl bg-[#f5f5f7] flex items-center justify-center flex-shrink-0">
-                  <span className="text-[15px] font-semibold text-[#1d1d1f]">
+                <div className="w-10 h-10 rounded-xl bg-[#f5f5f7] dark:bg-[#2c2c2e] flex items-center justify-center flex-shrink-0">
+                  <span className="text-[15px] font-semibold text-[#1d1d1f] dark:text-white">
                     {party.name.charAt(0).toUpperCase()}
                   </span>
                 </div>
                 <div className="flex-1 min-w-0">
-                  <p className="text-[14px] font-medium text-[#1d1d1f] truncate">{party.name}</p>
+                  <p className="text-[14px] font-medium text-[#1d1d1f] dark:text-white truncate">{party.name}</p>
                   <p className="text-[12px] text-[#86868b]">{txCount} transactions</p>
                 </div>
                 <div className="text-right flex-shrink-0">
@@ -533,7 +646,7 @@ function PartiesPageInner() {
                 {balance !== 0 && (
                   <button
                     onClick={(e) => { e.stopPropagation(); handleSettle(party.id, balance) }}
-                    className="px-3 py-1.5 rounded-lg bg-[#f5f5f7] text-[12px] font-medium text-[#1d1d1f] hover:bg-[#e8e8ed] transition-all flex-shrink-0"
+                    className="px-3 py-1.5 rounded-lg bg-[#f5f5f7] dark:bg-[#2c2c2e] text-[12px] font-medium text-[#1d1d1f] dark:text-white hover:bg-[#e8e8ed] dark:hover:bg-[#3a3a3c] transition-all flex-shrink-0"
                   >
                     Settle
                   </button>
@@ -558,6 +671,36 @@ function PartiesPageInner() {
           onClose={() => setShowAddParty(false)}
           onSave={() => { setShowAddParty(false); loadData() }}
         />
+      )}
+      {editingParty && (
+        <EditPartyModal
+          party={editingParty}
+          onClose={() => setEditingParty(null)}
+          onSave={() => { setEditingParty(null); loadData() }}
+        />
+      )}
+      {deletingPartyId && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setDeletingPartyId(null)} />
+          <div className="relative w-full sm:max-w-sm bg-[#ffffff] dark:bg-[#1c1c1e] rounded-2xl border border-white/40 dark:border-white/[0.08] shadow-xl p-6 text-center">
+            <p className="text-[16px] font-semibold text-[#1d1d1f] dark:text-white">Delete Party?</p>
+            <p className="text-[13px] text-[#86868b] mt-2">This will also delete all transactions with this party. This cannot be undone.</p>
+            <div className="flex gap-3 mt-5">
+              <button
+                onClick={() => setDeletingPartyId(null)}
+                className="flex-1 py-2.5 rounded-xl bg-[#f5f5f7] dark:bg-[#2c2c2e] text-[13px] font-medium text-[#1d1d1f] dark:text-white hover:bg-[#e8e8ed] dark:hover:bg-[#3a3a3c] transition-all"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleDeleteParty(deletingPartyId)}
+                className="flex-1 py-2.5 rounded-xl bg-red-600 text-white text-[13px] font-medium hover:bg-red-700 transition-all"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

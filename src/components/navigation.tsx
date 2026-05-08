@@ -1,5 +1,6 @@
 "use client"
 
+import { useState, useEffect, useRef } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
@@ -17,6 +18,8 @@ import {
   PanelLeftClose,
   PanelLeftOpen,
   HandCoins,
+  MoreHorizontal,
+  X,
 } from "lucide-react"
 
 const navItems = [
@@ -37,7 +40,25 @@ const mobileNavItems = [
   { href: "/dashboard/assets", label: "Assets", icon: Wallet },
   { href: "/dashboard/transactions", label: "Track", icon: ArrowUpDown },
   { href: "/dashboard/liabilities", label: "Loans", icon: CreditCard },
-  { href: "/dashboard/settings", label: "More", icon: Settings },
+]
+
+// Pages that should highlight the "More" tab
+const moreSubPages = [
+  "/dashboard/parties",
+  "/dashboard/goals",
+  "/dashboard/snapshots",
+  "/dashboard/health",
+  "/dashboard/profiles",
+  "/dashboard/settings",
+]
+
+const moreSheetItems = [
+  { href: "/dashboard/parties", label: "Parties", icon: HandCoins },
+  { href: "/dashboard/goals", label: "Goals", icon: Target },
+  { href: "/dashboard/snapshots", label: "Snapshots", icon: Camera },
+  { href: "/dashboard/health", label: "Health", icon: Heart },
+  { href: "/dashboard/profiles", label: "Profiles", icon: Users },
+  { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ]
 
 export function Sidebar() {
@@ -111,28 +132,136 @@ export function Sidebar() {
 
 export function MobileBottomNav() {
   const pathname = usePathname()
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const sheetRef = useRef<HTMLDivElement>(null)
+
+  const isMoreActive = moreSubPages.some(p => pathname === p || pathname.startsWith(p))
+
+  // Close sheet on navigation
+  useEffect(() => {
+    setSheetOpen(false)
+  }, [pathname])
+
+  // Close on click outside
+  useEffect(() => {
+    if (!sheetOpen) return
+    function handleClick(e: MouseEvent) {
+      if (sheetRef.current && !sheetRef.current.contains(e.target as Node)) {
+        setSheetOpen(false)
+      }
+    }
+    document.addEventListener("mousedown", handleClick)
+    return () => document.removeEventListener("mousedown", handleClick)
+  }, [sheetOpen])
 
   return (
-    <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 glass-elevated bottom-nav">
-      <div className="flex items-center justify-around py-2">
-        {mobileNavItems.map((item) => {
-          const isActive = pathname === item.href ||
-            (item.href !== "/dashboard" && pathname.startsWith(item.href))
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg transition-all duration-200 min-w-[60px]",
-                isActive ? "text-[#1d1d1f]" : "text-[#86868b]"
-              )}
+    <>
+      {/* Backdrop */}
+      {sheetOpen && (
+        <div
+          className="lg:hidden fixed inset-0 z-[60] bg-black/40 backdrop-blur-sm transition-opacity duration-200"
+          onClick={() => setSheetOpen(false)}
+        />
+      )}
+
+      {/* Slide-up sheet */}
+      <div
+        ref={sheetRef}
+        className={cn(
+          "lg:hidden fixed left-0 right-0 bottom-0 z-[70] transition-transform duration-300 ease-out",
+          sheetOpen ? "translate-y-0" : "translate-y-full"
+        )}
+      >
+        <div className="rounded-t-2xl bg-[#f5f5f7] dark:bg-[#1c1c1e] shadow-2xl shadow-black/20 border-t border-x border-black/[0.06] dark:border-white/[0.08] overflow-hidden pb-[env(safe-area-inset-bottom)]">
+          {/* Drag handle */}
+          <div className="flex flex-col items-center pt-2">
+            <div className="w-9 h-1 rounded-full bg-[#d1d1d6] dark:bg-[#48484a] mb-2" />
+          </div>
+          <div className="flex items-center justify-between px-5 pb-2">
+            <span className="text-[15px] font-semibold text-[#1d1d1f] dark:text-white">More</span>
+            <button
+              onClick={() => setSheetOpen(false)}
+              className="p-1.5 rounded-full bg-[#e5e5ea] dark:bg-[#38383a]"
             >
-              <item.icon className={cn("w-5 h-5", isActive && "scale-110")} strokeWidth={1.5} />
-              <span className="text-[10px] font-medium">{item.label}</span>
-            </Link>
-          )
-        })}
+              <X className="w-3.5 h-3.5 text-[#3a3a3c] dark:text-[#aeaeb2]" strokeWidth={2.5} />
+            </button>
+          </div>
+
+          {/* Grid of items */}
+          <div className="grid grid-cols-3 gap-2 px-4 pb-4">
+            {moreSheetItems.map((item) => {
+              const isActive = pathname === item.href || pathname.startsWith(item.href)
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "flex flex-col items-center gap-2 py-4 rounded-xl transition-all duration-150 active:scale-95",
+                    isActive
+                      ? "bg-[#1d1d1f] dark:bg-white"
+                      : "bg-white dark:bg-[#2c2c2e] hover:bg-[#e5e5ea] dark:hover:bg-[#38383a]"
+                  )}
+                >
+                  <item.icon
+                    className={cn(
+                      "w-[22px] h-[22px]",
+                      isActive
+                        ? "text-white dark:text-[#1d1d1f]"
+                        : "text-[#3a3a3c] dark:text-[#aeaeb2]"
+                    )}
+                    strokeWidth={1.5}
+                  />
+                  <span
+                    className={cn(
+                      "text-[11px] font-medium",
+                      isActive
+                        ? "text-white dark:text-[#1d1d1f]"
+                        : "text-[#3a3a3c] dark:text-[#aeaeb2]"
+                    )}
+                  >
+                    {item.label}
+                  </span>
+                </Link>
+              )
+            })}
+          </div>
+        </div>
       </div>
-    </nav>
+
+      {/* Bottom nav bar */}
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 z-50 glass-elevated bottom-nav">
+        <div className="flex items-center justify-around py-2">
+          {mobileNavItems.map((item) => {
+            const isActive = pathname === item.href ||
+              (item.href !== "/dashboard" && pathname.startsWith(item.href))
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={cn(
+                  "flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg transition-all duration-200 min-w-[60px]",
+                  isActive ? "text-[#1d1d1f]" : "text-[#86868b]"
+                )}
+              >
+                <item.icon className={cn("w-5 h-5", isActive && "scale-110")} strokeWidth={1.5} />
+                <span className="text-[10px] font-medium">{item.label}</span>
+              </Link>
+            )
+          })}
+
+          {/* More button */}
+          <button
+            onClick={() => setSheetOpen(!sheetOpen)}
+            className={cn(
+              "flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg transition-all duration-200 min-w-[60px]",
+              isMoreActive || sheetOpen ? "text-[#1d1d1f]" : "text-[#86868b]"
+            )}
+          >
+            <MoreHorizontal className={cn("w-5 h-5", (isMoreActive || sheetOpen) && "scale-110")} strokeWidth={1.5} />
+            <span className="text-[10px] font-medium">More</span>
+          </button>
+        </div>
+      </nav>
+    </>
   )
 }

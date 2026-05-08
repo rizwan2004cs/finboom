@@ -1,11 +1,13 @@
 "use client"
 
 import { useState } from "react"
-import { useUser } from "@clerk/nextjs"
+import { useUser } from "@/hooks/use-auth"
+import { useProfile } from "@/hooks/use-profile"
 import { insertRow, updateRow } from "@/lib/offline"
 import { X } from "lucide-react"
 import { ASSET_CLASSES, CURRENCIES } from "@/lib/constants"
 import type { Asset } from "@/lib/types"
+import { CustomSelect } from "@/components/custom-select"
 
 interface Props {
   asset?: Asset | null
@@ -15,6 +17,7 @@ interface Props {
 
 export function AddAssetModal({ asset, onClose, onSave }: Props) {
   const { user } = useUser()
+  const { activeProfile } = useProfile()
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
     name: asset?.name || "",
@@ -28,11 +31,12 @@ export function AddAssetModal({ asset, onClose, onSave }: Props) {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (!user) return
+    if (!user || !activeProfile) return
     setSaving(true)
 
     const data = {
       user_id: user.id,
+      profile_id: activeProfile.id,
       name: form.name,
       asset_class: form.asset_class,
       current_value: parseFloat(form.current_value) || 0,
@@ -88,15 +92,12 @@ export function AddAssetModal({ asset, onClose, onSave }: Props) {
           {/* Asset Class */}
           <div>
             <label className="text-sm font-medium text-[#1d1d1f]">Asset Class</label>
-            <select
+            <CustomSelect
               value={form.asset_class}
-              onChange={(e) => setForm(prev => ({ ...prev, asset_class: e.target.value }))}
-              className="mt-1 w-full px-4 py-3 rounded-xl bg-[#f5f5f7] border-0 text-sm text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
-            >
-              {ASSET_CLASSES.map(cls => (
-                <option key={cls.id} value={cls.id}>{cls.label}</option>
-              ))}
-            </select>
+              onChange={(val) => setForm(prev => ({ ...prev, asset_class: val }))}
+              options={ASSET_CLASSES.map(cls => ({ value: cls.id, label: cls.label }))}
+              className="mt-1"
+            />
           </div>
 
           {/* Values */}
@@ -130,15 +131,12 @@ export function AddAssetModal({ asset, onClose, onSave }: Props) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-sm font-medium text-[#1d1d1f]">Currency</label>
-              <select
+              <CustomSelect
                 value={form.currency}
-                onChange={(e) => setForm(prev => ({ ...prev, currency: e.target.value }))}
-                className="mt-1 w-full px-4 py-3 rounded-xl bg-[#f5f5f7] border-0 text-sm text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
-              >
-                {CURRENCIES.map(c => (
-                  <option key={c.code} value={c.code}>{c.symbol} {c.code}</option>
-                ))}
-              </select>
+                onChange={(val) => setForm(prev => ({ ...prev, currency: val }))}
+                options={CURRENCIES.map(c => ({ value: c.code, label: `${c.symbol} ${c.code}` }))}
+                className="mt-1"
+              />
             </div>
             <div>
               <label className="text-sm font-medium text-[#1d1d1f]">Units (optional)</label>

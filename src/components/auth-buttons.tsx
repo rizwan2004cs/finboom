@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { SignInButton, UserButton, useAuth } from "@clerk/nextjs"
+import { useAuth } from "@/hooks/use-auth"
 
 export function NavAuthButtons() {
   const { isSignedIn } = useAuth()
@@ -12,17 +12,14 @@ export function NavAuthButtons() {
         <Link href="/dashboard" className="liquid-glass-btn-primary px-5 py-1.5 text-sm">
           Dashboard
         </Link>
-        <UserButton />
       </>
     )
   }
 
   return (
-    <SignInButton mode="modal">
-      <button className="liquid-glass-btn-primary px-5 py-1.5 text-sm cursor-pointer">
-        Sign in
-      </button>
-    </SignInButton>
+    <Link href="/login" className="liquid-glass-btn-primary px-5 py-1.5 text-sm">
+      Sign in
+    </Link>
   )
 }
 
@@ -38,10 +35,8 @@ export function HeroCTA() {
   }
 
   return (
-    <SignInButton mode="modal">
-      <button className="liquid-glass-btn-primary px-7 py-3 text-[17px] cursor-pointer">
-        Get Started — It&apos;s Free
-      </button>
-    </SignInButton>
+    <Link href="/login" className="liquid-glass-btn-primary px-7 py-3 text-[17px]">
+      Get Started — It&apos;s Free
+    </Link>
   )
 }

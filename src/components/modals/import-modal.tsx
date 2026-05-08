@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useCallback } from "react"
-import { useUser } from "@clerk/nextjs"
+import { useUser } from "@/hooks/use-auth"
+import { useProfile } from "@/hooks/use-profile"
 import { insertRow } from "@/lib/offline"
 import { X, Upload, CheckCircle } from "lucide-react"
 import * as XLSX from "xlsx"
@@ -22,6 +23,7 @@ interface ParsedRow {
 
 export function ImportModal({ onClose, onImport }: Props) {
   const { user } = useUser()
+  const { activeProfile } = useProfile()
   const [step, setStep] = useState<"upload" | "preview" | "done">("upload")
   const [rows, setRows] = useState<ParsedRow[]>([])
   const [importing, setImporting] = useState(false)
@@ -186,6 +188,7 @@ export function ImportModal({ onClose, onImport }: Props) {
     for (const row of rows) {
       await insertRow("assets", {
         user_id: user.id,
+        profile_id: activeProfile!.id,
         name: row.name,
         asset_class: row.asset_class,
         current_value: row.current_value,

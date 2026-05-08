@@ -1,9 +1,11 @@
 "use client"
 
 import { Suspense, useEffect, useState } from "react"
-import { useUser } from "@clerk/nextjs"
+import { useUser } from "@/hooks/use-auth"
+import { useProfile } from "@/hooks/use-profile"
 import { useSearchParams } from "next/navigation"
 import { fetchTable, deleteRow } from "@/lib/offline"
+import { createClient } from "@/utils/supabase/client"
 import { Plus, ArrowUpCircle, ArrowDownCircle, Filter, Trash2, Receipt } from "lucide-react"
 import type { Transaction } from "@/lib/types"
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/constants"
@@ -26,6 +28,7 @@ export default function TransactionsPageWrapper() {
 
 function TransactionsPage() {
   const { user } = useUser()
+  const { activeProfile } = useProfile()
   const searchParams = useSearchParams()
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
@@ -40,9 +43,9 @@ function TransactionsPage() {
   }, [searchParams])
 
   useEffect(() => {
-    if (!user) return
+    if (!user || !activeProfile) return
     loadTransactions()
-  }, [user, monthFilter])
+  }, [user, activeProfile, monthFilter])
 
   async function loadTransactions() {
     const startDate = `${monthFilter}-01`
@@ -51,6 +54,7 @@ function TransactionsPage() {
 
     const data = await fetchTable<Transaction>("transactions", user!.id, {
       filters: [
+        { column: "profile_id", op: "eq", value: activeProfile!.id },
         { column: "date", op: "gte", value: startDate },
         { column: "date", op: "lte", value: endDate },
       ],
@@ -63,6 +67,23 @@ function TransactionsPage() {
 
   async function deleteTransaction(id: string) {
     if (!confirm("Delete this transaction?")) return
+
+    // Also delete any linked party_transaction (expense mapped to receivable)
+    try {
+      const supabase = createClient()
+      const { data: linked } = await supabase
+        .from("party_transactions")
+        .select("id")
+        .eq("linked_transaction_id", id)
+      if (linked && linked.length > 0) {
+        for (const pt of linked) {
+          await deleteRow("party_transactions", pt.id)
+        }
+      }
+    } catch (e) {
+      console.warn("Could not delete linked party transactions:", e)
+    }
+
     await deleteRow("transactions", id)
     setTransactions(prev => prev.filter(t => t.id !== id))
   }
@@ -112,7 +133,7 @@ function TransactionsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-[#1d1d1f]">Transactions</h1>
+          <h1 className="text-xl font-bold text-[#1d1d1f] dark:text-white">Transactions</h1>
           <p className="text-sm text-[#86868b]">Income & Expenses</p>
         </div>
         <button
@@ -128,21 +149,21 @@ function TransactionsPage() {
       <div className="grid grid-cols-3 gap-3">
         <div className="liquid-glass rounded-2xl p-3">
           <div className="flex items-center gap-1.5 mb-1">
-            <ArrowUpCircle className="w-3.5 h-3.5 text-[#1d1d1f]" />
+            <ArrowUpCircle className="w-3.5 h-3.5 text-[#1d1d1f] dark:text-white" />
             <p className="text-[10px] uppercase tracking-wider text-[#86868b]">Income</p>
           </div>
-          <p className="text-lg font-bold text-[#1d1d1f]">{formatCurrency(totalIncome)}</p>
+          <p className="text-lg font-bold text-[#1d1d1f] dark:text-white">{formatCurrency(totalIncome)}</p>
         </div>
         <div className="liquid-glass rounded-2xl p-3">
           <div className="flex items-center gap-1.5 mb-1">
-            <ArrowDownCircle className="w-3.5 h-3.5 text-[#6e6e73]" />
+            <ArrowDownCircle className="w-3.5 h-3.5 text-[#6e6e73] dark:text-[#aeaeb2]" />
             <p className="text-[10px] uppercase tracking-wider text-[#86868b]">Expense</p>
           </div>
-          <p className="text-lg font-bold text-[#1d1d1f]">{formatCurrency(totalExpense)}</p>
+          <p className="text-lg font-bold text-[#1d1d1f] dark:text-white">{formatCurrency(totalExpense)}</p>
         </div>
         <div className="liquid-glass rounded-2xl p-3">
           <p className="text-[10px] uppercase tracking-wider text-[#86868b] mb-1">Savings Rate</p>
-          <p className="text-lg font-bold text-[#1d1d1f]">
+          <p className="text-lg font-bold text-[#1d1d1f] dark:text-white">
             {savingsRate.toFixed(0)}%
           </p>
         </div>
@@ -154,17 +175,17 @@ function TransactionsPage() {
           type="month"
           value={monthFilter}
           onChange={(e) => setMonthFilter(e.target.value)}
-          className="px-3 py-2 rounded-xl bg-[#f5f5f7] text-sm text-[#1d1d1f] border-0 focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
+          className="px-3 py-2 rounded-xl bg-[#f5f5f7] dark:bg-[#2c2c2e] text-sm text-[#1d1d1f] dark:text-white border-0 focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10"
         />
-        <div className="flex bg-[#f5f5f7] rounded-xl p-0.5">
+        <div className="flex bg-[#f5f5f7] dark:bg-[#2c2c2e] rounded-xl p-0.5">
           {(["all", "income", "expense"] as const).map(type => (
             <button
               key={type}
               onClick={() => setTypeFilter(type)}
               className={`px-3 py-2 rounded-lg text-xs font-medium transition-all ${
                 typeFilter === type
-                  ? "bg-white text-[#1d1d1f] shadow-sm"
-                  : "text-[#86868b]"
+                  ? "bg-[#ffffff] dark:bg-[#3a3a3c] text-[#1d1d1f] dark:text-white shadow-sm"
+                  : "text-[#86868b] dark:text-[#98989d]"
               }`}
             >
               {type.charAt(0).toUpperCase() + type.slice(1)}
@@ -179,7 +200,7 @@ function TransactionsPage() {
           <div className="w-12 h-12 rounded-xl bg-white/50 backdrop-blur-sm flex items-center justify-center mx-auto mb-3">
             <Receipt className="w-6 h-6 text-[#86868b]" strokeWidth={1.5} />
           </div>
-          <p className="font-medium text-[#1d1d1f]">No transactions yet</p>
+          <p className="font-medium text-[#1d1d1f] dark:text-white">No transactions yet</p>
           <p className="text-sm text-[#86868b] mt-1">Log your income and expenses</p>
           <button
             onClick={() => setShowAddModal(true)}
@@ -203,16 +224,16 @@ function TransactionsPage() {
                     <div key={t.id} className="liquid-glass rounded-2xl p-4">
                       <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-xl bg-white/50 backdrop-blur-sm flex items-center justify-center">
-                          <CategoryIcon name={cat?.icon || "MoreHorizontal"} className="w-4.5 h-4.5 text-[#1d1d1f]" />
+                          <CategoryIcon name={cat?.icon || "MoreHorizontal"} className="w-4.5 h-4.5 text-[#1d1d1f] dark:text-white" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="font-medium text-[#1d1d1f] truncate">
+                          <p className="font-medium text-[#1d1d1f] dark:text-white text-sm leading-snug break-words">
                             {t.description || cat?.label || t.category}
                           </p>
                           <p className="text-xs text-[#86868b]">{cat?.label}</p>
                         </div>
                         <div className="text-right">
-                          <p className={`font-semibold ${t.type === "income" ? "text-[#1d1d1f]" : "text-[#6e6e73]"}`}>
+                          <p className={`font-semibold ${t.type === "income" ? "text-[#1d1d1f] dark:text-white" : "text-[#6e6e73] dark:text-[#aeaeb2]"}`}>
                             {t.type === "income" ? "+" : "-"}₹{Number(t.amount).toLocaleString("en-IN")}
                           </p>
                         </div>

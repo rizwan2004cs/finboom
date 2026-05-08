@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useUser } from "@clerk/nextjs"
+import { useUser } from "@/hooks/use-auth"
+import { useProfile } from "@/hooks/use-profile"
 import { fetchTable } from "@/lib/offline"
 import { TrendingUp, TrendingDown, Wallet, CreditCard, Target, ArrowUpRight, Plus, Receipt, Camera, Download, HandCoins, Clock } from "lucide-react"
 import Link from "next/link"
@@ -22,6 +23,7 @@ function formatCurrency(amount: number, currency = "INR") {
 
 export default function DashboardPage() {
   const { user } = useUser()
+  const { activeProfile } = useProfile()
   const [assets, setAssets] = useState<Asset[]>([])
   const [liabilities, setLiabilities] = useState<Liability[]>([])
   const [goals, setGoals] = useState<Goal[]>([])
@@ -30,14 +32,15 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    if (!user) return
+    if (!user || !activeProfile) return
     
     async function loadData() {
+      const pf = { column: "profile_id", op: "eq" as const, value: activeProfile!.id }
       const [assetsData, liabilitiesData, goalsData, snapshotsData, partyTxData] = await Promise.all([
-        fetchTable<Asset>("assets", user!.id),
-        fetchTable<Liability>("liabilities", user!.id),
-        fetchTable<Goal>("goals", user!.id),
-        fetchTable<Snapshot>("snapshots", user!.id, { order: { column: "snapshot_date", ascending: true }, limit: 12 }),
+        fetchTable<Asset>("assets", user!.id, { filters: [pf] }),
+        fetchTable<Liability>("liabilities", user!.id, { filters: [pf] }),
+        fetchTable<Goal>("goals", user!.id, { filters: [pf] }),
+        fetchTable<Snapshot>("snapshots", user!.id, { order: { column: "snapshot_date", ascending: true }, limit: 12, filters: [pf] }),
         fetchTable<PartyTransaction>("party_transactions", user!.id),
       ])
       
@@ -50,7 +53,7 @@ export default function DashboardPage() {
     }
     
     loadData()
-  }, [user])
+  }, [user, activeProfile])
 
   const totalAssets = assets.reduce((sum, a) => sum + Number(a.current_value), 0)
   const totalLiabilities = liabilities.reduce((sum, l) => sum + Number(l.outstanding_amount), 0)

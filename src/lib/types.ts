@@ -123,3 +123,23 @@ export interface PartyTransaction {
   created_at: string
   party?: Party
 }
+
+export interface AppNotification {
+  id: string
+  user_id: string
+  type: 'overdue_payment' | 'due_approaching' | 'goal_milestone' | 'large_transaction'
+  title: string
+  body: string
+  data: Record<string, unknown>
+  read: boolean
+  created_at: string
+}
+
+export interface PushSubscriptionRecord {
+  id: string
+  user_id: string
+  endpoint: string
+  keys_p256dh: string
+  keys_auth: string
+  created_at: string
+}

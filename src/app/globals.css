@@ -327,28 +327,6 @@ body::after {
 }
 
 /* ============================================================
-   CLERK OVERRIDES – hide branding & dev badge, fix modal scroll
-   ============================================================ */
-.cl-internal-b3fm6y,
-.cl-internal-1hp1gns,
-[class*="cl-internal"][class*="Secured"],
-.cl-footer [data-localization-key="dividerText"],
-.cl-footerPages {
-  display: none !important;
-}
-
-/* scrollable modal on short viewports */
-.cl-modalContent {
-  max-height: 90vh !important;
-  overflow-y: auto !important;
-}
-
-.cl-card {
-  max-height: 85vh !important;
-  overflow-y: auto !important;
-}
-
-/* ============================================================
    GLASS INPUT
    ============================================================ */
 .glass-input {

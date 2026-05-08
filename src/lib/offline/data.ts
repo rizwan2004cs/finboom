@@ -23,10 +23,14 @@ function isOnline(): boolean {
   return typeof navigator !== "undefined" ? navigator.onLine : true
 }
 
+// Deduplication: prevent multiple concurrent fetches for the same table+user
+const inflight = new Map<string, Promise<unknown[]>>()
+
 /**
  * Fetch all rows for a user from a table.
  * Online: fetch from Supabase, cache to IDB, return.
  * Offline: return cached IDB data.
+ * Deduplicates concurrent requests for the same table+user.
  */
 export async function fetchTable<T>(
   table: string,
@@ -39,6 +43,33 @@ export async function fetchTable<T>(
 ): Promise<T[]> {
   const store = TABLE_TO_STORE[table]
   if (!store) throw new Error(`Unknown table: ${table}`)
+
+  // Deduplicate concurrent requests (only for unfiltered full-table fetches)
+  const dedupeKey = !options?.filters ? `${table}:${userId}` : null
+  if (dedupeKey && inflight.has(dedupeKey)) {
+    return inflight.get(dedupeKey) as Promise<T[]>
+  }
+
+  const promise = _fetchTableImpl<T>(table, store, userId, options)
+
+  if (dedupeKey) {
+    inflight.set(dedupeKey, promise as Promise<unknown[]>)
+    promise.finally(() => inflight.delete(dedupeKey))
+  }
+
+  return promise
+}
+
+async function _fetchTableImpl<T>(
+  table: string,
+  store: StoreName,
+  userId: string,
+  options?: {
+    order?: { column: string; ascending: boolean }
+    limit?: number
+    filters?: Array<{ column: string; op: "eq" | "gte" | "lte"; value: string | number }>
+  }
+): Promise<T[]> {
 
   if (isOnline()) {
     try {
@@ -56,9 +87,9 @@ export async function fetchTable<T>(
       const { data, error } = await query
       if (error) throw error
 
-      // Cache the fetched data (only full-table fetches without extra filters)
+      // Cache the fetched data in background (don't block return)
       if (!options?.filters) {
-        await putAll(store, data || [])
+        putAll(store, data || []).catch(() => {})
       }
       return (data || []) as T[]
     } catch (err) {

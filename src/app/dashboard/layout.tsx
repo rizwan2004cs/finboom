@@ -4,10 +4,13 @@ import { Sidebar, MobileBottomNav } from "@/components/navigation"
 import { TopBar } from "@/components/top-bar"
 import { SidebarProvider, useSidebar } from "@/components/sidebar-context"
 import { OfflineProvider } from "@/components/offline-provider"
+import { ProfileProvider } from "@/hooks/use-profile"
+import { usePushSubscription } from "@/hooks/use-push"
 import { cn } from "@/lib/utils"
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
   const { collapsed } = useSidebar()
+  usePushSubscription()
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#e8eaf0] via-[#f0eef5] to-[#eaf4f0] dark:from-[#0a0a0a] dark:via-[#111113] dark:to-[#0d0d0f] mesh-bg">
@@ -34,7 +37,9 @@ export default function DashboardLayout({
   return (
     <SidebarProvider>
       <OfflineProvider>
-        <DashboardShell>{children}</DashboardShell>
+        <ProfileProvider>
+          <DashboardShell>{children}</DashboardShell>
+        </ProfileProvider>
       </OfflineProvider>
     </SidebarProvider>
   )

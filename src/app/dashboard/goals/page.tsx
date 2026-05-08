@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useUser } from "@clerk/nextjs"
+import { useUser } from "@/hooks/use-auth"
+import { useProfile } from "@/hooks/use-profile"
 import { fetchTable, deleteRow, insertRow, updateRow } from "@/lib/offline"
 import { Plus, Target, Trash2, Edit2, TrendingUp, Calendar } from "lucide-react"
 import type { Goal, Asset } from "@/lib/types"
@@ -19,6 +20,7 @@ function calculateInflationAdjusted(target: number, years: number, rate: number)
 
 export default function GoalsPage() {
   const { user } = useUser()
+  const { activeProfile } = useProfile()
   const [goals, setGoals] = useState<Goal[]>([])
   const [assets, setAssets] = useState<Asset[]>([])
   const [loading, setLoading] = useState(true)
@@ -26,14 +28,15 @@ export default function GoalsPage() {
   const [editGoal, setEditGoal] = useState<Goal | null>(null)
 
   useEffect(() => {
-    if (!user) return
+    if (!user || !activeProfile) return
     loadData()
-  }, [user])
+  }, [user, activeProfile])
 
   async function loadData() {
+    const pf = { column: "profile_id", op: "eq" as const, value: activeProfile!.id }
     const [goalsData, assetsData] = await Promise.all([
-      fetchTable<Goal>("goals", user!.id, { order: { column: "target_date", ascending: true } }),
-      fetchTable<Asset>("assets", user!.id),
+      fetchTable<Goal>("goals", user!.id, { order: { column: "target_date", ascending: true }, filters: [pf] }),
+      fetchTable<Asset>("assets", user!.id, { filters: [pf] }),
     ])
     setGoals(goalsData)
     setAssets(assetsData)
@@ -199,6 +202,7 @@ function GoalFormModal({ goal, assets, onClose, onSave }: {
   onSave: () => void
 }) {
   const { user } = useUser()
+  const { activeProfile } = useProfile()
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
     name: goal?.name || "",
@@ -217,8 +221,8 @@ function GoalFormModal({ goal, assets, onClose, onSave }: {
 
     const data = {
       user_id: user.id,
+      profile_id: activeProfile!.id,
       name: form.name,
-      target_amount: parseFloat(form.target_amount) || 0,
       current_amount: parseFloat(form.current_amount) || 0,
       target_date: form.target_date,
       inflation_rate: parseFloat(form.inflation_rate) || 6,
@@ -300,6 +304,7 @@ function GoalFormModal({ goal, assets, onClose, onSave }: {
                 required
                 value={form.target_date}
                 onChange={(e) => setForm(prev => ({ ...prev, target_date: e.target.value }))}
+                onFocus={(e) => setTimeout(() => e.target.scrollIntoView({ behavior: "smooth", block: "center" }), 100)}
                 className="mt-1 w-full px-4 py-3 rounded-xl bg-[#f5f5f7] border-0 text-sm text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
               />
             </div>

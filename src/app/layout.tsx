@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, Source_Serif_4, JetBrains_Mono } from "next/font/google";
-import { ClerkThemeProvider } from "@/components/clerk-theme-provider";
+import Script from "next/script";
+import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
 
 const inter = Inter({
@@ -104,7 +105,9 @@ export default function RootLayout({
     >
       <head>
         <link rel="apple-touch-icon" href="/icons/icon-192.svg" />
-        <script dangerouslySetInnerHTML={{ __html: `
+      </head>
+      <body className="min-h-full flex flex-col">
+        <Script id="theme-init" strategy="beforeInteractive">{`
           (function() {
             var t = localStorage.getItem('theme');
             if (t === 'dark') document.documentElement.classList.add('dark');
@@ -112,12 +115,10 @@ export default function RootLayout({
               if (window.matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.classList.add('dark');
             }
           })();
-        `}} />
-      </head>
-      <body className="min-h-full flex flex-col">
-        <ClerkThemeProvider>
+        `}</Script>
+        <ClerkProvider>
           {children}
-        </ClerkThemeProvider>
+        </ClerkProvider>
       </body>
     </html>
   );

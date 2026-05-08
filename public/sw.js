@@ -10,9 +10,12 @@
 const SW_VERSION = "v1"
 const CACHE_STATIC = `finboom-static-${SW_VERSION}`
 const CACHE_PAGES = `finboom-pages-${SW_VERSION}`
-const CACHE_DATA = `finboom-data-${SW_VERSION}`
 
-const sw = self as unknown as ServiceWorkerGlobalScope
+const KNOWN_CACHES = [CACHE_STATIC, CACHE_PAGES]
+const MAX_STATIC_ENTRIES = 150
+
+/** @type {ServiceWorkerGlobalScope} */
+const sw = /** @type {any} */ (self)
 
 // Static assets to precache
 const PRECACHE_URLS = [
@@ -22,11 +25,10 @@ const PRECACHE_URLS = [
   "/icons/icon-512.svg",
 ]
 
-// Install: precache core assets
+// Install: precache core assets, DON'T skipWaiting yet (let the app decide)
 sw.addEventListener("install", (event) => {
   event.waitUntil(
     caches.open(CACHE_STATIC).then(async (cache) => {
-      // Precache what we can, don't fail install if some assets 404
       for (const url of PRECACHE_URLS) {
         try {
           await cache.add(url)
@@ -36,21 +38,22 @@ sw.addEventListener("install", (event) => {
       }
     })
   )
-  sw.skipWaiting()
 })
 
-// Activate: clean old caches
+// Activate: clean ALL old caches from previous versions, then claim clients
 sw.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((keys) =>
       Promise.all(
         keys
-          .filter((key) => key !== CACHE_STATIC && key !== CACHE_PAGES && key !== CACHE_DATA)
-          .map((key) => caches.delete(key))
+          .filter((key) => !KNOWN_CACHES.includes(key))
+          .map((key) => {
+            console.log(`[sw] Deleting old cache: ${key}`)
+            return caches.delete(key)
+          })
       )
-    )
+    ).then(() => sw.clients.claim())
   )
-  sw.clients.claim()
 })
 
 // Fetch strategies
@@ -122,10 +125,12 @@ sw.addEventListener("fetch", (event) => {
           .then((response) => {
             if (response.ok) {
               cache.put(request, response.clone())
+              // Trim cache to prevent unbounded growth
+              trimCache(cache, MAX_STATIC_ENTRIES)
             }
             return response
           })
-          .catch(() => cached!)
+          .catch(() => cached)
 
         return cached || fetchPromise
       })
@@ -134,9 +139,63 @@ sw.addEventListener("fetch", (event) => {
   }
 })
 
-// Listen for sync message from the app
+// Keep cache size bounded
+async function trimCache(cache, max) {
+  const keys = await cache.keys()
+  if (keys.length > max) {
+    // Delete oldest entries (first in list)
+    const toDelete = keys.slice(0, keys.length - max)
+    await Promise.all(toDelete.map((k) => cache.delete(k)))
+  }
+}
+
+// Listen for messages from the app
 sw.addEventListener("message", (event) => {
   if (event.data?.type === "SKIP_WAITING") {
     sw.skipWaiting()
   }
+})
+
+// ============================================================
+// PUSH NOTIFICATIONS
+// ============================================================
+sw.addEventListener("push", (event) => {
+  if (!event.data) return
+
+  let payload
+  try {
+    payload = event.data.json()
+  } catch {
+    payload = { title: "FinBoom", body: event.data.text() }
+  }
+
+  const options = {
+    body: payload.body || "",
+    icon: payload.icon || "/icons/icon-192.svg",
+    badge: payload.badge || "/icons/icon-192.svg",
+    data: payload.data || { url: "/dashboard" },
+    vibrate: [100, 50, 100],
+    tag: payload.tag || "finboom-notification",
+    renotify: true,
+  }
+
+  event.waitUntil(sw.registration.showNotification(payload.title || "FinBoom", options))
+})
+
+sw.addEventListener("notificationclick", (event) => {
+  event.notification.close()
+  const url = event.notification.data?.url || "/dashboard"
+
+  event.waitUntil(
+    sw.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clients) => {
+      // Focus existing window if open
+      for (const client of clients) {
+        if (client.url.includes(url) && "focus" in client) {
+          return client.focus()
+        }
+      }
+      // Otherwise open a new window
+      return sw.clients.openWindow(url)
+    })
+  )
 })

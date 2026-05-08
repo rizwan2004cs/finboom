@@ -1,12 +1,14 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useUser } from "@clerk/nextjs"
+import { useUser } from "@/hooks/use-auth"
+import { useProfile } from "@/hooks/use-profile"
 import { fetchTable, insertRow } from "@/lib/offline"
 import { X, Plus } from "lucide-react"
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/constants"
 import { CategoryIcon } from "@/components/category-icon"
 import type { Party } from "@/lib/types"
+import { CustomSelect } from "@/components/custom-select"
 
 interface Props {
   onClose: () => void
@@ -15,10 +17,13 @@ interface Props {
 
 export function AddTransactionModal({ onClose, onSave }: Props) {
   const { user } = useUser()
+  const { activeProfile } = useProfile()
   const [saving, setSaving] = useState(false)
   const [parties, setParties] = useState<Party[]>([])
   const [showNewParty, setShowNewParty] = useState(false)
   const [newPartyName, setNewPartyName] = useState("")
+  const [newPartyPhone, setNewPartyPhone] = useState("")
+  const [newPartyNotes, setNewPartyNotes] = useState("")
   const [form, setForm] = useState({
     type: "expense" as "income" | "expense",
     category: "",
@@ -26,6 +31,7 @@ export function AddTransactionModal({ onClose, onSave }: Props) {
     description: "",
     date: new Date().toISOString().slice(0, 10),
     spent_for_party_id: "",
+    due_date: "",
   })
 
   useEffect(() => {
@@ -38,12 +44,19 @@ export function AddTransactionModal({ onClose, onSave }: Props) {
 
   async function handleCreateParty() {
     if (!user || !newPartyName.trim()) return
-    const { data } = await insertRow<Party>("parties", { user_id: user.id, name: newPartyName.trim() })
+    const { data } = await insertRow<Party>("parties", {
+      user_id: user.id,
+      name: newPartyName.trim(),
+      phone: newPartyPhone.trim() || null,
+      notes: newPartyNotes.trim() || null,
+    })
     if (data) {
       setParties(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)))
       setForm(prev => ({ ...prev, spent_for_party_id: data.id }))
       setShowNewParty(false)
       setNewPartyName("")
+      setNewPartyPhone("")
+      setNewPartyNotes("")
     }
   }
 
@@ -54,6 +67,7 @@ export function AddTransactionModal({ onClose, onSave }: Props) {
 
     const { data: txData } = await insertRow("transactions", {
       user_id: user.id,
+      profile_id: activeProfile!.id,
       type: form.type,
       category: form.category || categories[0].id,
       amount: parseFloat(form.amount) || 0,
@@ -71,6 +85,7 @@ export function AddTransactionModal({ onClose, onSave }: Props) {
         amount: parseFloat(form.amount) || 0,
         currency: "INR",
         date: form.date,
+        due_date: form.due_date || null,
         notes: form.description || null,
         linked_transaction_id: txData.id,
       })
@@ -83,26 +98,26 @@ export function AddTransactionModal({ onClose, onSave }: Props) {
   return (
     <div className="fixed inset-0 z-60 flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-2xl border border-white/40 shadow-xl max-h-[90vh] overflow-y-auto">
+      <div className="relative w-full sm:max-w-md bg-[#ffffff] dark:bg-[#1c1c1e] rounded-t-3xl sm:rounded-2xl border border-white/40 dark:border-white/[0.08] shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="sm:hidden flex justify-center pt-3">
-          <div className="w-10 h-1 rounded-full bg-black/[0.08]" />
+          <div className="w-10 h-1 rounded-full bg-black/[0.08] dark:bg-white/[0.12]" />
         </div>
 
-        <div className="flex items-center justify-between p-5 border-b border-black/[0.04]">
-          <h2 className="text-lg font-bold text-[#1d1d1f]">Add Transaction</h2>
-          <button onClick={onClose} className="p-2 rounded-full hover:bg-[#f5f5f7] transition-all">
+        <div className="flex items-center justify-between p-5 border-b border-black/[0.04] dark:border-white/[0.06]">
+          <h2 className="text-lg font-bold text-[#1d1d1f] dark:text-white">Add Transaction</h2>
+          <button onClick={onClose} className="p-2 rounded-full hover:bg-[#f5f5f7] dark:hover:bg-white/[0.08] transition-all">
             <X className="w-5 h-5 text-[#86868b]" />
           </button>
         </div>
 
         <form onSubmit={handleSubmit} className="p-5 pb-8 sm:pb-5 space-y-4">
           {/* Type toggle */}
-          <div className="flex bg-[#f5f5f7] rounded-xl p-1">
+          <div className="flex bg-[#f5f5f7] dark:bg-white/[0.06] rounded-xl p-1">
             <button
               type="button"
               onClick={() => setForm(prev => ({ ...prev, type: "expense", category: "" }))}
               className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                form.type === "expense" ? "bg-white text-[#1d1d1f] shadow-sm" : "text-[#86868b]"
+                form.type === "expense" ? "bg-white dark:bg-white/[0.12] text-[#1d1d1f] dark:text-white shadow-sm" : "text-[#86868b]"
               }`}
             >
               Expense
@@ -111,7 +126,7 @@ export function AddTransactionModal({ onClose, onSave }: Props) {
               type="button"
               onClick={() => setForm(prev => ({ ...prev, type: "income", category: "" }))}
               className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all ${
-                form.type === "income" ? "bg-white text-[#1d1d1f] shadow-sm" : "text-[#86868b]"
+                form.type === "income" ? "bg-white dark:bg-white/[0.12] text-[#1d1d1f] dark:text-white shadow-sm" : "text-[#86868b]"
               }`}
             >
               Income
@@ -120,7 +135,7 @@ export function AddTransactionModal({ onClose, onSave }: Props) {
 
           {/* Amount */}
           <div>
-            <label className="text-sm font-medium text-[#1d1d1f]">Amount (₹)</label>
+            <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">Amount (₹)</label>
             <input
               type="number"
               required
@@ -128,13 +143,13 @@ export function AddTransactionModal({ onClose, onSave }: Props) {
               value={form.amount}
               onChange={(e) => setForm(prev => ({ ...prev, amount: e.target.value }))}
               placeholder="0"
-              className="mt-1 w-full px-4 py-3 rounded-xl bg-[#f5f5f7] border-0 text-2xl font-bold text-[#1d1d1f] placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 text-center"
+              className="mt-1 w-full px-4 py-3 rounded-xl bg-[#f5f5f7] dark:bg-white/[0.06] border-0 text-2xl font-bold text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10 text-center"
             />
           </div>
 
           {/* Category */}
           <div>
-            <label className="text-sm font-medium text-[#1d1d1f]">Category</label>
+            <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">Category</label>
             <div className="grid grid-cols-4 gap-2 mt-2">
               {categories.map(cat => (
                 <button
@@ -143,11 +158,11 @@ export function AddTransactionModal({ onClose, onSave }: Props) {
                   onClick={() => setForm(prev => ({ ...prev, category: cat.id }))}
                   className={`flex flex-col items-center gap-1 p-2.5 rounded-xl text-center transition-all ${
                     form.category === cat.id
-                      ? "bg-[#1d1d1f]/[0.08] border-2 border-[#1d1d1f]"
-                      : "bg-[#f5f5f7] border-2 border-transparent"
+                      ? "bg-[#1d1d1f]/[0.08] dark:bg-white/[0.12] border-2 border-[#1d1d1f] dark:border-white/60"
+                      : "bg-[#f5f5f7] dark:bg-white/[0.06] border-2 border-transparent"
                   }`}
                 >
-                  <CategoryIcon name={cat.icon} className="w-4 h-4 text-[#1d1d1f]" />
+                  <CategoryIcon name={cat.icon} className="w-4 h-4 text-[#1d1d1f] dark:text-white" />
                   <span className="text-[10px] text-[#86868b] leading-tight">{cat.label}</span>
                 </button>
               ))}
@@ -156,68 +171,104 @@ export function AddTransactionModal({ onClose, onSave }: Props) {
 
           {/* Description */}
           <div>
-            <label className="text-sm font-medium text-[#1d1d1f]">Description (optional)</label>
+            <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">Description (optional)</label>
             <input
               type="text"
               value={form.description}
               onChange={(e) => setForm(prev => ({ ...prev, description: e.target.value }))}
               placeholder="e.g. Swiggy order"
-              className="mt-1 w-full px-4 py-3 rounded-xl bg-[#f5f5f7] border-0 text-sm text-[#1d1d1f] placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
+              className="mt-1 w-full px-4 py-3 rounded-xl bg-[#f5f5f7] dark:bg-white/[0.06] border-0 text-sm text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10"
             />
           </div>
 
           {/* Date */}
           <div>
-            <label className="text-sm font-medium text-[#1d1d1f]">Date</label>
+            <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">Date</label>
             <input
               type="date"
               value={form.date}
               onChange={(e) => setForm(prev => ({ ...prev, date: e.target.value }))}
-              className="mt-1 w-full px-4 py-3 rounded-xl bg-[#f5f5f7] border-0 text-sm text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
+              onFocus={(e) => setTimeout(() => e.target.scrollIntoView({ behavior: "smooth", block: "center" }), 100)}
+              className="mt-1 w-full px-4 py-3 rounded-xl bg-[#f5f5f7] dark:bg-white/[0.06] border-0 text-sm text-[#1d1d1f] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10 dark:[color-scheme:dark]"
             />
           </div>
 
           {/* Spent For (expense only) */}
           {form.type === "expense" && (
             <div>
-              <label className="text-sm font-medium text-[#1d1d1f]">Spent for (optional)</label>
+              <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">Spent for (optional)</label>
               <p className="text-[11px] text-[#86868b] mt-0.5">If spent for someone else, it will be tracked as receivable</p>
               <div className="flex gap-2 mt-1">
-                <select
+                <CustomSelect
                   value={form.spent_for_party_id}
-                  onChange={(e) => setForm(prev => ({ ...prev, spent_for_party_id: e.target.value }))}
-                  className="flex-1 px-4 py-3 rounded-xl bg-[#f5f5f7] border-0 text-sm text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
-                >
-                  <option value="">For myself</option>
-                  {parties.map(p => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
+                  onChange={(val) => setForm(prev => ({ ...prev, spent_for_party_id: val }))}
+                  options={[{ value: "", label: "For myself" }, ...parties.map(p => ({ value: p.id, label: p.name }))]}
+                  placeholder="For myself"
+                  className="flex-1"
+                />
                 <button
                   type="button"
                   onClick={() => setShowNewParty(!showNewParty)}
-                  className="p-3 rounded-xl bg-[#f5f5f7] hover:bg-[#e8e8ed] transition-all"
+                  className="p-3 rounded-xl bg-[#f5f5f7] dark:bg-white/[0.06] hover:bg-[#e8e8ed] dark:hover:bg-white/[0.1] transition-all"
                 >
-                  <Plus className="w-4 h-4 text-[#1d1d1f]" />
+                  <Plus className="w-4 h-4 text-[#1d1d1f] dark:text-white" />
                 </button>
               </div>
               {showNewParty && (
-                <div className="flex gap-2 mt-2">
+                <div className="mt-2 space-y-2 p-3 rounded-xl bg-[#f5f5f7]/50 dark:bg-white/[0.03] border border-black/[0.04] dark:border-white/[0.06]">
                   <input
                     type="text"
                     value={newPartyName}
                     onChange={(e) => setNewPartyName(e.target.value)}
-                    placeholder="New party name"
-                    className="flex-1 px-4 py-2.5 rounded-xl bg-[#f5f5f7] border-0 text-sm text-[#1d1d1f] placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
+                    placeholder="Name *"
+                    autoFocus
+                    className="w-full px-4 py-2.5 rounded-xl bg-[#f5f5f7] dark:bg-white/[0.06] border-0 text-sm text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10"
                   />
-                  <button
-                    type="button"
-                    onClick={handleCreateParty}
-                    disabled={!newPartyName.trim()}
-                    className="px-4 py-2.5 rounded-xl bg-[#1d1d1f] text-white text-sm font-medium hover:opacity-90 transition-all disabled:opacity-50"
-                  >
-                    Add
-                  </button>
+                  <input
+                    type="tel"
+                    value={newPartyPhone}
+                    onChange={(e) => setNewPartyPhone(e.target.value)}
+                    placeholder="Phone (optional)"
+                    className="w-full px-4 py-2.5 rounded-xl bg-[#f5f5f7] dark:bg-white/[0.06] border-0 text-sm text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10"
+                  />
+                  <input
+                    type="text"
+                    value={newPartyNotes}
+                    onChange={(e) => setNewPartyNotes(e.target.value)}
+                    placeholder="Notes (optional)"
+                    className="w-full px-4 py-2.5 rounded-xl bg-[#f5f5f7] dark:bg-white/[0.06] border-0 text-sm text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10"
+                  />
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={handleCreateParty}
+                      disabled={!newPartyName.trim()}
+                      className="flex-1 py-2.5 rounded-xl bg-[#1d1d1f] text-white text-sm font-medium hover:opacity-90 transition-all disabled:opacity-50"
+                    >
+                      Add Party
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { setShowNewParty(false); setNewPartyName(""); setNewPartyPhone(""); setNewPartyNotes("") }}
+                      className="py-2.5 px-4 rounded-xl bg-[#f5f5f7] dark:bg-white/[0.06] text-sm font-medium text-[#86868b] hover:bg-[#e8e8ed] dark:hover:bg-white/[0.1] transition-all"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+              {form.spent_for_party_id && (
+                <div className="mt-3">
+                  <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">
+                    Due Date <span className="text-[#86868b] font-normal">(optional)</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={form.due_date}
+                    onChange={(e) => setForm(prev => ({ ...prev, due_date: e.target.value }))}
+                    onFocus={(e) => setTimeout(() => e.target.scrollIntoView({ behavior: "smooth", block: "center" }), 100)}
+                    className="mt-1 w-full px-4 py-3 rounded-xl bg-[#f5f5f7] dark:bg-white/[0.06] border-0 text-sm text-[#1d1d1f] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10 dark:[color-scheme:dark]"
+                  />
                 </div>
               )}
             </div>
@@ -227,7 +278,7 @@ export function AddTransactionModal({ onClose, onSave }: Props) {
           <button
             type="submit"
             disabled={saving || !form.amount}
-            className="w-full py-3 rounded-xl bg-[#1d1d1f] text-white font-medium hover:opacity-90 transition-all disabled:opacity-50"
+            className="w-full py-3 rounded-xl bg-[#1d1d1f] dark:bg-white/[0.12] text-white font-medium hover:opacity-90 transition-all disabled:opacity-50"
           >
             {saving ? "Saving..." : "Add Transaction"}
           </button>

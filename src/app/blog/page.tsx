@@ -1,6 +1,6 @@
 import { sanityClient, urlFor } from "@/lib/sanity"
-import { auth } from "@clerk/nextjs/server"
-import { clerkClient } from "@clerk/nextjs/server"
+import { createClient } from "@/utils/supabase/server"
+import { cookies } from "next/headers"
 import Link from "next/link"
 import Image from "next/image"
 import type { Metadata } from "next"
@@ -48,11 +48,12 @@ export default async function BlogPage() {
   const posts = await getPosts()
 
   let isAdmin = false
-  const { userId } = await auth()
-  if (userId) {
-    const client = await clerkClient()
-    const user = await client.users.getUser(userId)
-    isAdmin = (user.publicMetadata as { role?: string })?.role === "admin"
+  const cookieStore = await cookies()
+  const supabase = createClient(cookieStore)
+  const { data: { user } } = await supabase.auth.getUser()
+  if (user) {
+    const adminEmails = (process.env.ADMIN_EMAILS || "").split(",").map(e => e.trim())
+    isAdmin = adminEmails.includes(user.email || "")
   }
 
   return (

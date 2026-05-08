@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useUser } from "@clerk/nextjs"
+import { useUser } from "@/hooks/use-auth"
 import { createClient } from "@/utils/supabase/client"
 import { fetchTable } from "@/lib/offline"
 import { Shield, Heart, AlertTriangle, CheckCircle, Info } from "lucide-react"

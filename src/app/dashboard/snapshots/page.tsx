@@ -1,7 +1,8 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { useUser } from "@clerk/nextjs"
+import { useUser } from "@/hooks/use-auth"
+import { useProfile } from "@/hooks/use-profile"
 import { fetchTable, insertRow, deleteRow } from "@/lib/offline"
 import { Camera, TrendingUp, TrendingDown, Trash2 } from "lucide-react"
 import type { Snapshot, Asset, Liability } from "@/lib/types"
@@ -17,29 +18,31 @@ function formatCurrency(amount: number) {
 
 export default function SnapshotsPage() {
   const { user } = useUser()
+  const { activeProfile } = useProfile()
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
   const [loading, setLoading] = useState(true)
   const [taking, setTaking] = useState(false)
 
   useEffect(() => {
-    if (!user) return
+    if (!user || !activeProfile) return
     loadSnapshots()
-  }, [user])
+  }, [user, activeProfile])
 
   async function loadSnapshots() {
-    const data = await fetchTable<Snapshot>("snapshots", user!.id, { order: { column: "snapshot_date", ascending: false } })
+    const data = await fetchTable<Snapshot>("snapshots", user!.id, { order: { column: "snapshot_date", ascending: false }, filters: [{ column: "profile_id", op: "eq", value: activeProfile!.id }] })
     setSnapshots(data)
     setLoading(false)
   }
 
   async function takeSnapshot() {
-    if (!user) return
+    if (!user || !activeProfile) return
     setTaking(true)
 
+    const pf = { column: "profile_id", op: "eq" as const, value: activeProfile.id }
     // Fetch current assets and liabilities
     const [assets, liabilities] = await Promise.all([
-      fetchTable<Asset>("assets", user.id),
-      fetchTable<Liability>("liabilities", user.id),
+      fetchTable<Asset>("assets", user.id, { filters: [pf] }),
+      fetchTable<Liability>("liabilities", user.id, { filters: [pf] }),
     ])
 
     const totalAssets = assets.reduce((sum, a) => sum + Number(a.current_value), 0)
@@ -55,6 +58,7 @@ export default function SnapshotsPage() {
 
     await insertRow("snapshots", {
       user_id: user.id,
+      profile_id: activeProfile.id,
       total_assets: totalAssets,
       total_liabilities: totalLiabilities,
       net_worth: netWorth,

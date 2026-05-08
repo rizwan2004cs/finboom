@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts"
+import { PieChart, Pie, Cell, Tooltip } from "recharts"
 
 interface AllocationItem {
   name: string
@@ -36,8 +36,10 @@ function formatCurrency(amount: number) {
 
 export function AllocationChart({ data, total }: Props) {
   const [isDark, setIsDark] = useState(false)
+  const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
+    setMounted(true)
     const check = () => setIsDark(document.documentElement.classList.contains("dark"))
     check()
     const observer = new MutationObserver(check)
@@ -57,18 +59,21 @@ export function AllocationChart({ data, total }: Props) {
 
   return (
     <div className="flex items-center gap-4">
-      <div className="w-36 h-36 flex-shrink-0">
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
+      <div className="w-[144px] h-[144px] flex-shrink-0">
+        {mounted && (
+          <PieChart width={144} height={144}>
             <Pie
               data={data}
-              cx="50%"
-              cy="50%"
+              cx={72}
+              cy={72}
               innerRadius={35}
               outerRadius={60}
-              paddingAngle={2}
+              paddingAngle={data.length > 1 ? 2 : 0}
               dataKey="value"
               stroke="none"
+              startAngle={90}
+              endAngle={-270}
+              isAnimationActive={false}
             >
               {data.map((_, index) => (
                 <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
@@ -86,7 +91,7 @@ export function AllocationChart({ data, total }: Props) {
               formatter={(value) => [formatCurrency(Number(value)), ""]}
             />
           </PieChart>
-        </ResponsiveContainer>
+        )}
       </div>
       <div className="flex-1 space-y-1.5 overflow-y-auto max-h-48">
         {data.slice(0, 6).map((item, index) => (

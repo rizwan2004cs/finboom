@@ -1,7 +1,7 @@
 "use client"
 
 import { useState } from "react"
-import { useUser } from "@clerk/nextjs"
+import { useUser } from "@/hooks/use-auth"
 import Link from "next/link"
 import { Clipboard, Check, Sparkles } from "lucide-react"
 
@@ -323,7 +323,8 @@ export default function NewBlogPost() {
   const [status, setStatus] = useState<"idle" | "publishing" | "success" | "error">("idle")
   const [message, setMessage] = useState("")
 
-  const isAdmin = (user?.publicMetadata as { role?: string })?.role === "admin"
+  const role = ((user as Record<string, unknown>)?.publicMetadata as { role?: string })?.role
+  const isAdmin = role === "admin" || role === "editor"
 
   if (!isLoaded) {
     return (

@@ -4,13 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/stamp-sw.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.3.2",
-    "@clerk/themes": "^2.4.57",
     "@portabletext/react": "^6.2.0",
     "@sanity/image-url": "^2.1.1",
     "@supabase/ssr": "^0.10.3",
@@ -24,6 +24,7 @@
     "react-dom": "19.2.4",
     "recharts": "^3.8.1",
     "tailwind-merge": "^3.5.0",
+    "web-push": "^3.6.7",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
@@ -31,6 +32,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/web-push": "^3.6.4",
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
