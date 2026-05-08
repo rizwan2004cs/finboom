@@ -34,10 +34,10 @@ function formatCurrency(amount: number) {
 }
 
 const typeConfig = {
-  lent: { label: "Gave", icon: ArrowUpRight, color: "text-red-600", bg: "bg-red-50" },
-  received_back: { label: "Received Back", icon: ArrowDownLeft, color: "text-green-600", bg: "bg-green-50" },
-  borrowed: { label: "Borrowed", icon: ArrowDownRight, color: "text-orange-600", bg: "bg-orange-50" },
-  paid_back: { label: "Paid Back", icon: ArrowUpLeft, color: "text-blue-600", bg: "bg-blue-50" },
+  lent: { label: "Gave", icon: ArrowUpRight, color: "text-red-600", bg: "bg-red-50 dark:bg-red-500/10" },
+  received_back: { label: "Received Back", icon: ArrowDownLeft, color: "text-green-600", bg: "bg-green-50 dark:bg-green-500/10" },
+  borrowed: { label: "Borrowed", icon: ArrowDownRight, color: "text-orange-600", bg: "bg-orange-50 dark:bg-orange-500/10" },
+  paid_back: { label: "Paid Back", icon: ArrowUpLeft, color: "text-blue-600", bg: "bg-blue-50 dark:bg-blue-500/10" },
 }
 
 function PartiesPageInner() {
@@ -288,11 +288,11 @@ function PartiesPageInner() {
         <div className="liquid-glass rounded-2xl p-5">
           <div className="flex items-center justify-between">
             <p className="text-[14px] text-[#86868b] font-medium">To Receive</p>
-            <div className="w-9 h-9 rounded-xl bg-green-50 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-xl bg-green-50 dark:bg-green-500/10 flex items-center justify-center">
               <ArrowDownLeft className="w-5 h-5 text-green-600" />
             </div>
           </div>
-          <p className="text-[28px] font-semibold mt-2 text-green-700">{formatCurrency(totalReceivable)}</p>
+          <p className="text-[28px] font-semibold mt-2 text-green-700 dark:text-green-500">{formatCurrency(totalReceivable)}</p>
           <p className="text-[12px] text-[#86868b] mt-1">
             {partyBalances.filter(p => p.balance > 0).length} parties owe you
           </p>
@@ -301,11 +301,11 @@ function PartiesPageInner() {
         <div className="liquid-glass rounded-2xl p-5">
           <div className="flex items-center justify-between">
             <p className="text-[14px] text-[#86868b] font-medium">To Pay</p>
-            <div className="w-9 h-9 rounded-xl bg-red-50 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-xl bg-red-50 dark:bg-red-500/10 flex items-center justify-center">
               <ArrowUpRight className="w-5 h-5 text-red-600" />
             </div>
           </div>
-          <p className="text-[28px] font-semibold mt-2 text-red-700">{formatCurrency(totalPayable)}</p>
+          <p className="text-[28px] font-semibold mt-2 text-red-700 dark:text-red-500">{formatCurrency(totalPayable)}</p>
           <p className="text-[12px] text-[#86868b] mt-1">
             {partyBalances.filter(p => p.balance < 0).length} parties you owe
           </p>
@@ -314,30 +314,30 @@ function PartiesPageInner() {
         <div className="liquid-glass rounded-2xl p-5">
           <div className="flex items-center justify-between">
             <p className="text-[14px] text-[#86868b] font-medium">Due in 30 Days</p>
-            <div className="w-9 h-9 rounded-xl bg-orange-50 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-xl bg-orange-50 dark:bg-orange-500/10 flex items-center justify-center">
               <Clock className="w-5 h-5 text-orange-600" />
             </div>
           </div>
-          <p className="text-[28px] font-semibold mt-2 text-orange-700">{formatCurrency(dueSoonAmount)}</p>
+          <p className="text-[28px] font-semibold mt-2 text-orange-700 dark:text-orange-500">{formatCurrency(dueSoonAmount)}</p>
           <p className="text-[12px] text-[#86868b] mt-1">{dueSoon.length} entries upcoming</p>
         </div>
       </div>
 
       {/* Overdue alerts */}
       {overdue.length > 0 && (
-        <div className="liquid-glass rounded-2xl p-4 border border-red-200 bg-red-50/50">
+        <div className="liquid-glass rounded-2xl p-4 border border-red-200 dark:border-red-500/20 bg-red-50/50 dark:bg-red-500/5">
           <div className="flex items-center gap-2 mb-2">
             <AlertCircle className="w-4 h-4 text-red-600" />
-            <p className="text-sm font-medium text-red-800">Overdue ({overdue.length})</p>
+            <p className="text-sm font-medium text-red-800 dark:text-red-400">Overdue ({overdue.length})</p>
           </div>
           <div className="space-y-1">
             {overdue.slice(0, 3).map(tx => (
-              <p key={tx.id} className="text-[12px] text-red-700">
+              <p key={tx.id} className="text-[12px] text-red-700 dark:text-red-400">
                 {tx.party?.name} — {formatCurrency(Number(tx.amount))} (due {new Date(tx.due_date!).toLocaleDateString("en-IN", { day: "numeric", month: "short" })})
               </p>
             ))}
             {overdue.length > 3 && (
-              <p className="text-[12px] text-red-600">+{overdue.length - 3} more</p>
+              <p className="text-[12px] text-red-600 dark:text-red-400">+{overdue.length - 3} more</p>
             )}
           </div>
         </div>
@@ -389,23 +389,23 @@ function PartiesPageInner() {
                     <Icon className={`w-5 h-5 ${config.color}`} />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className="text-[14px] font-medium text-[#1d1d1f] dark:text-white truncate">{tx.party?.name}</p>
-                      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-md ${config.bg} ${config.color}`}>
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <p className="text-[14px] font-medium text-[#1d1d1f] dark:text-white truncate max-w-[120px] sm:max-w-none">{tx.party?.name}</p>
+                      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-md flex-shrink-0 ${config.bg} ${config.color}`}>
                         {config.label}
                       </span>
                       {isOverdue && (
-                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-red-100 text-red-700">
+                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400 flex-shrink-0">
                           Overdue
                         </span>
                       )}
                     </div>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <p className="text-[12px] text-[#86868b]">
+                    <div className="flex items-center gap-1.5 mt-0.5 overflow-hidden">
+                      <p className="text-[12px] text-[#86868b] flex-shrink-0">
                         {new Date(tx.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
                       </p>
                       {tx.due_date && (
-                        <p className="text-[12px] text-[#86868b]">
+                        <p className="text-[12px] text-[#86868b] flex-shrink-0">
                           · Due {new Date(tx.due_date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
                         </p>
                       )}
@@ -414,14 +414,14 @@ function PartiesPageInner() {
                       )}
                     </div>
                   </div>
-                  <p className={`text-[16px] font-semibold tabular-nums ${
+                  <p className={`text-[15px] font-semibold tabular-nums whitespace-nowrap flex-shrink-0 ${
                     tx.type === "lent" || tx.type === "paid_back" ? "text-red-600" : "text-green-600"
                   }`}>
                     {tx.type === "lent" || tx.type === "paid_back" ? "-" : "+"}₹{Number(tx.amount).toLocaleString("en-IN")}
                   </p>
                   <button
                     onClick={() => handleDelete(tx.id)}
-                    className="p-2 rounded-lg hover:bg-[#f5f5f7] transition-all flex-shrink-0"
+                    className="p-2 rounded-lg hover:bg-[#f5f5f7] dark:hover:bg-white/[0.08] transition-all flex-shrink-0"
                   >
                     <Trash2 className="w-4 h-4 text-[#86868b]" />
                   </button>
@@ -569,22 +569,22 @@ function PartiesPageInner() {
                           <Icon className={`w-4 h-4 ${config.color}`} />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-md ${config.bg} ${config.color}`}>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className={`text-[11px] font-medium px-1.5 py-0.5 rounded-md flex-shrink-0 ${config.bg} ${config.color}`}>
                               {config.label}
                             </span>
                             {isOverdue && (
-                              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-red-100 text-red-700">
+                              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400 flex-shrink-0">
                                 Overdue
                               </span>
                             )}
                           </div>
-                          <div className="flex items-center gap-2 mt-0.5">
-                            <p className="text-[12px] text-[#86868b]">
+                          <div className="flex items-center gap-1.5 mt-0.5 overflow-hidden">
+                            <p className="text-[12px] text-[#86868b] flex-shrink-0">
                               {new Date(tx.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
                             </p>
                             {tx.due_date && (
-                              <p className="text-[12px] text-[#86868b]">
+                              <p className="text-[12px] text-[#86868b] flex-shrink-0">
                                 · Due {new Date(tx.due_date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
                               </p>
                             )}
@@ -593,7 +593,7 @@ function PartiesPageInner() {
                             )}
                           </div>
                         </div>
-                        <p className={`text-[15px] font-semibold tabular-nums ${
+                        <p className={`text-[15px] font-semibold tabular-nums whitespace-nowrap flex-shrink-0 ${
                           tx.type === "lent" || tx.type === "paid_back" ? "text-red-600" : "text-green-600"
                         }`}>
                           {tx.type === "lent" || tx.type === "paid_back" ? "-" : "+"}₹{Number(tx.amount).toLocaleString("en-IN")}

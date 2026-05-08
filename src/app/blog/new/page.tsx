@@ -47,8 +47,14 @@ MARKDOWN RULES (the blog engine ONLY supports these):
 - > blockquote for key takeaways
 - - bullet lists (dash only, not asterisk)
 - 1. numbered lists
-- ![alt text](image-url) for images (use relevant free stock image URLs)
+- ![alt text](image-url) for images (use relevant free stock image URLs from unsplash/pexels)
 - | tables | with | pipes | for comparisons (include header row and separator row)
+- \`\`\`mermaid code blocks — use generously to visualize concepts:
+  - Flowcharts: graph TD / graph LR
+  - Pie charts: pie title "Title"
+  - Bar charts: xychart-beta (x-axis, y-axis, bar, line)
+  - Timelines: timeline
+  - Quadrant charts: quadrantChart
 - Blank lines between paragraphs
 
 DO NOT USE: links, ---, ~~strikethrough~~, *italic*, nested lists, HTML, emojis
@@ -196,6 +202,26 @@ function markdownToPortableText(markdown: string) {
     // Blank line
     if (line.trim() === "") {
       flushList()
+      continue
+    }
+
+    // Mermaid code block: ```mermaid ... ```
+    if (line.trim() === "```mermaid") {
+      flushList()
+      const mermaidLines: string[] = []
+      let j = i + 1
+      while (j < lines.length && lines[j].trim() !== "```") {
+        mermaidLines.push(lines[j])
+        j++
+      }
+      if (mermaidLines.length > 0) {
+        blocks.push({
+          _type: "mermaid",
+          _key: nextKey(),
+          code: mermaidLines.join("\n"),
+        })
+      }
+      i = j // skip closing ```
       continue
     }
 
@@ -526,7 +552,7 @@ export default function NewBlogPost() {
               className="w-full px-4 py-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-accent/30 font-mono text-sm leading-relaxed resize-y"
             />
             <p className="mt-1 text-xs text-[#86868b]">
-              Supports: ## headings, ### subheadings, **bold**, `code`, &gt; blockquotes, - bullet lists, 1. numbered lists, ![alt](image-url), | tables |
+              Supports: ## headings, ### subheadings, **bold**, `code`, &gt; blockquotes, - bullet lists, 1. numbered lists, ![alt](image-url), | tables |, ```mermaid (flowcharts, pie, bar, timeline)
             </p>
           </div>
 

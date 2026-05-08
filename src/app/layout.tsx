@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Inter, Source_Serif_4, JetBrains_Mono } from "next/font/google";
 import Script from "next/script";
 import { ClerkProvider } from "@clerk/nextjs";
+import { PwaInstallPopup } from "@/components/pwa-install-popup";
 import "./globals.css";
 
 const inter = Inter({
@@ -118,6 +119,7 @@ export default function RootLayout({
         `}</Script>
         <ClerkProvider>
           {children}
+          <PwaInstallPopup />
         </ClerkProvider>
       </body>
     </html>
