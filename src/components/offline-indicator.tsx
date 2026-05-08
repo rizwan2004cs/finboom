@@ -23,9 +23,13 @@ export function OfflineIndicator() {
     const cleanup = onSyncStatus((s) => {
       setStatus(s)
       setVisible(true)
-      if (s === "synced") {
-        // Hide after 3s on success
+      if (s === "synced" || s === "online") {
+        // Hide after 3s on success/reconnect
         setTimeout(() => setVisible(false), 3000)
+      }
+      if (s === "error") {
+        // Auto-hide error after 5s (retry happens in background)
+        setTimeout(() => setVisible(false), 5000)
       }
     })
 

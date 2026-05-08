@@ -12,7 +12,11 @@ type SyncListener = (status: "syncing" | "synced" | "error" | "offline" | "onlin
 const listeners = new Set<SyncListener>()
 let syncing = false
 let lastSyncAttempt = 0
-const SYNC_COOLDOWN = 30_000 // 30 seconds between sync attempts
+let retryTimer: ReturnType<typeof setTimeout> | null = null
+let retryCount = 0
+const SYNC_COOLDOWN = 5_000 // 5 seconds between sync attempts
+const MAX_RETRIES = 3
+const RETRY_DELAYS = [3_000, 8_000, 20_000] // escalating retry delays
 
 export function onSyncStatus(fn: SyncListener): () => void {
   listeners.add(fn)
@@ -130,25 +134,48 @@ export async function fullSync(userId: string): Promise<void> {
     if (failed > 0) {
       notify("error")
       syncing = false
+      scheduleRetry(userId)
       return
     }
 
     // 2. Pull fresh data
     await pullAllData(userId)
     notify("synced")
+    retryCount = 0
   } catch (err) {
     console.error("[sync] Full sync failed:", err)
     notify("error")
+    scheduleRetry(userId)
   } finally {
     syncing = false
   }
+}
+
+/** Schedule an automatic retry with backoff */
+function scheduleRetry(userId: string) {
+  if (retryTimer) clearTimeout(retryTimer)
+  if (retryCount >= MAX_RETRIES) {
+    retryCount = 0
+    return
+  }
+  const delay = RETRY_DELAYS[retryCount] || RETRY_DELAYS[RETRY_DELAYS.length - 1]
+  retryCount++
+  retryTimer = setTimeout(() => {
+    if (navigator.onLine) {
+      lastSyncAttempt = 0 // reset cooldown for retry
+      fullSync(userId)
+    }
+  }, delay)
 }
 
 /** Set up online/offline listeners. Returns cleanup fn. */
 export function setupConnectivityListeners(userId: string): () => void {
   const handleOnline = () => {
     notify("online")
-    fullSync(userId)
+    // Delay sync slightly — network may not be fully ready yet
+    setTimeout(() => {
+      if (navigator.onLine) fullSync(userId)
+    }, 1500)
   }
   const handleOffline = () => {
     notify("offline")
@@ -165,5 +192,6 @@ export function setupConnectivityListeners(userId: string): () => void {
   return () => {
     window.removeEventListener("online", handleOnline)
     window.removeEventListener("offline", handleOffline)
+    if (retryTimer) clearTimeout(retryTimer)
   }
 }
