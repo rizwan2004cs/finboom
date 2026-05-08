@@ -1,6 +1,5 @@
 import { sanityClient, urlFor } from "@/lib/sanity"
-import { createClient } from "@/utils/supabase/server"
-import { cookies } from "next/headers"
+import { auth, clerkClient } from "@clerk/nextjs/server"
 import Link from "next/link"
 import Image from "next/image"
 import type { Metadata } from "next"
@@ -48,12 +47,16 @@ export default async function BlogPage() {
   const posts = await getPosts()
 
   let isAdmin = false
-  const cookieStore = await cookies()
-  const supabase = createClient(cookieStore)
-  const { data: { user } } = await supabase.auth.getUser()
-  if (user) {
-    const adminEmails = (process.env.ADMIN_EMAILS || "").split(",").map(e => e.trim())
-    isAdmin = adminEmails.includes(user.email || "")
+  const { userId } = await auth()
+  if (userId) {
+    try {
+      const client = await clerkClient()
+      const clerkUser = await client.users.getUser(userId)
+      const role = (clerkUser.publicMetadata as { role?: string })?.role
+      isAdmin = role === "admin" || role === "editor"
+    } catch {
+      // ignore — not admin
+    }
   }
 
   return (
@@ -62,9 +65,14 @@ export default async function BlogPage() {
       <header>
         <nav className="sticky top-0 z-50 glass-elevated border-b border-black/[0.04] dark:border-white/[0.06]">
           <div className="max-w-[1200px] mx-auto px-6 lg:px-10 h-14 flex items-center justify-between">
-            <Link href="/" className="text-[22px] font-bold tracking-[-0.5px] text-[#1d1d1f] dark:text-white">
-              FinBoom
-            </Link>
+            <div className="flex items-center gap-3">
+              <Link href="/dashboard" className="p-1.5 rounded-lg hover:bg-black/[0.05] dark:hover:bg-white/[0.08] transition-all" aria-label="Back to Dashboard">
+                <svg className="w-5 h-5 text-[#1d1d1f] dark:text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5 8.25 12l7.5-7.5" /></svg>
+              </Link>
+              <Link href="/" className="text-[22px] font-bold tracking-[-0.5px] text-[#1d1d1f] dark:text-white">
+                FinBoom
+              </Link>
+            </div>
             <div className="flex items-center gap-4">
               {isAdmin && (
                 <Link

@@ -76,6 +76,46 @@ const portableTextComponents = {
         />
       </div>
     ),
+    externalImage: ({ value }: { value: { url: string; alt?: string } }) => (
+      <div className="my-8 rounded-xl overflow-hidden">
+        <img
+          src={value.url}
+          alt={value.alt || ""}
+          className="w-full rounded-xl"
+          loading="lazy"
+        />
+      </div>
+    ),
+    table: ({ value }: { value: { rows: Array<{ isHeader: boolean; cells: Array<{ text: string }> }> } }) => (
+      <div className="my-6 overflow-x-auto rounded-xl border border-black/[0.08] dark:border-white/[0.08]">
+        <table className="w-full text-sm">
+          {value.rows.filter(r => r.isHeader).length > 0 && (
+            <thead>
+              {value.rows.filter(r => r.isHeader).map((row, ri) => (
+                <tr key={ri} className="bg-[#f5f5f7] dark:bg-[#1c1c1e]">
+                  {row.cells.map((cell, ci) => (
+                    <th key={ci} className="px-4 py-2.5 text-left font-semibold text-[#1d1d1f] dark:text-white border-b border-black/[0.08] dark:border-white/[0.08]">
+                      {cell.text}
+                    </th>
+                  ))}
+                </tr>
+              ))}
+            </thead>
+          )}
+          <tbody>
+            {value.rows.filter(r => !r.isHeader).map((row, ri) => (
+              <tr key={ri} className="border-b last:border-b-0 border-black/[0.06] dark:border-white/[0.06]">
+                {row.cells.map((cell, ci) => (
+                  <td key={ci} className="px-4 py-2.5 text-[#1d1d1f]/80 dark:text-[#f5f5f7]/80">
+                    {cell.text}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    ),
   },
   block: {
     h2: ({ children }: { children?: React.ReactNode }) => (

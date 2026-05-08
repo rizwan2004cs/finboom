@@ -20,6 +20,7 @@ import {
   HandCoins,
   MoreHorizontal,
   X,
+  BookOpen,
 } from "lucide-react"
 
 const navItems = [
@@ -31,6 +32,7 @@ const navItems = [
   { href: "/dashboard/goals", label: "Goals", icon: Target },
   { href: "/dashboard/snapshots", label: "Snapshots", icon: Camera },
   { href: "/dashboard/health", label: "Health", icon: Heart },
+  { href: "/blog", label: "Blog", icon: BookOpen },
   { href: "/dashboard/profiles", label: "Profiles", icon: Users },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ]
@@ -50,6 +52,7 @@ const moreSubPages = [
   "/dashboard/health",
   "/dashboard/profiles",
   "/dashboard/settings",
+  "/blog",
 ]
 
 const moreSheetItems = [
@@ -57,6 +60,7 @@ const moreSheetItems = [
   { href: "/dashboard/goals", label: "Goals", icon: Target },
   { href: "/dashboard/snapshots", label: "Snapshots", icon: Camera },
   { href: "/dashboard/health", label: "Health", icon: Heart },
+  { href: "/blog", label: "Blog", icon: BookOpen },
   { href: "/dashboard/profiles", label: "Profiles", icon: Users },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ]

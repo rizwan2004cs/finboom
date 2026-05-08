@@ -1,7 +1,9 @@
 "use client"
 
 import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { useUser } from "@/hooks/use-auth"
+import { useUser as useClerkUser } from "@clerk/nextjs"
 import Link from "next/link"
 import { Clipboard, Check, Sparkles } from "lucide-react"
 
@@ -45,9 +47,11 @@ MARKDOWN RULES (the blog engine ONLY supports these):
 - > blockquote for key takeaways
 - - bullet lists (dash only, not asterisk)
 - 1. numbered lists
+- ![alt text](image-url) for images (use relevant free stock image URLs)
+- | tables | with | pipes | for comparisons (include header row and separator row)
 - Blank lines between paragraphs
 
-DO NOT USE: images, links, tables, ---, ~~strikethrough~~, *italic*, nested lists, HTML, emojis
+DO NOT USE: links, ---, ~~strikethrough~~, *italic*, nested lists, HTML, emojis
 
 REFERENCE BLOG POST (match this exact style, depth, and structure):
 ---
@@ -195,6 +199,52 @@ function markdownToPortableText(markdown: string) {
       continue
     }
 
+    // Table: detect | ... | rows and collect them
+    if (line.trim().startsWith("|") && line.trim().endsWith("|")) {
+      flushList()
+      const tableRows: string[][] = []
+      let j = i
+      while (j < lines.length && lines[j].trim().startsWith("|") && lines[j].trim().endsWith("|")) {
+        const row = lines[j].trim().slice(1, -1).split("|").map(c => c.trim())
+        // Skip separator rows like |---|---|
+        if (!row.every(c => /^[-:]+$/.test(c))) {
+          tableRows.push(row)
+        }
+        j++
+      }
+      if (tableRows.length > 0) {
+        blocks.push({
+          _type: "table",
+          _key: nextKey(),
+          rows: tableRows.map((cells, ri) => ({
+            _type: "tableRow",
+            _key: nextKey(),
+            isHeader: ri === 0,
+            cells: cells.map(cell => ({
+              _type: "tableCell",
+              _key: nextKey(),
+              text: cell,
+            })),
+          })),
+        })
+      }
+      i = j - 1
+      continue
+    }
+
+    // Image: ![alt](url)
+    const imageMatch = line.match(/^!\[(.*)\]\((.+)\)$/)
+    if (imageMatch) {
+      flushList()
+      blocks.push({
+        _type: "externalImage",
+        _key: nextKey(),
+        url: imageMatch[2].trim(),
+        alt: imageMatch[1].trim() || "",
+      })
+      continue
+    }
+
     // Headings
     const headingMatch = line.match(/^(#{1,3})\s+(.+)/)
     if (headingMatch) {
@@ -316,6 +366,8 @@ function CopyPromptButton() {
 
 export default function NewBlogPost() {
   const { user, isLoaded } = useUser()
+  const { user: clerkUser } = useClerkUser()
+  const router = useRouter()
   const [title, setTitle] = useState("")
   const [category, setCategory] = useState("guides")
   const [excerpt, setExcerpt] = useState("")
@@ -323,7 +375,7 @@ export default function NewBlogPost() {
   const [status, setStatus] = useState<"idle" | "publishing" | "success" | "error">("idle")
   const [message, setMessage] = useState("")
 
-  const role = ((user as Record<string, unknown>)?.publicMetadata as { role?: string })?.role
+  const role = (clerkUser?.publicMetadata as { role?: string })?.role
   const isAdmin = role === "admin" || role === "editor"
 
   if (!isLoaded) {
@@ -380,11 +432,8 @@ export default function NewBlogPost() {
       const data = await res.json()
 
       if (res.ok) {
-        setStatus("success")
-        setMessage(`Published! View at /blog/${slugify(title)}`)
-        setTitle("")
-        setExcerpt("")
-        setMarkdown("")
+        const slug = slugify(title)
+        router.push(`/blog/${slug}`)
       } else {
         setStatus("error")
         setMessage(data.error || "Failed to publish.")
@@ -477,7 +526,7 @@ export default function NewBlogPost() {
               className="w-full px-4 py-3 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-accent/30 font-mono text-sm leading-relaxed resize-y"
             />
             <p className="mt-1 text-xs text-[#86868b]">
-              Supports: ## headings, ### subheadings, **bold**, `code`, &gt; blockquotes, - bullet lists, 1. numbered lists
+              Supports: ## headings, ### subheadings, **bold**, `code`, &gt; blockquotes, - bullet lists, 1. numbered lists, ![alt](image-url), | tables |
             </p>
           </div>
 
