@@ -259,7 +259,7 @@ function GoalFormModal({ goal, assets, onClose, onSave }: {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="p-5 pb-24 sm:pb-5 space-y-4">
           <div>
             <label className="text-sm font-medium text-[#1d1d1f]">Goal Name</label>
             <input
