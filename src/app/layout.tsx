@@ -101,7 +101,39 @@ export default function RootLayout({
         `}} />
       </head>
       <body className="min-h-full flex flex-col">
-        <ClerkProvider>
+        <ClerkProvider
+          appearance={{
+            variables: {
+              colorPrimary: "#1d1d1f",
+              colorBackground: "#1c1c1e",
+              colorText: "#ffffff",
+              colorTextSecondary: "#98989d",
+              colorInputBackground: "#2c2c2e",
+              colorInputText: "#ffffff",
+              borderRadius: "0.75rem",
+              fontFamily: "var(--font-geist-sans), system-ui, sans-serif",
+            },
+            elements: {
+              card: "bg-[#1c1c1e] border border-white/[0.06] shadow-2xl",
+              headerTitle: "text-white",
+              headerSubtitle: "text-[#98989d]",
+              socialButtonsBlockButton:
+                "bg-[#2c2c2e] border-white/[0.06] text-white hover:bg-[#3a3a3c]",
+              formButtonPrimary:
+                "bg-[#1d1d1f] hover:bg-[#2c2c2e] text-white border border-white/10",
+              formFieldInput:
+                "bg-[#2c2c2e] border-white/[0.06] text-white placeholder:text-[#636366]",
+              formFieldLabel: "text-white",
+              footerActionLink: "text-[#34c759] hover:text-[#30d158]",
+              identityPreview: "bg-[#2c2c2e] border-white/[0.06]",
+              identityPreviewText: "text-white",
+              identityPreviewEditButton: "text-[#34c759]",
+              dividerLine: "bg-white/[0.06]",
+              dividerText: "text-[#636366]",
+              footer: "hidden",
+            },
+          }}
+        >
           {children}
         </ClerkProvider>
       </body>

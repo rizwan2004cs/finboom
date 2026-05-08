@@ -3,7 +3,7 @@
 import { useState, useCallback } from "react"
 import { useUser } from "@clerk/nextjs"
 import { createClient } from "@/utils/supabase/client"
-import { X, Upload, FileSpreadsheet, CheckCircle } from "lucide-react"
+import { X, Upload, CheckCircle } from "lucide-react"
 import * as XLSX from "xlsx"
 import { ASSET_CLASSES } from "@/lib/constants"
 
@@ -25,7 +25,70 @@ export function ImportModal({ onClose, onImport }: Props) {
   const [step, setStep] = useState<"upload" | "preview" | "done">("upload")
   const [rows, setRows] = useState<ParsedRow[]>([])
   const [importing, setImporting] = useState(false)
-  const [format, setFormat] = useState<"generic" | "groww">("generic")
+  const [format, setFormat] = useState<"generic" | "groww" | "zerodha">("generic")
+
+  // Flexible column finder: matches partial patterns case-insensitively
+  const findCol = useCallback((row: Record<string, unknown>, patterns: string[]) => {
+    for (const key of Object.keys(row)) {
+      const lower = key.toLowerCase().trim()
+      if (patterns.some(p => lower.includes(p))) return row[key]
+    }
+    return undefined
+  }, [])
+
+  function guessAssetClass(input: string): string {
+    const lower = input.toLowerCase()
+    const match = ASSET_CLASSES.find(cls => 
+      cls.label.toLowerCase().includes(lower) || cls.id === lower
+    )
+    return match?.id || "stocks"
+  }
+
+  const detectFormat = useCallback((json: Record<string, unknown>[]): "zerodha" | "groww" | "generic" => {
+    if (json.length === 0) return "generic"
+    const keys = Object.keys(json[0]).map(k => k.toLowerCase().trim())
+    // Zerodha: "Instrument", "Qty.", "Avg. cost", "LTP", "Cur. val"
+    if (keys.some(k => k.includes("instrument")) && keys.some(k => k.includes("avg") && k.includes("cost"))) {
+      return "zerodha"
+    }
+    // Groww: many possible column names
+    if (
+      keys.some(k => k.includes("stock name") || k.includes("scheme name") || k.includes("company") || k.includes("symbol")) &&
+      keys.some(k => k.includes("quantity") || k.includes("qty") || k.includes("units")) &&
+      keys.some(k => k.includes("value") || k.includes("price") || k.includes("ltp") || k.includes("nav"))
+    ) {
+      return "groww"
+    }
+    return "generic"
+  }, [])
+
+  // Some financial exports have metadata rows before the actual table.
+  // Try parsing from different starting rows to find the real header.
+  const parseSheetWithHeaderScan = useCallback((sheet: XLSX.WorkSheet): Record<string, unknown>[] => {
+    // First try default (row 1 is header)
+    const defaultJson = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet)
+    if (defaultJson.length > 0) {
+      const keys = Object.keys(defaultJson[0]).map(k => k.toLowerCase())
+      // If the first column key looks like a real header, use it
+      if (keys.some(k => k.includes("name") || k.includes("instrument") || k.includes("stock") || k.includes("company") || k.includes("symbol") || k.includes("scheme"))) {
+        return defaultJson
+      }
+    }
+
+    // Scan rows 0-10 looking for the header row
+    const range = XLSX.utils.decode_range(sheet["!ref"] || "A1")
+    for (let headerRow = 1; headerRow <= Math.min(10, range.e.r); headerRow++) {
+      const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { range: headerRow })
+      if (json.length > 0) {
+        const keys = Object.keys(json[0]).map(k => k.toLowerCase())
+        if (keys.some(k => k.includes("name") || k.includes("instrument") || k.includes("stock") || k.includes("company") || k.includes("symbol") || k.includes("scheme"))) {
+          return json
+        }
+      }
+    }
+
+    return defaultJson
+  }, [])
 
   const handleFile = useCallback((file: File) => {
     const reader = new FileReader()
@@ -33,21 +96,61 @@ export function ImportModal({ onClose, onImport }: Props) {
       const data = new Uint8Array(e.target?.result as ArrayBuffer)
       const workbook = XLSX.read(data, { type: "array" })
       const sheet = workbook.Sheets[workbook.SheetNames[0]]
+      const json = parseSheetWithHeaderScan(sheet)
+
+      // Auto-detect format (also check filename)
+      let detected = detectFormat(json)
+      const fileName = file.name.toLowerCase()
+      if (detected === "generic") {
+        if (fileName.includes("groww") || fileName.includes("holdings_statement")) {
+          detected = "groww"
+        } else if (fileName.includes("zerodha") || fileName.includes("kite")) {
+          detected = "zerodha"
+        }
+      }
+      setFormat(detected)
 
       let parsed: ParsedRow[] = []
 
-      if (format === "groww") {
-        const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet)
-        parsed = json.map((row) => ({
-          name: String(row["Stock Name"] || row["Scheme Name"] || row["Name"] || ""),
-          asset_class: row["Scheme Name"] ? "mutual_funds" : "stocks",
-          current_value: Number(row["Current Value"] || row["Market Value"] || 0),
-          invested_value: Number(row["Invested Value"] || row["Investment"] || row["Buy Value"] || 0),
-          units: Number(row["Quantity"] || row["Units"] || 0),
-        }))
+      if (detected === "zerodha") {
+        parsed = json.map((row) => {
+          const qty = Number(findCol(row, ["qty"]) || 0)
+          const avgCost = Number(findCol(row, ["avg"]) || 0)
+          const curVal = Number(findCol(row, ["cur. val", "cur val", "current val", "market val"]) || 0)
+          const investedVal = qty * avgCost
+
+          return {
+            name: String(findCol(row, ["instrument", "stock", "symbol"]) || "").trim(),
+            asset_class: "stocks" as const,
+            current_value: curVal,
+            invested_value: investedVal,
+            units: qty || undefined,
+          }
+        })
+      } else if (detected === "groww") {
+        parsed = json.map((row) => {
+          const name = String(
+            findCol(row, ["stock name", "scheme name", "company", "symbol", "name", "scrip"]) || ""
+          ).trim()
+          const isMF = !!findCol(row, ["scheme name", "nav", "folio"])
+          const qty = Number(findCol(row, ["quantity", "qty", "units"]) || 0)
+          const avgPrice = Number(findCol(row, ["avg", "average", "buy price", "buy avg", "purchase price"]) || 0)
+          const curVal = Number(findCol(row, ["current val", "market val", "present val", "value", "cur. val"]) || 0)
+          const investedRaw = Number(findCol(row, ["invested", "investment", "buy val", "cost", "total cost"]) || 0)
+          const investedVal = investedRaw || (qty * avgPrice)
+          const ltp = Number(findCol(row, ["ltp", "last price", "close", "closing"]) || 0)
+          const currentValue = curVal || (qty * ltp)
+
+          return {
+            name,
+            asset_class: isMF ? "mutual_funds" : "stocks",
+            current_value: currentValue,
+            invested_value: investedVal,
+            units: qty || undefined,
+          }
+        })
       } else {
         // Generic CSV: expects name, asset_class, current_value, invested_value, units
-        const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet)
         parsed = json.map((row) => ({
           name: String(row["name"] || row["Name"] || row["Asset"] || ""),
           asset_class: guessAssetClass(String(row["asset_class"] || row["type"] || row["Type"] || row["Category"] || "")),
@@ -61,15 +164,7 @@ export function ImportModal({ onClose, onImport }: Props) {
       setStep("preview")
     }
     reader.readAsArrayBuffer(file)
-  }, [format])
-
-  function guessAssetClass(input: string): string {
-    const lower = input.toLowerCase()
-    const match = ASSET_CLASSES.find(cls => 
-      cls.label.toLowerCase().includes(lower) || cls.id === lower
-    )
-    return match?.id || "stocks"
-  }
+  }, [detectFormat, findCol, parseSheetWithHeaderScan])
 
   async function handleImport() {
     if (!user) return
@@ -112,10 +207,12 @@ export function ImportModal({ onClose, onImport }: Props) {
             <div className="space-y-4">
               {/* Format selector */}
               <div>
-                <label className="text-sm font-medium text-[#1d1d1f]">Import Format</label>
-                <div className="grid grid-cols-2 gap-2 mt-2">
+                <label className="text-sm font-medium text-[#1d1d1f] dark:text-white">Import Format</label>
+                <p className="text-xs text-[#86868b] mt-0.5">Auto-detected when you upload a file</p>
+                <div className="grid grid-cols-3 gap-2 mt-2">
                   {([
                     { id: "generic", label: "CSV/Excel" },
+                    { id: "zerodha", label: "Zerodha" },
                     { id: "groww", label: "Groww" },
                   ] as const).map(f => (
                     <button
@@ -151,7 +248,12 @@ export function ImportModal({ onClose, onImport }: Props) {
 
               {format === "groww" && (
                 <p className="text-xs text-[#86868b]">
-                  Export from Groww → Investments → Download Statement
+                  Export from Groww → Stocks → Holdings → Download Statement (.xlsx)
+                </p>
+              )}
+              {format === "zerodha" && (
+                <p className="text-xs text-[#86868b]">
+                  Export from Zerodha Console → Holdings → Download (.xlsx)
                 </p>
               )}
             </div>
