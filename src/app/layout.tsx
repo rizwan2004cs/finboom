@@ -14,13 +14,58 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "FinBoom - Know Your True Wealth",
-  description: "Track net worth, income, expenses, and financial goals across 20+ asset classes. Privacy-first wealth tracking for Indian investors.",
+  metadataBase: new URL("https://finboom.in"),
+  title: {
+    default: "FinBoom - Know Your True Wealth | Net Worth Tracker for India",
+    template: "%s | FinBoom",
+  },
+  description: "Free net worth tracker for Indian investors. Track stocks, mutual funds, real estate, gold, PPF, NPS, crypto and 22+ asset classes. Set financial goals, monitor expenses, and grow your wealth.",
+  keywords: [
+    "net worth tracker",
+    "personal finance India",
+    "wealth tracker",
+    "portfolio tracker India",
+    "mutual fund tracker",
+    "stock portfolio tracker",
+    "financial goal planner",
+    "expense tracker India",
+    "asset tracker",
+    "PPF NPS EPF tracker",
+    "Indian investor tools",
+    "finboom",
+  ],
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
     title: "FinBoom",
+  },
+  alternates: {
+    canonical: "https://finboom.in",
+  },
+  openGraph: {
+    title: "FinBoom - Know Your True Wealth | Free Net Worth Tracker",
+    description: "Track stocks, mutual funds, real estate, gold, and 22+ asset classes. Free forever. Built for Indian investors.",
+    url: "https://finboom.in",
+    siteName: "FinBoom",
+    locale: "en_IN",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "FinBoom - Know Your True Wealth",
+    description: "Track stocks, mutual funds, real estate, gold, and 22+ asset classes. Free forever. Built for Indian investors.",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
   },
 };
 

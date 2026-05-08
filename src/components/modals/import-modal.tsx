@@ -25,7 +25,7 @@ export function ImportModal({ onClose, onImport }: Props) {
   const [step, setStep] = useState<"upload" | "preview" | "done">("upload")
   const [rows, setRows] = useState<ParsedRow[]>([])
   const [importing, setImporting] = useState(false)
-  const [format, setFormat] = useState<"generic" | "zerodha" | "groww">("generic")
+  const [format, setFormat] = useState<"generic" | "groww">("generic")
 
   const handleFile = useCallback((file: File) => {
     const reader = new FileReader()
@@ -36,24 +36,7 @@ export function ImportModal({ onClose, onImport }: Props) {
 
       let parsed: ParsedRow[] = []
 
-      if (format === "zerodha") {
-        // Zerodha holdings XLSX has metadata rows at top — find the header row
-        const allRows = XLSX.utils.sheet_to_json<string[]>(sheet, { header: 1 })
-        const headerIdx = allRows.findIndex((row) =>
-          row.some((cell) => typeof cell === "string" && (cell === "Stock Name" || cell === "Instrument"))
-        )
-        const json = headerIdx >= 0
-          ? XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { range: headerIdx })
-          : XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet)
-
-        parsed = json.map((row) => ({
-          name: String(row["Stock Name"] || row["Instrument"] || row["Symbol"] || row["Trading Symbol"] || ""),
-          asset_class: "stocks",
-          current_value: Number(row["Closing value"] || row["Cur. val"] || row["Current Value"] || 0),
-          invested_value: Number(row["Buy value"] || 0) || (Number(row["Average buy price"] || row["Avg. cost"] || row["Buy Average"] || 0) * Number(row["Quantity"] || row["Qty."] || 1)),
-          units: Number(row["Quantity"] || row["Qty."] || 0),
-        }))
-      } else if (format === "groww") {
+      if (format === "groww") {
         const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet)
         parsed = json.map((row) => ({
           name: String(row["Stock Name"] || row["Scheme Name"] || row["Name"] || ""),
@@ -130,10 +113,9 @@ export function ImportModal({ onClose, onImport }: Props) {
               {/* Format selector */}
               <div>
                 <label className="text-sm font-medium text-[#1d1d1f]">Import Format</label>
-                <div className="grid grid-cols-3 gap-2 mt-2">
+                <div className="grid grid-cols-2 gap-2 mt-2">
                   {([
                     { id: "generic", label: "CSV/Excel" },
-                    { id: "zerodha", label: "Zerodha" },
                     { id: "groww", label: "Groww" },
                   ] as const).map(f => (
                     <button
@@ -167,11 +149,6 @@ export function ImportModal({ onClose, onImport }: Props) {
                 />
               </label>
 
-              {format === "zerodha" && (
-                <p className="text-xs text-[#86868b]">
-                  Export from Zerodha Console → Portfolio → Holdings → Download
-                </p>
-              )}
               {format === "groww" && (
                 <p className="text-xs text-[#86868b]">
                   Export from Groww → Investments → Download Statement

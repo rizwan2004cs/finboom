@@ -1,15 +1,33 @@
-"use client"
-
-import Link from "next/link"
-import { SignInButton, UserButton, useAuth } from "@clerk/nextjs"
 import { 
   TrendingUp, Layers, Camera, Crosshair, ArrowLeftRight, 
   ShieldCheck, Users, Download, Lock 
 } from "lucide-react"
 import { PwaInstallBanner } from "@/components/pwa-install-banner"
+import { NavAuthButtons, HeroCTA } from "@/components/auth-buttons"
+
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "WebApplication",
+  name: "FinBoom",
+  url: "https://finboom.in",
+  description:
+    "Free net worth tracker for Indian investors. Track stocks, mutual funds, real estate, gold, PPF, NPS, crypto and 22+ asset classes.",
+  applicationCategory: "FinanceApplication",
+  operatingSystem: "Web",
+  offers: {
+    "@type": "Offer",
+    price: "0",
+    priceCurrency: "INR",
+  },
+  aggregateRating: undefined,
+  creator: {
+    "@type": "Organization",
+    name: "FinBoom",
+    url: "https://finboom.in",
+  },
+};
 
 export default function Home() {
-  const { isSignedIn } = useAuth()
 
   const features = [
     { icon: TrendingUp, title: "Net Worth Tracking", desc: "See your complete financial picture at a glance with real-time calculations." },
@@ -24,25 +42,23 @@ export default function Home() {
   ]
 
   return (
-    <div className="min-h-screen bg-white dark:bg-[#0a0a0a]">
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
+      <div className="min-h-screen bg-white dark:bg-[#0a0a0a]">
       {/* Navbar */}
-      <nav className="sticky top-0 z-50 glass-elevated border-b border-black/[0.04] dark:border-white/[0.06]">
+      <header>
+      <nav className="sticky top-0 z-50 glass-elevated border-b border-black/[0.04] dark:border-white/[0.06]" aria-label="Main navigation">
         <div className="max-w-[980px] mx-auto px-6 h-12 flex items-center justify-between">
           <span className="text-[17px] font-semibold tracking-[-0.3px] text-[#1d1d1f] dark:text-white">FinBoom</span>
           <div className="flex items-center gap-4">
-            {isSignedIn ? (
-              <>
-                <Link href="/dashboard" className="liquid-glass-btn-primary px-5 py-1.5 text-sm">
-                  Dashboard
-                </Link>
-                <UserButton />
-              </>
-            ) : (
-              <SignInButton mode="modal" />
-            )}
+            <NavAuthButtons />
           </div>
         </div>
       </nav>
+      </header>
 
       {/* Hero */}
       <section className="pt-24 pb-20">
@@ -55,13 +71,7 @@ export default function Home() {
             Track stocks, mutual funds, real estate, gold, and 22+ asset classes. One place for your entire net worth.
           </p>
           <div className="mt-8 flex items-center justify-center gap-4">
-            {isSignedIn ? (
-              <Link href="/dashboard" className="liquid-glass-btn-primary px-7 py-3 text-[17px]">
-                Go to Dashboard
-              </Link>
-            ) : (
-              <SignInButton mode="modal" />
-            )}
+            <HeroCTA />
           </div>
         </div>
       </section>
@@ -156,13 +166,7 @@ export default function Home() {
             Join thousands of Indian investors who track their complete net worth with FinBoom.
           </p>
           <div className="mt-8">
-            {isSignedIn ? (
-              <Link href="/dashboard" className="liquid-glass-btn-primary px-7 py-3 text-[17px]">
-                Go to Dashboard
-              </Link>
-            ) : (
-              <SignInButton mode="modal" />
-            )}
+            <HeroCTA />
           </div>
         </div>
       </section>
@@ -177,5 +181,6 @@ export default function Home() {
         </div>
       </footer>
     </div>
+    </>
   );
 }
