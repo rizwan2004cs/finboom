@@ -2,6 +2,7 @@ import {
   TrendingUp, Layers, Camera, Crosshair, ArrowLeftRight, 
   ShieldCheck, Users, Download, Lock 
 } from "lucide-react"
+import Link from "next/link"
 import { PwaInstallBanner } from "@/components/pwa-install-banner"
 import { NavAuthButtons, HeroCTA } from "@/components/auth-buttons"
 
@@ -9,7 +10,7 @@ const jsonLd = {
   "@context": "https://schema.org",
   "@type": "WebApplication",
   name: "FinBoom",
-  url: "https://finboom.in",
+  url: "https://finboom-cyan.vercel.app",
   description:
     "Free net worth tracker for Indian investors. Track stocks, mutual funds, real estate, gold, PPF, NPS, crypto and 22+ asset classes.",
   applicationCategory: "FinanceApplication",
@@ -23,7 +24,7 @@ const jsonLd = {
   creator: {
     "@type": "Organization",
     name: "FinBoom",
-    url: "https://finboom.in",
+    url: "https://finboom-cyan.vercel.app",
   },
 };
 
@@ -53,7 +54,8 @@ export default function Home() {
       <nav className="sticky top-0 z-50 glass-elevated border-b border-black/[0.04] dark:border-white/[0.06]" aria-label="Main navigation">
         <div className="max-w-[1200px] mx-auto px-6 lg:px-10 h-12 flex items-center justify-between">
           <span className="text-[17px] font-semibold tracking-[-0.3px] text-[#1d1d1f] dark:text-white">FinBoom</span>
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
+            <Link href="/blog" className="px-4 py-1.5 text-sm font-medium text-[#1d1d1f] dark:text-white rounded-xl hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors">Blog</Link>
             <NavAuthButtons />
           </div>
         </div>
@@ -61,7 +63,7 @@ export default function Home() {
       </header>
 
       {/* Hero */}
-      <section className="pt-24 pb-20">
+      <section className="min-h-[calc(100vh-48px)] flex items-center justify-center">
         <div className="max-w-[980px] mx-auto px-6 text-center">
           <p className="text-[13px] font-medium text-[#515154] dark:text-[#98989d] uppercase tracking-[0.5px] mb-4">Free forever · Built for India</p>
           <h1 className="text-[56px] leading-[1.07] font-semibold tracking-[-0.5px] text-[#1d1d1f] dark:text-white">
@@ -155,6 +157,27 @@ export default function Home() {
 
       {/* PWA Install */}
       <PwaInstallBanner />
+
+      {/* Blog */}
+      <section className="py-20 bg-white dark:bg-[#0a0a0a]">
+        <div className="max-w-[980px] mx-auto px-6 text-center">
+          <h2 className="text-[40px] leading-[1.1] font-semibold tracking-[-0.3px] text-[#1d1d1f] dark:text-white mb-4">
+            Learn & grow.
+          </h2>
+          <p className="mt-4 text-[17px] text-[#3a3a3c] dark:text-[#aeaeb2] max-w-[520px] mx-auto">
+            Financial tips, market insights, and product updates to help you make smarter decisions with your money.
+          </p>
+          <div className="mt-8">
+            <Link
+              href="/blog"
+              className="inline-flex items-center gap-2 px-6 py-3 rounded-full bg-[#f5f5f7] dark:bg-white/10 text-[15px] font-medium text-[#1d1d1f] dark:text-white hover:bg-[#e8e8ed] dark:hover:bg-white/15 transition-all"
+            >
+              Read the blog
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+            </Link>
+          </div>
+        </div>
+      </section>
 
       {/* CTA */}
       <section className="py-24 bg-gradient-to-br from-[#e8eaf0] via-[#f0eef5] to-[#eaf4f0] dark:from-[#111113] dark:via-[#131318] dark:to-[#111315]">

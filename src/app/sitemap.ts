@@ -1,7 +1,7 @@
 import type { MetadataRoute } from "next";
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = "https://finboom.in";
+  const baseUrl = "https://finboom-cyan.vercel.app";
 
   return [
     {

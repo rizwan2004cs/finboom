@@ -9,6 +9,6 @@ export default function robots(): MetadataRoute.Robots {
         disallow: ["/dashboard/", "/api/"],
       },
     ],
-    sitemap: "https://finboom.in/sitemap.xml",
+    sitemap: "https://finboom-cyan.vercel.app/sitemap.xml",
   };
 }

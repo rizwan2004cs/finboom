@@ -105,8 +105,8 @@ function AssetsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-[#1d1d1f]">Assets</h1>
-          <p className="text-sm text-[#86868b]">{assets.length} investments tracked</p>
+          <h1 className="text-xl font-bold text-[#1d1d1f] dark:text-white">Assets</h1>
+          <p className="text-sm text-[#515154] dark:text-[#98989d]">{assets.length} investments tracked</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -128,16 +128,16 @@ function AssetsPage() {
       {/* Summary Bar */}
       <div className="grid grid-cols-3 gap-3">
         <div className="liquid-glass rounded-2xl p-3">
-          <p className="text-[10px] uppercase tracking-wider text-[#86868b]">Total Value</p>
-          <p className="text-lg font-bold text-[#1d1d1f] mt-0.5">{formatCurrency(totalValue)}</p>
+          <p className="text-[10px] uppercase tracking-wider text-[#515154] dark:text-[#98989d] font-semibold">Total Value</p>
+          <p className="text-lg font-bold text-[#1d1d1f] dark:text-white mt-0.5">{formatCurrency(totalValue)}</p>
         </div>
         <div className="liquid-glass rounded-2xl p-3">
-          <p className="text-[10px] uppercase tracking-wider text-[#86868b]">Invested</p>
-          <p className="text-lg font-bold text-[#1d1d1f] mt-0.5">{formatCurrency(totalInvested)}</p>
+          <p className="text-[10px] uppercase tracking-wider text-[#515154] dark:text-[#98989d] font-semibold">Invested</p>
+          <p className="text-lg font-bold text-[#1d1d1f] dark:text-white mt-0.5">{formatCurrency(totalInvested)}</p>
         </div>
         <div className="liquid-glass rounded-2xl p-3">
-          <p className="text-[10px] uppercase tracking-wider text-[#86868b]">Gain/Loss</p>
-          <p className="text-lg font-bold text-[#1d1d1f] mt-0.5">
+          <p className="text-[10px] uppercase tracking-wider text-[#515154] dark:text-[#98989d] font-semibold">Gain/Loss</p>
+          <p className="text-lg font-bold text-[#1d1d1f] dark:text-white mt-0.5">
             {totalGain >= 0 ? "+" : ""}{gainPercent.toFixed(1)}%
           </p>
         </div>
@@ -146,19 +146,19 @@ function AssetsPage() {
       {/* Search & Filter */}
       <div className="flex gap-2">
         <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#86868b]" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#515154] dark:text-[#98989d]" />
           <input
             type="text"
             placeholder="Search assets..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-[#f5f5f7] border-0 text-sm text-[#1d1d1f] placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
+            className="w-full pl-9 pr-4 py-2.5 rounded-xl bg-[#f5f5f7] dark:bg-white/10 border-0 text-sm text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/20"
           />
         </div>
         <select
           value={filterClass}
           onChange={(e) => setFilterClass(e.target.value)}
-          className="px-3 py-2.5 rounded-xl bg-[#f5f5f7] text-sm text-[#1d1d1f] border-0 focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
+            className="px-3 py-2.5 rounded-xl bg-[#f5f5f7] dark:bg-white/10 text-sm text-[#1d1d1f] dark:text-white border-0 focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/20"
         >
           <option value="all">All Classes</option>
           {ASSET_CLASSES.map(cls => (
@@ -174,8 +174,8 @@ function AssetsPage() {
             <div className="w-12 h-12 rounded-xl bg-white/50 backdrop-blur-sm flex items-center justify-center mx-auto mb-3">
               <Search className="w-6 h-6 text-[#86868b]" strokeWidth={1.5} />
             </div>
-            <p className="font-medium text-[#1d1d1f]">No assets yet</p>
-            <p className="text-sm text-[#86868b] mt-1">Add your first investment to get started</p>
+            <p className="font-medium text-[#1d1d1f] dark:text-white">No assets yet</p>
+            <p className="text-sm text-[#515154] dark:text-[#98989d] mt-1">Add your first investment to get started</p>
             <button
               onClick={() => setShowAddModal(true)}
               className="mt-4 liquid-glass-btn-primary"
@@ -197,12 +197,12 @@ function AssetsPage() {
                     <CategoryIcon name={cls?.icon || "MoreHorizontal"} className="w-4.5 h-4.5 text-[#1d1d1f]" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-[#1d1d1f] truncate">{asset.name}</p>
-                    <p className="text-xs text-[#86868b]">{cls?.label || asset.asset_class}</p>
+                    <p className="font-semibold text-[#1d1d1f] dark:text-white truncate">{asset.name}</p>
+                    <p className="text-xs text-[#515154] dark:text-[#98989d] font-medium">{cls?.label || asset.asset_class}</p>
                   </div>
                   <div className="text-right">
-                    <p className="font-semibold text-[#1d1d1f]">{formatCurrency(Number(asset.current_value))}</p>
-                    <p className="text-xs text-[#6e6e73]">
+                    <p className="font-semibold text-[#1d1d1f] dark:text-white">{formatCurrency(Number(asset.current_value))}</p>
+                    <p className="text-xs font-medium text-[#3a3a3c] dark:text-[#aeaeb2]">
                       {gain >= 0 ? "+" : ""}{gainPct.toFixed(1)}%
                     </p>
                   </div>

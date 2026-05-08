@@ -51,11 +51,11 @@ export function ImportModal({ onClose, onImport }: Props) {
     if (keys.some(k => k.includes("instrument")) && keys.some(k => k.includes("avg") && k.includes("cost"))) {
       return "zerodha"
     }
-    // Groww: many possible column names
+    // Groww: "Stock Name", "ISIN", "Quantity", "Average buy price", "Closing value"
     if (
       keys.some(k => k.includes("stock name") || k.includes("scheme name") || k.includes("company") || k.includes("symbol")) &&
       keys.some(k => k.includes("quantity") || k.includes("qty") || k.includes("units")) &&
-      keys.some(k => k.includes("value") || k.includes("price") || k.includes("ltp") || k.includes("nav"))
+      keys.some(k => k.includes("closing value") || k.includes("buy value") || k.includes("average buy price") || k.includes("value") || k.includes("price") || k.includes("ltp") || k.includes("nav"))
     ) {
       return "groww"
     }
@@ -64,31 +64,44 @@ export function ImportModal({ onClose, onImport }: Props) {
 
   // Some financial exports have metadata rows before the actual table.
   // Try parsing from different starting rows to find the real header.
+  const isDataHeader = useCallback((keys: string[]) => {
+    // Must have a name-like column AND a numeric/financial column
+    const hasName = keys.some(k =>
+      k.includes("stock name") || k.includes("instrument") || k.includes("scheme name") ||
+      k.includes("company") || k.includes("symbol") || k.includes("scrip")
+    )
+    const hasNumeric = keys.some(k =>
+      k.includes("quantity") || k.includes("qty") || k.includes("units") ||
+      k.includes("value") || k.includes("price") || k.includes("ltp") ||
+      k.includes("nav") || k.includes("avg") || k.includes("cost")
+    )
+    return hasName && hasNumeric
+  }, [])
+
   const parseSheetWithHeaderScan = useCallback((sheet: XLSX.WorkSheet): Record<string, unknown>[] => {
     // First try default (row 1 is header)
     const defaultJson = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet)
     if (defaultJson.length > 0) {
       const keys = Object.keys(defaultJson[0]).map(k => k.toLowerCase())
-      // If the first column key looks like a real header, use it
-      if (keys.some(k => k.includes("name") || k.includes("instrument") || k.includes("stock") || k.includes("company") || k.includes("symbol") || k.includes("scheme"))) {
+      if (isDataHeader(keys)) {
         return defaultJson
       }
     }
 
-    // Scan rows 0-10 looking for the header row
+    // Scan rows 1-15 looking for the real header row
     const range = XLSX.utils.decode_range(sheet["!ref"] || "A1")
-    for (let headerRow = 1; headerRow <= Math.min(10, range.e.r); headerRow++) {
+    for (let headerRow = 1; headerRow <= Math.min(15, range.e.r); headerRow++) {
       const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { range: headerRow })
       if (json.length > 0) {
         const keys = Object.keys(json[0]).map(k => k.toLowerCase())
-        if (keys.some(k => k.includes("name") || k.includes("instrument") || k.includes("stock") || k.includes("company") || k.includes("symbol") || k.includes("scheme"))) {
+        if (isDataHeader(keys)) {
           return json
         }
       }
     }
 
     return defaultJson
-  }, [])
+  }, [isDataHeader])
 
   const handleFile = useCallback((file: File) => {
     const reader = new FileReader()
@@ -134,11 +147,11 @@ export function ImportModal({ onClose, onImport }: Props) {
           ).trim()
           const isMF = !!findCol(row, ["scheme name", "nav", "folio"])
           const qty = Number(findCol(row, ["quantity", "qty", "units"]) || 0)
-          const avgPrice = Number(findCol(row, ["avg", "average", "buy price", "buy avg", "purchase price"]) || 0)
-          const curVal = Number(findCol(row, ["current val", "market val", "present val", "value", "cur. val"]) || 0)
-          const investedRaw = Number(findCol(row, ["invested", "investment", "buy val", "cost", "total cost"]) || 0)
+          const avgPrice = Number(findCol(row, ["average buy price", "avg", "average", "buy price", "buy avg", "purchase price"]) || 0)
+          const curVal = Number(findCol(row, ["closing value", "current val", "market val", "present val", "cur. val"]) || 0)
+          const investedRaw = Number(findCol(row, ["buy value", "invested", "investment", "buy val", "cost", "total cost"]) || 0)
           const investedVal = investedRaw || (qty * avgPrice)
-          const ltp = Number(findCol(row, ["ltp", "last price", "close", "closing"]) || 0)
+          const ltp = Number(findCol(row, ["closing price", "ltp", "last price"]) || 0)
           const currentValue = curVal || (qty * ltp)
 
           return {
