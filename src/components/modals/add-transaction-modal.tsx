@@ -46,7 +46,7 @@ export function AddTransactionModal({ onClose, onSave }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+    <div className="fixed inset-0 z-60 flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full sm:max-w-md bg-white rounded-t-3xl sm:rounded-2xl border border-white/40 shadow-xl max-h-[90vh] overflow-y-auto">
         <div className="sm:hidden flex justify-center pt-3">
@@ -60,7 +60,7 @@ export function AddTransactionModal({ onClose, onSave }: Props) {
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+        <form onSubmit={handleSubmit} className="p-5 pb-8 sm:pb-5 space-y-4">
           {/* Type toggle */}
           <div className="flex bg-[#f5f5f7] rounded-xl p-1">
             <button

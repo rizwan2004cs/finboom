@@ -1,17 +1,21 @@
 "use client"
 
-import { Show, UserButton, SignInButton } from "@clerk/nextjs"
+import { Show, UserButton, SignInButton, useUser } from "@clerk/nextjs"
 import { Bell, PanelLeftClose, PanelLeftOpen } from "lucide-react"
 import { useSidebar } from "@/components/sidebar-context"
 
 export function TopBar() {
   const { collapsed, toggle } = useSidebar()
+  const { user } = useUser()
 
   return (
-    <header className="sticky top-0 z-40 flex items-center justify-between h-12 px-4 lg:px-8 glass-elevated">
+    <header className="sticky top-0 z-40 flex items-center justify-between h-14 px-4 lg:px-8 glass-elevated border-b border-black/[0.06] dark:border-white/[0.06]">
       <div className="flex items-center gap-2">
         <div className="lg:hidden">
-          <span className="text-[17px] font-semibold tracking-[-0.3px] text-[#1d1d1f]">FinBoom</span>
+          <p className="text-[17px] font-semibold tracking-[-0.3px] text-[#1d1d1f] leading-tight">
+            {user ? `Hi, ${user.firstName || "there"}` : "FinBoom"}
+          </p>
+          <p className="text-[11px] text-[#86868b] leading-tight">FinBoom</p>
         </div>
         <button
           onClick={toggle}

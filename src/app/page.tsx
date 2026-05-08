@@ -52,10 +52,10 @@ export default function Home() {
       {/* Navbar */}
       <header>
       <nav className="sticky top-0 z-50 glass-elevated border-b border-black/[0.04] dark:border-white/[0.06]" aria-label="Main navigation">
-        <div className="max-w-[1200px] mx-auto px-6 lg:px-10 h-12 flex items-center justify-between">
-          <span className="text-[17px] font-semibold tracking-[-0.3px] text-[#1d1d1f] dark:text-white">FinBoom</span>
-          <div className="flex items-center gap-2">
-            <Link href="/blog" className="px-4 py-1.5 text-sm font-medium text-[#1d1d1f] dark:text-white rounded-xl hover:bg-black/[0.04] dark:hover:bg-white/[0.06] transition-colors">Blog</Link>
+        <div className="max-w-[1200px] mx-auto px-6 lg:px-10 h-14 flex items-center justify-between">
+          <span className="text-[22px] font-bold tracking-[-0.5px] text-[#1d1d1f] dark:text-white">FinBoom</span>
+          <div className="flex items-center gap-3">
+            <Link href="/blog" className="text-[15px] font-medium text-[#1d1d1f] dark:text-white px-3 py-1.5 rounded-xl hover:bg-black/[0.05] dark:hover:bg-white/[0.08] active:scale-95 transition-all duration-200">Blog</Link>
             <NavAuthButtons />
           </div>
         </div>

@@ -60,23 +60,23 @@ export default async function BlogPage() {
       {/* Header */}
       <header>
         <nav className="sticky top-0 z-50 glass-elevated border-b border-black/[0.04] dark:border-white/[0.06]">
-          <div className="max-w-[1200px] mx-auto px-6 lg:px-10 h-12 flex items-center justify-between">
-            <Link href="/" className="text-[17px] font-semibold tracking-[-0.3px] text-[#1d1d1f] dark:text-white">
+          <div className="max-w-[1200px] mx-auto px-6 lg:px-10 h-14 flex items-center justify-between">
+            <Link href="/" className="text-[22px] font-bold tracking-[-0.5px] text-[#1d1d1f] dark:text-white">
               FinBoom
             </Link>
             <div className="flex items-center gap-4">
               {isAdmin && (
                 <Link
                   href="/blog/new"
-                  className="text-sm font-medium px-3.5 py-1.5 rounded-xl border border-black/10 dark:border-white/10 text-[#1d1d1f] dark:text-white hover:bg-black/5 dark:hover:bg-white/5 transition-colors"
+                  className="text-sm font-semibold px-4 py-2 rounded-xl bg-[#1d1d1f] dark:bg-white text-white dark:text-[#1d1d1f] hover:shadow-lg hover:shadow-black/20 dark:hover:shadow-white/20 hover:-translate-y-0.5 active:scale-95 transition-all duration-200"
                 >
                   + New Post
                 </Link>
               )}
-              <Link href="/" className="text-sm text-[#6e6e73] hover:text-[#1d1d1f] dark:hover:text-white transition-colors">
+              <Link href="/" className="text-[15px] font-medium text-[#1d1d1f] dark:text-white px-3 py-1.5 rounded-xl hover:bg-black/[0.05] dark:hover:bg-white/[0.08] active:scale-95 transition-all duration-200">
                 Home
               </Link>
-              <Link href="/dashboard" className="text-sm text-[#6e6e73] hover:text-[#1d1d1f] dark:hover:text-white transition-colors">
+              <Link href="/dashboard" className="text-[15px] font-medium text-[#1d1d1f] dark:text-white px-3 py-1.5 rounded-xl hover:bg-black/[0.05] dark:hover:bg-white/[0.08] active:scale-95 transition-all duration-200">
                 Dashboard
               </Link>
             </div>

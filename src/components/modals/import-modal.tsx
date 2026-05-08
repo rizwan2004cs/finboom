@@ -201,7 +201,7 @@ export function ImportModal({ onClose, onImport }: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center">
+    <div className="fixed inset-0 z-60 flex items-end sm:items-center justify-center">
       <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
       <div className="relative w-full sm:max-w-lg glass-elevated rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[85vh] overflow-y-auto">
         <div className="sm:hidden flex justify-center pt-3">
@@ -215,7 +215,7 @@ export function ImportModal({ onClose, onImport }: Props) {
           </button>
         </div>
 
-        <div className="p-5">
+        <div className="p-5 pb-8 sm:pb-5">
           {step === "upload" && (
             <div className="space-y-4">
               {/* Format selector */}

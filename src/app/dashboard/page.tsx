@@ -104,8 +104,8 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* Greeting */}
-      <div>
+      {/* Greeting - hidden on mobile since it's in the top bar */}
+      <div className="hidden lg:block">
         <h1 className="text-[28px] font-semibold tracking-[-0.3px] text-[#1d1d1f]">
           Hi, {user?.firstName || "there"}
         </h1>
