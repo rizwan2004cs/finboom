@@ -17,7 +17,13 @@ export function NavAuthButtons() {
     )
   }
 
-  return <SignInButton mode="modal" />
+  return (
+    <SignInButton mode="modal">
+      <button className="liquid-glass-btn-primary px-5 py-1.5 text-sm cursor-pointer">
+        Sign in
+      </button>
+    </SignInButton>
+  )
 }
 
 export function HeroCTA() {
@@ -31,5 +37,11 @@ export function HeroCTA() {
     )
   }
 
-  return <SignInButton mode="modal" />
+  return (
+    <SignInButton mode="modal">
+      <button className="liquid-glass-btn-primary px-7 py-3 text-[17px] cursor-pointer">
+        Get Started — It&apos;s Free
+      </button>
+    </SignInButton>
+  )
 }

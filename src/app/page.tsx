@@ -51,7 +51,7 @@ export default function Home() {
       {/* Navbar */}
       <header>
       <nav className="sticky top-0 z-50 glass-elevated border-b border-black/[0.04] dark:border-white/[0.06]" aria-label="Main navigation">
-        <div className="max-w-[980px] mx-auto px-6 h-12 flex items-center justify-between">
+        <div className="max-w-[1200px] mx-auto px-6 lg:px-10 h-12 flex items-center justify-between">
           <span className="text-[17px] font-semibold tracking-[-0.3px] text-[#1d1d1f] dark:text-white">FinBoom</span>
           <div className="flex items-center gap-4">
             <NavAuthButtons />
