@@ -16,6 +16,7 @@ import {
   CreditCard,
   PanelLeftClose,
   PanelLeftOpen,
+  HandCoins,
 } from "lucide-react"
 
 const navItems = [
@@ -23,6 +24,7 @@ const navItems = [
   { href: "/dashboard/assets", label: "Assets", icon: Wallet },
   { href: "/dashboard/liabilities", label: "Liabilities", icon: CreditCard },
   { href: "/dashboard/transactions", label: "Transactions", icon: ArrowUpDown },
+  { href: "/dashboard/parties", label: "Parties", icon: HandCoins },
   { href: "/dashboard/goals", label: "Goals", icon: Target },
   { href: "/dashboard/snapshots", label: "Snapshots", icon: Camera },
   { href: "/dashboard/health", label: "Health", icon: Heart },

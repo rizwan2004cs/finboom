@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from "react"
 import { useUser } from "@clerk/nextjs"
-import { createClient } from "@/utils/supabase/client"
+import { insertRow } from "@/lib/offline"
 import { X, Upload, CheckCircle } from "lucide-react"
 import * as XLSX from "xlsx"
 import { ASSET_CLASSES } from "@/lib/constants"
@@ -182,19 +182,19 @@ export function ImportModal({ onClose, onImport }: Props) {
   async function handleImport() {
     if (!user) return
     setImporting(true)
-    const supabase = createClient()
 
-    const insertData = rows.map(row => ({
-      user_id: user.id,
-      name: row.name,
-      asset_class: row.asset_class,
-      current_value: row.current_value,
-      invested_value: row.invested_value,
-      units: row.units || null,
-      currency: "INR",
-    }))
+    for (const row of rows) {
+      await insertRow("assets", {
+        user_id: user.id,
+        name: row.name,
+        asset_class: row.asset_class,
+        current_value: row.current_value,
+        invested_value: row.invested_value,
+        units: row.units || null,
+        currency: "INR",
+      })
+    }
 
-    await supabase.from("assets").insert(insertData)
     setImporting(false)
     setStep("done")
     setTimeout(onImport, 1500)

@@ -1,11 +1,12 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useUser } from "@clerk/nextjs"
-import { createClient } from "@/utils/supabase/client"
-import { X } from "lucide-react"
+import { fetchTable, insertRow } from "@/lib/offline"
+import { X, Plus } from "lucide-react"
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/constants"
 import { CategoryIcon } from "@/components/category-icon"
+import type { Party } from "@/lib/types"
 
 interface Props {
   onClose: () => void
@@ -15,23 +16,43 @@ interface Props {
 export function AddTransactionModal({ onClose, onSave }: Props) {
   const { user } = useUser()
   const [saving, setSaving] = useState(false)
+  const [parties, setParties] = useState<Party[]>([])
+  const [showNewParty, setShowNewParty] = useState(false)
+  const [newPartyName, setNewPartyName] = useState("")
   const [form, setForm] = useState({
     type: "expense" as "income" | "expense",
     category: "",
     amount: "",
     description: "",
     date: new Date().toISOString().slice(0, 10),
+    spent_for_party_id: "",
   })
 
+  useEffect(() => {
+    if (!user) return
+    fetchTable<Party>("parties", user.id, { order: { column: "name", ascending: true } })
+      .then(data => setParties(data))
+  }, [user])
+
   const categories = form.type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES
+
+  async function handleCreateParty() {
+    if (!user || !newPartyName.trim()) return
+    const { data } = await insertRow<Party>("parties", { user_id: user.id, name: newPartyName.trim() })
+    if (data) {
+      setParties(prev => [...prev, data].sort((a, b) => a.name.localeCompare(b.name)))
+      setForm(prev => ({ ...prev, spent_for_party_id: data.id }))
+      setShowNewParty(false)
+      setNewPartyName("")
+    }
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!user) return
     setSaving(true)
 
-    const supabase = createClient()
-    await supabase.from("transactions").insert({
+    const { data: txData } = await insertRow("transactions", {
       user_id: user.id,
       type: form.type,
       category: form.category || categories[0].id,
@@ -40,6 +61,20 @@ export function AddTransactionModal({ onClose, onSave }: Props) {
       date: form.date,
       currency: "INR",
     })
+
+    // If expense was "spent for" a party, also create a party_transaction (lent)
+    if (form.type === "expense" && form.spent_for_party_id && txData) {
+      await insertRow("party_transactions", {
+        user_id: user.id,
+        party_id: form.spent_for_party_id,
+        type: "lent",
+        amount: parseFloat(form.amount) || 0,
+        currency: "INR",
+        date: form.date,
+        notes: form.description || null,
+        linked_transaction_id: txData.id,
+      })
+    }
 
     setSaving(false)
     onSave()
@@ -141,6 +176,52 @@ export function AddTransactionModal({ onClose, onSave }: Props) {
               className="mt-1 w-full px-4 py-3 rounded-xl bg-[#f5f5f7] border-0 text-sm text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
             />
           </div>
+
+          {/* Spent For (expense only) */}
+          {form.type === "expense" && (
+            <div>
+              <label className="text-sm font-medium text-[#1d1d1f]">Spent for (optional)</label>
+              <p className="text-[11px] text-[#86868b] mt-0.5">If spent for someone else, it will be tracked as receivable</p>
+              <div className="flex gap-2 mt-1">
+                <select
+                  value={form.spent_for_party_id}
+                  onChange={(e) => setForm(prev => ({ ...prev, spent_for_party_id: e.target.value }))}
+                  className="flex-1 px-4 py-3 rounded-xl bg-[#f5f5f7] border-0 text-sm text-[#1d1d1f] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
+                >
+                  <option value="">For myself</option>
+                  {parties.map(p => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setShowNewParty(!showNewParty)}
+                  className="p-3 rounded-xl bg-[#f5f5f7] hover:bg-[#e8e8ed] transition-all"
+                >
+                  <Plus className="w-4 h-4 text-[#1d1d1f]" />
+                </button>
+              </div>
+              {showNewParty && (
+                <div className="flex gap-2 mt-2">
+                  <input
+                    type="text"
+                    value={newPartyName}
+                    onChange={(e) => setNewPartyName(e.target.value)}
+                    placeholder="New party name"
+                    className="flex-1 px-4 py-2.5 rounded-xl bg-[#f5f5f7] border-0 text-sm text-[#1d1d1f] placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleCreateParty}
+                    disabled={!newPartyName.trim()}
+                    className="px-4 py-2.5 rounded-xl bg-[#1d1d1f] text-white text-sm font-medium hover:opacity-90 transition-all disabled:opacity-50"
+                  >
+                    Add
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Submit */}
           <button

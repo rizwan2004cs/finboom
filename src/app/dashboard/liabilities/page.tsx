@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useUser } from "@clerk/nextjs"
-import { createClient } from "@/utils/supabase/client"
+import { fetchTable, deleteRow, insertRow, updateRow } from "@/lib/offline"
 import { Plus, Trash2, Edit2, CreditCard } from "lucide-react"
 import type { Liability } from "@/lib/types"
 import { LIABILITY_TYPES } from "@/lib/constants"
@@ -28,20 +28,14 @@ export default function LiabilitiesPage() {
   }, [user])
 
   async function loadLiabilities() {
-    const supabase = createClient()
-    const { data } = await supabase
-      .from("liabilities")
-      .select("*")
-      .eq("user_id", user!.id)
-      .order("outstanding_amount", { ascending: false })
-    setLiabilities(data || [])
+    const data = await fetchTable<Liability>("liabilities", user!.id, { order: { column: "outstanding_amount", ascending: false } })
+    setLiabilities(data)
     setLoading(false)
   }
 
   async function deleteLiability(id: string) {
     if (!confirm("Delete this liability?")) return
-    const supabase = createClient()
-    await supabase.from("liabilities").delete().eq("id", id)
+    await deleteRow("liabilities", id)
     setLiabilities(prev => prev.filter(l => l.id !== id))
   }
 
@@ -222,7 +216,6 @@ function AddLiabilityModal({
     if (!user || !form.name || !form.outstanding_amount) return
     setSaving(true)
 
-    const supabase = createClient()
     const payload = {
       user_id: user.id,
       name: form.name,
@@ -237,9 +230,9 @@ function AddLiabilityModal({
     }
 
     if (liability) {
-      await supabase.from("liabilities").update(payload).eq("id", liability.id)
+      await updateRow("liabilities", liability.id, payload)
     } else {
-      await supabase.from("liabilities").insert(payload)
+      await insertRow("liabilities", payload)
     }
 
     setSaving(false)

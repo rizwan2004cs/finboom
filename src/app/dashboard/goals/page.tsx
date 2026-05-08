@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useUser } from "@clerk/nextjs"
-import { createClient } from "@/utils/supabase/client"
+import { fetchTable, deleteRow, insertRow, updateRow } from "@/lib/offline"
 import { Plus, Target, Trash2, Edit2, TrendingUp, Calendar } from "lucide-react"
 import type { Goal, Asset } from "@/lib/types"
 
@@ -31,20 +31,18 @@ export default function GoalsPage() {
   }, [user])
 
   async function loadData() {
-    const supabase = createClient()
-    const [goalsRes, assetsRes] = await Promise.all([
-      supabase.from("goals").select("*").eq("user_id", user!.id).order("target_date", { ascending: true }),
-      supabase.from("assets").select("*").eq("user_id", user!.id),
+    const [goalsData, assetsData] = await Promise.all([
+      fetchTable<Goal>("goals", user!.id, { order: { column: "target_date", ascending: true } }),
+      fetchTable<Asset>("assets", user!.id),
     ])
-    setGoals(goalsRes.data || [])
-    setAssets(assetsRes.data || [])
+    setGoals(goalsData)
+    setAssets(assetsData)
     setLoading(false)
   }
 
   async function deleteGoal(id: string) {
     if (!confirm("Delete this goal?")) return
-    const supabase = createClient()
-    await supabase.from("goals").delete().eq("id", id)
+    await deleteRow("goals", id)
     setGoals(prev => prev.filter(g => g.id !== id))
   }
 
@@ -217,7 +215,6 @@ function GoalFormModal({ goal, assets, onClose, onSave }: {
     if (!user) return
     setSaving(true)
 
-    const supabase = createClient()
     const data = {
       user_id: user.id,
       name: form.name,
@@ -232,9 +229,9 @@ function GoalFormModal({ goal, assets, onClose, onSave }: {
     }
 
     if (goal) {
-      await supabase.from("goals").update(data).eq("id", goal.id)
+      await updateRow("goals", goal.id, data)
     } else {
-      await supabase.from("goals").insert(data)
+      await insertRow("goals", data)
     }
 
     setSaving(false)

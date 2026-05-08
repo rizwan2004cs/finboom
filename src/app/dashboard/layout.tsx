@@ -3,6 +3,7 @@
 import { Sidebar, MobileBottomNav } from "@/components/navigation"
 import { TopBar } from "@/components/top-bar"
 import { SidebarProvider, useSidebar } from "@/components/sidebar-context"
+import { OfflineProvider } from "@/components/offline-provider"
 import { cn } from "@/lib/utils"
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
@@ -32,7 +33,9 @@ export default function DashboardLayout({
 }) {
   return (
     <SidebarProvider>
-      <DashboardShell>{children}</DashboardShell>
+      <OfflineProvider>
+        <DashboardShell>{children}</DashboardShell>
+      </OfflineProvider>
     </SidebarProvider>
   )
 }

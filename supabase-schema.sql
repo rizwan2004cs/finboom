@@ -116,6 +116,31 @@ CREATE TABLE IF NOT EXISTS health_checks (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Parties table
+CREATE TABLE IF NOT EXISTS parties (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  name TEXT NOT NULL,
+  phone TEXT,
+  notes TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Party Transactions table
+CREATE TABLE IF NOT EXISTS party_transactions (
+  id UUID DEFAULT gen_random_uuid() PRIMARY KEY,
+  user_id TEXT NOT NULL,
+  party_id UUID NOT NULL REFERENCES parties(id) ON DELETE CASCADE,
+  type TEXT NOT NULL CHECK (type IN ('lent', 'received_back', 'borrowed', 'paid_back')),
+  amount DECIMAL(15,2) NOT NULL DEFAULT 0,
+  currency TEXT NOT NULL DEFAULT 'INR',
+  date DATE NOT NULL DEFAULT CURRENT_DATE,
+  due_date DATE,
+  notes TEXT,
+  linked_transaction_id UUID REFERENCES transactions(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- Row Level Security (RLS) Policies
 ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE assets ENABLE ROW LEVEL SECURITY;
@@ -125,6 +150,8 @@ ALTER TABLE goals ENABLE ROW LEVEL SECURITY;
 ALTER TABLE snapshots ENABLE ROW LEVEL SECURITY;
 ALTER TABLE shared_access ENABLE ROW LEVEL SECURITY;
 ALTER TABLE health_checks ENABLE ROW LEVEL SECURITY;
+ALTER TABLE parties ENABLE ROW LEVEL SECURITY;
+ALTER TABLE party_transactions ENABLE ROW LEVEL SECURITY;
 
 -- Policies - users can only access their own data
 CREATE POLICY "Users can manage own profiles" ON profiles FOR ALL USING (user_id = current_setting('request.jwt.claims')::json->>'sub');
@@ -135,6 +162,8 @@ CREATE POLICY "Users can manage own goals" ON goals FOR ALL USING (user_id = cur
 CREATE POLICY "Users can manage own snapshots" ON snapshots FOR ALL USING (user_id = current_setting('request.jwt.claims')::json->>'sub');
 CREATE POLICY "Users can manage own shared_access" ON shared_access FOR ALL USING (owner_user_id = current_setting('request.jwt.claims')::json->>'sub');
 CREATE POLICY "Users can manage own health_checks" ON health_checks FOR ALL USING (user_id = current_setting('request.jwt.claims')::json->>'sub');
+CREATE POLICY "Users can manage own parties" ON parties FOR ALL USING (user_id = current_setting('request.jwt.claims')::json->>'sub');
+CREATE POLICY "Users can manage own party_transactions" ON party_transactions FOR ALL USING (user_id = current_setting('request.jwt.claims')::json->>'sub');
 
 -- Indexes for performance
 CREATE INDEX idx_assets_user_id ON assets(user_id);
@@ -145,3 +174,7 @@ CREATE INDEX idx_transactions_date ON transactions(date);
 CREATE INDEX idx_goals_user_id ON goals(user_id);
 CREATE INDEX idx_snapshots_user_id ON snapshots(user_id);
 CREATE INDEX idx_snapshots_date ON snapshots(snapshot_date);
+CREATE INDEX idx_parties_user_id ON parties(user_id);
+CREATE INDEX idx_party_transactions_user_id ON party_transactions(user_id);
+CREATE INDEX idx_party_transactions_party_id ON party_transactions(party_id);
+CREATE INDEX idx_party_transactions_due_date ON party_transactions(due_date);

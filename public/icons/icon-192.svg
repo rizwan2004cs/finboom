@@ -1,5 +1,49 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
-  <rect width="192" height="192" rx="40" fill="#1d1d1f"/>
-  <text x="96" y="125" font-family="-apple-system, SF Pro Display, system-ui, sans-serif" font-size="80" font-weight="700" fill="#ffffff" text-anchor="middle" letter-spacing="-4">F</text>
-  <circle cx="140" cy="55" r="16" fill="#34c759" opacity="0.9"/>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2a2a2e"/>
+      <stop offset="100%" stop-color="#111113"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.35" cy="0.3" r="0.7">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="fGrad" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#b0b0b8"/>
+    </linearGradient>
+    <filter id="fShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2.5" stdDeviation="4" flood-color="#000000" flood-opacity="0.5"/>
+    </filter>
+    <radialGradient id="orb" cx="0.38" cy="0.32" r="0.55">
+      <stop offset="0%" stop-color="#80f09a"/>
+      <stop offset="50%" stop-color="#34c759"/>
+      <stop offset="100%" stop-color="#1a8a38"/>
+    </radialGradient>
+    <filter id="orbGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <linearGradient id="edge" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.15"/>
+      <stop offset="50%" stop-color="#ffffff" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.2"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="192" height="192" rx="40" fill="url(#bg)"/>
+  <rect x="1" y="1" width="190" height="190" rx="39" fill="none" stroke="url(#edge)" stroke-width="1.5"/>
+  <rect width="192" height="192" rx="40" fill="url(#glow)"/>
+
+  <g filter="url(#fShadow)">
+    <path d="M63 49 h66 v16.5 H82.5 v21 h37.5 v16.5 H82.5 v40.5 h-19.5 V49z" fill="url(#fGrad)"/>
+  </g>
+
+  <g filter="url(#orbGlow)">
+    <circle cx="143" cy="52" r="16.5" fill="url(#orb)"/>
+    <ellipse cx="139" cy="46.5" rx="7" ry="4.5" fill="#ffffff" opacity="0.45"/>
+  </g>
 </svg>

@@ -99,3 +99,27 @@ export interface HealthCheck {
   emergency_fund_months: number
   monthly_expenses: number
 }
+
+export interface Party {
+  id: string
+  user_id: string
+  name: string
+  phone?: string
+  notes?: string
+  created_at: string
+}
+
+export interface PartyTransaction {
+  id: string
+  user_id: string
+  party_id: string
+  type: 'lent' | 'received_back' | 'borrowed' | 'paid_back'
+  amount: number
+  currency: string
+  date: string
+  due_date?: string
+  notes?: string
+  linked_transaction_id?: string
+  created_at: string
+  party?: Party
+}

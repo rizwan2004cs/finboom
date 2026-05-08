@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { useUser } from "@clerk/nextjs"
 import { createClient } from "@/utils/supabase/client"
+import { fetchTable } from "@/lib/offline"
 import { Shield, Heart, AlertTriangle, CheckCircle, Info } from "lucide-react"
 import type { HealthCheck } from "@/lib/types"
 
@@ -27,9 +28,9 @@ export default function HealthPage() {
 
   async function loadData() {
     const supabase = createClient()
-    const [healthRes, txRes] = await Promise.all([
+    const [healthRes, txData] = await Promise.all([
       supabase.from("health_checks").select("*").eq("user_id", user!.id).single(),
-      supabase.from("transactions").select("amount, type").eq("user_id", user!.id),
+      fetchTable<{ amount: number; type: string }>("transactions", user!.id),
     ])
 
     if (healthRes.data) {
@@ -37,7 +38,7 @@ export default function HealthPage() {
     }
 
     // Calculate avg monthly income from transactions
-    const incomes = (txRes.data || []).filter(t => t.type === "income")
+    const incomes = txData.filter(t => t.type === "income")
     if (incomes.length > 0) {
       const total = incomes.reduce((sum, t) => sum + Number(t.amount), 0)
       setMonthlyIncome(total / Math.max(1, Math.ceil(incomes.length / 3))) // rough avg

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { useUser } from "@clerk/nextjs"
 import { createClient } from "@/utils/supabase/client"
+import { fetchTable, insertRow, deleteRow } from "@/lib/offline"
 import { Users, Plus, Trash2, Building2, User2, ArrowRight } from "lucide-react"
 import type { Profile, Asset, Liability } from "@/lib/types"
 
@@ -27,26 +28,17 @@ export default function ProfilesPage() {
   }, [user])
 
   async function loadProfiles() {
-    const supabase = createClient()
-    const { data } = await supabase
-      .from("profiles")
-      .select("*")
-      .eq("user_id", user!.id)
-      .order("created_at", { ascending: true })
-
-    const profilesList = data || []
+    const profilesList = await fetchTable<Profile>("profiles", user!.id, { order: { column: "created_at", ascending: true } })
     setProfiles(profilesList)
 
     // Load summaries for each profile
+    const allAssets = await fetchTable<Asset>("assets", user!.id)
+    const allLiabilities = await fetchTable<Liability>("liabilities", user!.id)
     const summaries: Record<string, { assets: number; liabilities: number }> = {}
     for (const profile of profilesList) {
-      const [assetsRes, liabilitiesRes] = await Promise.all([
-        supabase.from("assets").select("current_value").eq("profile_id", profile.id),
-        supabase.from("liabilities").select("outstanding_amount").eq("profile_id", profile.id),
-      ])
       summaries[profile.id] = {
-        assets: (assetsRes.data || []).reduce((sum, a) => sum + Number(a.current_value), 0),
-        liabilities: (liabilitiesRes.data || []).reduce((sum, l) => sum + Number(l.outstanding_amount), 0),
+        assets: allAssets.filter(a => a.profile_id === profile.id).reduce((sum, a) => sum + Number(a.current_value), 0),
+        liabilities: allLiabilities.filter(l => l.profile_id === profile.id).reduce((sum, l) => sum + Number(l.outstanding_amount), 0),
       }
     }
     setProfileSummaries(summaries)
@@ -57,8 +49,7 @@ export default function ProfilesPage() {
     e.preventDefault()
     if (!user || !form.name.trim()) return
 
-    const supabase = createClient()
-    await supabase.from("profiles").insert({
+    await insertRow("profiles", {
       user_id: user.id,
       name: form.name.trim(),
       type: form.type,
@@ -71,8 +62,7 @@ export default function ProfilesPage() {
 
   async function deleteProfile(id: string) {
     if (!confirm("Delete this profile and all associated data?")) return
-    const supabase = createClient()
-    await supabase.from("profiles").delete().eq("id", id)
+    await deleteRow("profiles", id)
     setProfiles(prev => prev.filter(p => p.id !== id))
   }
 

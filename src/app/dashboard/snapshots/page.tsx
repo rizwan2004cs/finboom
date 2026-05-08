@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { useUser } from "@clerk/nextjs"
-import { createClient } from "@/utils/supabase/client"
+import { fetchTable, insertRow, deleteRow } from "@/lib/offline"
 import { Camera, TrendingUp, TrendingDown, Trash2 } from "lucide-react"
 import type { Snapshot, Asset, Liability } from "@/lib/types"
 import { ASSET_CLASSES } from "@/lib/constants"
@@ -27,29 +27,20 @@ export default function SnapshotsPage() {
   }, [user])
 
   async function loadSnapshots() {
-    const supabase = createClient()
-    const { data } = await supabase
-      .from("snapshots")
-      .select("*")
-      .eq("user_id", user!.id)
-      .order("snapshot_date", { ascending: false })
-    setSnapshots(data || [])
+    const data = await fetchTable<Snapshot>("snapshots", user!.id, { order: { column: "snapshot_date", ascending: false } })
+    setSnapshots(data)
     setLoading(false)
   }
 
   async function takeSnapshot() {
     if (!user) return
     setTaking(true)
-    const supabase = createClient()
 
     // Fetch current assets and liabilities
-    const [assetsRes, liabilitiesRes] = await Promise.all([
-      supabase.from("assets").select("*").eq("user_id", user.id),
-      supabase.from("liabilities").select("*").eq("user_id", user.id),
+    const [assets, liabilities] = await Promise.all([
+      fetchTable<Asset>("assets", user.id),
+      fetchTable<Liability>("liabilities", user.id),
     ])
-
-    const assets: Asset[] = assetsRes.data || []
-    const liabilities: Liability[] = liabilitiesRes.data || []
 
     const totalAssets = assets.reduce((sum, a) => sum + Number(a.current_value), 0)
     const totalLiabilities = liabilities.reduce((sum, l) => sum + Number(l.outstanding_amount), 0)
@@ -62,7 +53,7 @@ export default function SnapshotsPage() {
       breakdown[a.asset_class] += Number(a.current_value)
     })
 
-    await supabase.from("snapshots").insert({
+    await insertRow("snapshots", {
       user_id: user.id,
       total_assets: totalAssets,
       total_liabilities: totalLiabilities,
@@ -78,8 +69,7 @@ export default function SnapshotsPage() {
 
   async function deleteSnapshot(id: string) {
     if (!confirm("Delete this snapshot?")) return
-    const supabase = createClient()
-    await supabase.from("snapshots").delete().eq("id", id)
+    await deleteRow("snapshots", id)
     setSnapshots(prev => prev.filter(s => s.id !== id))
   }
 

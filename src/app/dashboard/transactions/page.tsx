@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react"
 import { useUser } from "@clerk/nextjs"
 import { useSearchParams } from "next/navigation"
-import { createClient } from "@/utils/supabase/client"
+import { fetchTable, deleteRow } from "@/lib/offline"
 import { Plus, ArrowUpCircle, ArrowDownCircle, Filter, Trash2, Receipt } from "lucide-react"
 import type { Transaction } from "@/lib/types"
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/constants"
@@ -45,27 +45,25 @@ function TransactionsPage() {
   }, [user, monthFilter])
 
   async function loadTransactions() {
-    const supabase = createClient()
     const startDate = `${monthFilter}-01`
     const endDate = new Date(parseInt(monthFilter.slice(0, 4)), parseInt(monthFilter.slice(5, 7)), 0)
       .toISOString().slice(0, 10)
 
-    const { data } = await supabase
-      .from("transactions")
-      .select("*")
-      .eq("user_id", user!.id)
-      .gte("date", startDate)
-      .lte("date", endDate)
-      .order("date", { ascending: false })
+    const data = await fetchTable<Transaction>("transactions", user!.id, {
+      filters: [
+        { column: "date", op: "gte", value: startDate },
+        { column: "date", op: "lte", value: endDate },
+      ],
+      order: { column: "date", ascending: false },
+    })
     
-    setTransactions(data || [])
+    setTransactions(data)
     setLoading(false)
   }
 
   async function deleteTransaction(id: string) {
     if (!confirm("Delete this transaction?")) return
-    const supabase = createClient()
-    await supabase.from("transactions").delete().eq("id", id)
+    await deleteRow("transactions", id)
     setTransactions(prev => prev.filter(t => t.id !== id))
   }
 

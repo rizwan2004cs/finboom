@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { useUser } from "@clerk/nextjs"
-import { createClient } from "@/utils/supabase/client"
+import { insertRow, updateRow } from "@/lib/offline"
 import { X } from "lucide-react"
 import { ASSET_CLASSES, CURRENCIES } from "@/lib/constants"
 import type { Asset } from "@/lib/types"
@@ -31,7 +31,6 @@ export function AddAssetModal({ asset, onClose, onSave }: Props) {
     if (!user) return
     setSaving(true)
 
-    const supabase = createClient()
     const data = {
       user_id: user.id,
       name: form.name,
@@ -45,9 +44,9 @@ export function AddAssetModal({ asset, onClose, onSave }: Props) {
     }
 
     if (asset) {
-      await supabase.from("assets").update(data).eq("id", asset.id)
+      await updateRow("assets", asset.id, data)
     } else {
-      await supabase.from("assets").insert(data)
+      await insertRow("assets", data)
     }
 
     setSaving(false)

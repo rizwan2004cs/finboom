@@ -2,12 +2,12 @@
 
 import { useEffect, useState } from "react"
 import { useUser } from "@clerk/nextjs"
-import { createClient } from "@/utils/supabase/client"
-import { TrendingUp, TrendingDown, Wallet, CreditCard, Target, ArrowUpRight, Plus, Receipt, Camera, Download } from "lucide-react"
+import { fetchTable } from "@/lib/offline"
+import { TrendingUp, TrendingDown, Wallet, CreditCard, Target, ArrowUpRight, Plus, Receipt, Camera, Download, HandCoins, Clock } from "lucide-react"
 import Link from "next/link"
 import { NetWorthChart } from "@/components/charts/net-worth-chart"
 import { AllocationChart } from "@/components/charts/allocation-chart"
-import type { Asset, Liability, Goal, Snapshot } from "@/lib/types"
+import type { Asset, Liability, Goal, Snapshot, PartyTransaction, Party } from "@/lib/types"
 import { ASSET_CLASSES } from "@/lib/constants"
 
 function formatCurrency(amount: number, currency = "INR") {
@@ -26,24 +26,26 @@ export default function DashboardPage() {
   const [liabilities, setLiabilities] = useState<Liability[]>([])
   const [goals, setGoals] = useState<Goal[]>([])
   const [snapshots, setSnapshots] = useState<Snapshot[]>([])
+  const [partyTransactions, setPartyTransactions] = useState<PartyTransaction[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!user) return
-    const supabase = createClient()
     
     async function loadData() {
-      const [assetsRes, liabilitiesRes, goalsRes, snapshotsRes] = await Promise.all([
-        supabase.from("assets").select("*").eq("user_id", user!.id),
-        supabase.from("liabilities").select("*").eq("user_id", user!.id),
-        supabase.from("goals").select("*").eq("user_id", user!.id),
-        supabase.from("snapshots").select("*").eq("user_id", user!.id).order("snapshot_date", { ascending: true }).limit(12),
+      const [assetsData, liabilitiesData, goalsData, snapshotsData, partyTxData] = await Promise.all([
+        fetchTable<Asset>("assets", user!.id),
+        fetchTable<Liability>("liabilities", user!.id),
+        fetchTable<Goal>("goals", user!.id),
+        fetchTable<Snapshot>("snapshots", user!.id, { order: { column: "snapshot_date", ascending: true }, limit: 12 }),
+        fetchTable<PartyTransaction>("party_transactions", user!.id),
       ])
       
-      setAssets(assetsRes.data || [])
-      setLiabilities(liabilitiesRes.data || [])
-      setGoals(goalsRes.data || [])
-      setSnapshots(snapshotsRes.data || [])
+      setAssets(assetsData)
+      setLiabilities(liabilitiesData)
+      setGoals(goalsData)
+      setSnapshots(snapshotsData)
+      setPartyTransactions(partyTxData)
       setLoading(false)
     }
     
@@ -57,6 +59,24 @@ export default function DashboardPage() {
   // Calculate previous net worth from snapshots for % change
   const prevSnapshot = snapshots.length > 1 ? snapshots[snapshots.length - 2] : null
   const netWorthChange = prevSnapshot ? ((netWorth - Number(prevSnapshot.net_worth)) / Number(prevSnapshot.net_worth)) * 100 : 0
+
+  // Party balances — receivable vs payable
+  const partyBalanceMap = new Map<string, number>()
+  for (const tx of partyTransactions) {
+    const current = partyBalanceMap.get(tx.party_id) || 0
+    if (tx.type === "lent") partyBalanceMap.set(tx.party_id, current + Number(tx.amount))
+    else if (tx.type === "received_back") partyBalanceMap.set(tx.party_id, current - Number(tx.amount))
+    else if (tx.type === "borrowed") partyBalanceMap.set(tx.party_id, current - Number(tx.amount))
+    else if (tx.type === "paid_back") partyBalanceMap.set(tx.party_id, current + Number(tx.amount))
+  }
+  const totalReceivable = Array.from(partyBalanceMap.values()).filter(b => b > 0).reduce((s, b) => s + b, 0)
+
+  const today = new Date()
+  const in30Days = new Date(today)
+  in30Days.setDate(in30Days.getDate() + 30)
+  const receivableIn30 = partyTransactions
+    .filter(tx => tx.type === "lent" && tx.due_date && new Date(tx.due_date) >= today && new Date(tx.due_date) <= in30Days)
+    .reduce((s, tx) => s + Number(tx.amount), 0)
 
   // Asset allocation breakdown
   const allocationData = ASSET_CLASSES.map(cls => {
@@ -156,6 +176,33 @@ export default function DashboardPage() {
           <p className="text-[12px] text-[#86868b] mt-1">{liabilities.length} active loans</p>
         </div>
       </div>
+
+      {/* Party Receivable Cards */}
+      {(totalReceivable > 0 || receivableIn30 > 0) && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Link href="/dashboard/parties" className="liquid-glass rounded-2xl p-5 transition-all hover:shadow-md">
+            <div className="flex items-center justify-between">
+              <p className="text-[14px] text-[#86868b] font-medium">Total Receivable</p>
+              <div className="w-9 h-9 rounded-xl bg-green-50 flex items-center justify-center">
+                <HandCoins className="w-5 h-5 text-green-600" />
+              </div>
+            </div>
+            <p className="text-[28px] font-semibold mt-2 text-green-700">{formatCurrency(totalReceivable)}</p>
+            <p className="text-[12px] text-[#86868b] mt-1">from parties</p>
+          </Link>
+
+          <Link href="/dashboard/parties" className="liquid-glass rounded-2xl p-5 transition-all hover:shadow-md">
+            <div className="flex items-center justify-between">
+              <p className="text-[14px] text-[#86868b] font-medium">Receivable in 30 Days</p>
+              <div className="w-9 h-9 rounded-xl bg-orange-50 flex items-center justify-center">
+                <Clock className="w-5 h-5 text-orange-600" />
+              </div>
+            </div>
+            <p className="text-[28px] font-semibold mt-2 text-orange-700">{formatCurrency(receivableIn30)}</p>
+            <p className="text-[12px] text-[#86868b] mt-1">upcoming dues</p>
+          </Link>
+        </div>
+      )}
 
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

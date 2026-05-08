@@ -70,6 +70,15 @@ export const INCOME_CATEGORIES = [
   { id: 'other', label: 'Other', icon: 'MoreHorizontal' },
 ] as const
 
+export const PARTY_TRANSACTION_TYPES = [
+  { id: 'lent', label: 'I Gave (Lent)', icon: 'ArrowUpRight', description: 'Money you gave to someone' },
+  { id: 'received_back', label: 'Received Back', icon: 'ArrowDownLeft', description: 'Money returned to you' },
+  { id: 'borrowed', label: 'I Took (Borrowed)', icon: 'ArrowDownRight', description: 'Money you borrowed' },
+  { id: 'paid_back', label: 'Paid Back', icon: 'ArrowUpLeft', description: 'Money you returned' },
+] as const
+
+export type PartyTransactionTypeId = typeof PARTY_TRANSACTION_TYPES[number]['id']
+
 export const CURRENCIES = [
   { code: 'INR', symbol: '₹', name: 'Indian Rupee' },
   { code: 'USD', symbol: '$', name: 'US Dollar' },

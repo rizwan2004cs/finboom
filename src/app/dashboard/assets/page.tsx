@@ -3,7 +3,7 @@
 import { Suspense, useEffect, useState } from "react"
 import { useUser } from "@clerk/nextjs"
 import { useSearchParams } from "next/navigation"
-import { createClient } from "@/utils/supabase/client"
+import { fetchTable, deleteRow } from "@/lib/offline"
 import { Plus, Search, Filter, Trash2, Edit2, Upload } from "lucide-react"
 import type { Asset } from "@/lib/types"
 import { ASSET_CLASSES } from "@/lib/constants"
@@ -48,20 +48,14 @@ function AssetsPage() {
   }, [user])
 
   async function loadAssets() {
-    const supabase = createClient()
-    const { data } = await supabase
-      .from("assets")
-      .select("*")
-      .eq("user_id", user!.id)
-      .order("current_value", { ascending: false })
-    setAssets(data || [])
+    const data = await fetchTable<Asset>("assets", user!.id, { order: { column: "current_value", ascending: false } })
+    setAssets(data)
     setLoading(false)
   }
 
   async function deleteAsset(id: string) {
     if (!confirm("Delete this asset?")) return
-    const supabase = createClient()
-    await supabase.from("assets").delete().eq("id", id)
+    await deleteRow("assets", id)
     setAssets(prev => prev.filter(a => a.id !== id))
   }
 
