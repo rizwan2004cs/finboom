@@ -67,7 +67,7 @@ export function PwaInstallBanner() {
         {deferredPrompt && (
           <button
             onClick={handleInstall}
-            className="px-7 py-3 rounded-full bg-white text-[#1d1d1f] text-[17px] font-medium hover:bg-white/90 transition-all shadow-lg shadow-white/10"
+            className="px-7 py-3 rounded-full bg-white !text-black text-[17px] font-semibold hover:bg-white/90 transition-all shadow-[0_0_20px_rgba(255,255,255,0.2)]"
           >
             Install FinBoom
           </button>

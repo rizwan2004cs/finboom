@@ -1,36 +1,35 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
   <defs>
     <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0%" stop-color="#2a2a2e"/>
-      <stop offset="100%" stop-color="#111113"/>
+      <stop offset="0%" stop-color="#f8f8fa"/>
+      <stop offset="100%" stop-color="#e8e8ed"/>
     </linearGradient>
     <radialGradient id="glow" cx="0.35" cy="0.3" r="0.7">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.6"/>
       <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
     </radialGradient>
     <linearGradient id="fGrad" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#ffffff"/>
-      <stop offset="100%" stop-color="#b0b0b8"/>
+      <stop offset="0%" stop-color="#1d1d1f"/>
+      <stop offset="100%" stop-color="#3a3a3c"/>
     </linearGradient>
     <filter id="fShadow" x="-20%" y="-20%" width="140%" height="140%">
-      <feDropShadow dx="0" dy="2.5" stdDeviation="4" flood-color="#000000" flood-opacity="0.5"/>
+      <feDropShadow dx="0" dy="1.5" stdDeviation="3" flood-color="#000000" flood-opacity="0.12"/>
     </filter>
     <radialGradient id="orb" cx="0.38" cy="0.32" r="0.55">
-      <stop offset="0%" stop-color="#80f09a"/>
+      <stop offset="0%" stop-color="#6ee78a"/>
       <stop offset="50%" stop-color="#34c759"/>
       <stop offset="100%" stop-color="#1a8a38"/>
     </radialGradient>
     <filter id="orbGlow" x="-50%" y="-50%" width="200%" height="200%">
-      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feGaussianBlur stdDeviation="2" result="blur"/>
       <feMerge>
         <feMergeNode in="blur"/>
         <feMergeNode in="SourceGraphic"/>
       </feMerge>
     </filter>
     <linearGradient id="edge" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.15"/>
-      <stop offset="50%" stop-color="#ffffff" stop-opacity="0"/>
-      <stop offset="100%" stop-color="#000000" stop-opacity="0.2"/>
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#000000" stop-opacity="0.04"/>
     </linearGradient>
   </defs>
 
@@ -43,7 +42,7 @@
   </g>
 
   <g filter="url(#orbGlow)">
-    <circle cx="143" cy="52" r="16.5" fill="url(#orb)"/>
-    <ellipse cx="139" cy="46.5" rx="7" ry="4.5" fill="#ffffff" opacity="0.45"/>
+    <circle cx="142.5" cy="51.75" r="16.5" fill="url(#orb)"/>
+    <ellipse cx="138.75" cy="46.5" rx="6.75" ry="4.5" fill="#ffffff" opacity="0.5"/>
   </g>
 </svg>

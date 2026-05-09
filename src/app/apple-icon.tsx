@@ -18,17 +18,32 @@ export default function AppleIcon() {
           position: "relative",
         }}
       >
-        <span
+        {/* Frosted glass card */}
+        <div
           style={{
-            fontSize: 110,
-            fontWeight: 700,
-            color: "#1d1d1f",
-            fontFamily: "Georgia, serif",
-            letterSpacing: "-3px",
+            width: "100%",
+            height: "100%",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "linear-gradient(145deg, rgba(255,255,255,0.85), rgba(255,255,255,0.5))",
+            borderRadius: 38,
+            border: "1.5px solid rgba(0,0,0,0.06)",
+            boxShadow: "inset 0 1px 0 rgba(255,255,255,0.9)",
           }}
         >
-          F
-        </span>
+          <span
+            style={{
+              fontSize: 110,
+              fontWeight: 700,
+              color: "#1d1d1f",
+              fontFamily: "Georgia, serif",
+              letterSpacing: "-3px",
+            }}
+          >
+            F
+          </span>
+        </div>
         <div
           style={{
             position: "absolute",
