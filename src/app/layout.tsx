@@ -138,6 +138,13 @@ export default function RootLayout({
             new MutationObserver(function() { updateTheme(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
           })();
         `}</Script>
+        <Script id="no-scroll-number" strategy="afterInteractive">{`
+          document.addEventListener('wheel', function(e) {
+            if (document.activeElement && document.activeElement.type === 'number') {
+              document.activeElement.blur();
+            }
+          }, { passive: true });
+        `}</Script>
         <ClerkProvider>
           {children}
           <PwaInstallPopup />

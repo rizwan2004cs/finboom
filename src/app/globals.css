@@ -2,6 +2,17 @@
 
 @variant dark (&:where(.dark, .dark *));
 
+/* Hide number input spinners globally */
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
 /* ============================================================
    iOS 26 Liquid Glass + Huashu-Design Typography System
    Fonts: Inter (sans) · Source Serif 4 (serif) · JetBrains Mono (mono)
