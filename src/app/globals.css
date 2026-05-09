@@ -492,3 +492,6 @@ body::after {
 .dark .bg-\[\#e8e8ed\] { background: rgba(255, 255, 255, 0.08) !important; }
 .dark .hover\:bg-\[\#e8e8ed\]:hover { background: rgba(255, 255, 255, 0.1) !important; }
 .dark .hover\:bg-\[\#2d2d2f\]:hover { background: rgba(220, 220, 225, 0.9) !important; }
+
+/* Hide Clerk built-in footer (toggle link + branding) — we use our own */
+.cl-footer { display: none !important; }
