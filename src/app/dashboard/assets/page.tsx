@@ -119,9 +119,9 @@ function AssetsPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-tour-page="assets">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between" data-tour-el="assets-header">
         <div>
           <h1 className="text-xl font-bold text-[#1d1d1f] dark:text-white">Assets</h1>
           <p className="text-sm text-[#515154] dark:text-[#98989d]">{assets.length} investments tracked</p>

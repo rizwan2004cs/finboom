@@ -150,6 +150,24 @@ body::after {
   display: none;
 }
 
+/* Tour spotlight highlight on targeted nav items */
+.tour-highlight {
+  position: relative;
+  z-index: 100;
+  border-radius: 12px;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.5), 0 0 16px 4px rgba(99, 102, 241, 0.3);
+  animation: tour-pulse 2s ease-in-out infinite;
+}
+
+/* Ensure scrollIntoView clears the sticky top bar */
+[data-tour-el] {
+  scroll-margin-top: 80px;
+}
+@keyframes tour-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.5), 0 0 16px 4px rgba(99, 102, 241, 0.3); }
+  50% { box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.7), 0 0 24px 8px rgba(99, 102, 241, 0.4); }
+}
+
 /* ============================================================
    LIQUID GLASS CARD
    Based on einui GlassCard: translucent, real-time blur,

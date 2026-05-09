@@ -120,7 +120,7 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-tour-page="dashboard">
       {/* Greeting - hidden on mobile since it's in the top bar */}
       <div className="hidden lg:block">
         <h1 className="text-[28px] font-semibold tracking-[-0.3px] text-[#1d1d1f]">
@@ -132,7 +132,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4" data-tour-el="dashboard-summary">
         {/* Net Worth Card */}
         <div className="liquid-glass rounded-2xl p-5">
           <div className="flex items-center justify-between">

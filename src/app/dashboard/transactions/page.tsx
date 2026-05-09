@@ -131,9 +131,9 @@ function TransactionsPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-tour-page="transactions">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between" data-tour-el="transactions-header">
         <div>
           <h1 className="text-xl font-bold text-[#1d1d1f] dark:text-white">Transactions</h1>
           <p className="text-sm text-[#86868b]">Income & Expenses</p>

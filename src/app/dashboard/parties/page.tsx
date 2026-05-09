@@ -232,9 +232,9 @@ function PartiesPageInner() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" data-tour-page="parties">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between" data-tour-el="parties-header">
         <div>
           <h1 className="text-[24px] font-semibold tracking-[-0.3px] text-[#1d1d1f] dark:text-white">Parties</h1>
           <p className="text-[14px] text-[#86868b] mt-0.5">Track money given & received</p>

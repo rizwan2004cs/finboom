@@ -133,9 +133,9 @@ export default function HealthPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-tour-page="health">
       {/* Header */}
-      <div>
+      <div data-tour-el="health-header">
         <h1 className="text-xl font-bold text-[#1d1d1f]">Financial Health Check</h1>
         <p className="text-sm text-[#86868b]">Are you financially protected?</p>
       </div>

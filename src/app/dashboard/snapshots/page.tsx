@@ -117,9 +117,9 @@ export default function SnapshotsPage() {
     }))
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-tour-page="snapshots">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between" data-tour-el="snapshots-header">
         <div>
           <h1 className="text-xl font-bold text-[#1d1d1f]">Net Worth Snapshots</h1>
           <p className="text-sm text-[#86868b]">Track your wealth over time</p>

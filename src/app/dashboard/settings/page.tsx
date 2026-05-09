@@ -176,9 +176,9 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-tour-page="settings">
       {/* Header */}
-      <div>
+      <div data-tour-el="settings-header">
         <h1 className="text-xl font-bold text-[#1d1d1f] dark:text-white">Settings</h1>
         <p className="text-sm text-[#86868b]">Manage your preferences</p>
       </div>

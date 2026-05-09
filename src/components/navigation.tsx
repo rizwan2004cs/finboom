@@ -103,6 +103,7 @@ export function Sidebar({ onStartTour }: { onStartTour?: () => void }) {
             <Link
               key={item.href}
               href={item.href}
+              data-tour={item.label.toLowerCase()}
               title={collapsed ? item.label : undefined}
               className={cn(
                 "flex items-center gap-3 rounded-xl text-[14px] font-medium transition-all duration-200",
@@ -282,6 +283,7 @@ export function MobileBottomNav({ onStartTour }: { onStartTour?: () => void }) {
               <Link
                 key={item.href}
                 href={item.href}
+                data-tour-mobile={item.label.toLowerCase()}
                 className={cn(
                   "flex flex-col items-center gap-0.5 px-3 py-1 rounded-lg transition-all duration-200 min-w-[60px]",
                   isActive ? "text-[#1d1d1f]" : "text-[#86868b]"

@@ -70,9 +70,9 @@ export default function LiabilitiesPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-tour-page="liabilities">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between" data-tour-el="liabilities-header">
         <div>
           <h1 className="text-xl font-bold text-[#1d1d1f] dark:text-white">Liabilities</h1>
           <p className="text-sm text-[#86868b]">{liabilities.length} active loans</p>

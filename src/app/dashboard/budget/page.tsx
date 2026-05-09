@@ -249,9 +249,9 @@ export default function BudgetPage() {
     .toLocaleDateString("en-IN", { month: "long", year: "numeric" })
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-tour-page="budget">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between" data-tour-el="budget-header">
         <div>
           <h1 className="text-xl font-bold text-[#1d1d1f] dark:text-white">Budget</h1>
           <p className="text-sm text-[#86868b]">Plan your monthly spending</p>
