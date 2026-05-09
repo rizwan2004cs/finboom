@@ -1,14 +1,16 @@
 "use client"
 
-import { useEffect, useState, useMemo } from "react"
+import { useEffect, useState } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { createClient } from "@/utils/supabase/client"
 import { useOfflineQuery } from "@/hooks/use-offline-query"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Shield, Heart, AlertTriangle, CheckCircle, Info } from "lucide-react"
 import type { HealthCheck } from "@/lib/types"
 
 export default function HealthPage() {
   const { user } = useUser()
+  const queryClient = useQueryClient()
   const [health, setHealth] = useState<HealthCheck>({
     has_term_insurance: false,
     term_insurance_cover: 0,
@@ -17,16 +19,26 @@ export default function HealthPage() {
     emergency_fund_months: 0,
     monthly_expenses: 0,
   })
-  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [monthlyIncome, setMonthlyIncome] = useState(0)
 
   const { data: txData = [] } = useOfflineQuery<{ amount: number; type: string }>("transactions", user?.id)
 
+  const { isLoading: loading } = useQuery({
+    queryKey: ["health_checks", user?.id],
+    queryFn: async () => {
+      const supabase = createClient()
+      const { data } = await supabase.from("health_checks").select("*").eq("user_id", user!.id).single()
+      return data as HealthCheck | null
+    },
+    enabled: !!user,
+  })
+
+  // Sync fetched data into local state for editing
+  const healthData = queryClient.getQueryData<HealthCheck | null>(["health_checks", user?.id])
   useEffect(() => {
-    if (!user) return
-    loadData()
-  }, [user])
+    if (healthData) setHealth(healthData)
+  }, [healthData])
 
   useEffect(() => {
     const incomes = txData.filter(t => t.type === "income")
@@ -35,17 +47,6 @@ export default function HealthPage() {
       setMonthlyIncome(total / Math.max(1, Math.ceil(incomes.length / 3)))
     }
   }, [txData])
-
-  async function loadData() {
-    const supabase = createClient()
-    const healthRes = await supabase.from("health_checks").select("*").eq("user_id", user!.id).single()
-
-    if (healthRes.data) {
-      setHealth(healthRes.data)
-    }
-
-    setLoading(false)
-  }
 
   async function saveHealth() {
     if (!user) return
@@ -70,6 +71,7 @@ export default function HealthPage() {
       await supabase.from("health_checks").insert(data)
     }
 
+    queryClient.invalidateQueries({ queryKey: ["health_checks", user.id] })
     setSaving(false)
   }
 

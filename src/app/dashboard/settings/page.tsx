@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { useUser, useAuth } from "@/hooks/use-auth"
 import { createClient } from "@/utils/supabase/client"
+import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Settings, Download, Globe, Trash2, Users, LogOut, Moon, Sun } from "lucide-react"
 import { CURRENCIES } from "@/lib/constants"
 import type { SharedAccess } from "@/lib/types"
@@ -11,22 +12,34 @@ import { CustomSelect } from "@/components/custom-select"
 export default function SettingsPage() {
   const { user } = useUser()
   const { signOut } = useAuth()
-  const [currency, setCurrency] = useState("INR")
+  const queryClient = useQueryClient()
+  const [currency, setCurrency] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem("finboom-currency") || "INR"
+    }
+    return "INR"
+  })
   const [theme, setTheme] = useState<"light" | "dark" | "system">(() => {
     if (typeof window !== "undefined") {
       return (localStorage.getItem("theme") as "light" | "dark" | "system") || "light"
     }
     return "light"
   })
-  const [sharedAccess, setSharedAccess] = useState<SharedAccess[]>([])
   const [shareEmail, setShareEmail] = useState("")
-  const [loading, setLoading] = useState(true)
   const [exporting, setExporting] = useState(false)
 
-  useEffect(() => {
-    if (!user) return
-    loadSettings()
-  }, [user])
+  const { data: sharedAccess = [], isLoading: loading } = useQuery({
+    queryKey: ["shared_access", user?.id],
+    queryFn: async () => {
+      const supabase = createClient()
+      const { data } = await supabase
+        .from("shared_access")
+        .select("*")
+        .eq("owner_user_id", user!.id)
+      return (data || []) as SharedAccess[]
+    },
+    enabled: !!user,
+  })
 
   useEffect(() => {
     // Apply theme
@@ -42,24 +55,6 @@ export default function SettingsPage() {
     }
     localStorage.setItem("theme", theme)
   }, [theme])
-
-  async function loadSettings() {
-    const supabase = createClient()
-
-    // Load profile settings (currency stored in localStorage)
-    const savedCurrency = localStorage.getItem("finboom-currency")
-    if (savedCurrency) setCurrency(savedCurrency)
-
-    // Load shared access
-    const { data: shared } = await supabase
-      .from("shared_access")
-      .select("*")
-      .eq("owner_user_id", user!.id)
-
-    setSharedAccess(shared || [])
-
-    setLoading(false)
-  }
 
   async function saveCurrency(newCurrency: string) {
     setCurrency(newCurrency)
@@ -122,13 +117,13 @@ export default function SettingsPage() {
     })
 
     setShareEmail("")
-    loadSettings()
+    queryClient.invalidateQueries({ queryKey: ["shared_access", user.id] })
   }
 
   async function removeSharedAccess(id: string) {
     const supabase = createClient()
     await supabase.from("shared_access").delete().eq("id", id)
-    setSharedAccess(prev => prev.filter(s => s.id !== id))
+    queryClient.invalidateQueries({ queryKey: ["shared_access", user!.id] })
   }
 
   async function deleteAccount() {

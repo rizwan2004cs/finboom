@@ -3,11 +3,11 @@
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
 import { useOfflineQuery } from "@/hooks/use-offline-query"
-import { TrendingUp, TrendingDown, Wallet, CreditCard, Target, ArrowUpRight, Plus, Receipt, Camera, Download, HandCoins, Clock } from "lucide-react"
+import { TrendingUp, Wallet, CreditCard, Target, ArrowUpRight, Plus, Receipt, Camera, Download, HandCoins, Clock } from "lucide-react"
 import Link from "next/link"
 import { NetWorthChart } from "@/components/charts/net-worth-chart"
 import { AllocationChart } from "@/components/charts/allocation-chart"
-import type { Asset, Liability, Goal, Snapshot, PartyTransaction, Party } from "@/lib/types"
+import type { Asset, Liability, Goal, Snapshot, PartyTransaction } from "@/lib/types"
 import { ASSET_CLASSES } from "@/lib/constants"
 
 function formatCurrency(amount: number, currency = "INR") {
