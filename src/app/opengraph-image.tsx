@@ -15,90 +15,123 @@ export default async function Image() {
     (
       <div
         style={{
-          background: "#1d1d1f",
+          background: "linear-gradient(145deg, #f8f8fa 0%, #eaeaef 50%, #e2e2e8 100%)",
           width: "100%",
           height: "100%",
           display: "flex",
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          fontFamily: "Inter, sans-serif",
-          color: "white",
+          fontFamily: "Georgia, 'Times New Roman', serif",
+          position: "relative",
+          overflow: "hidden",
         }}
       >
-        {/* Brand Icon */}
-        <div style={{ display: "flex", position: "relative", marginBottom: 60 }}>
+        {/* Subtle radial glow behind icon */}
+        <div
+          style={{
+            position: "absolute",
+            top: 80,
+            width: 500,
+            height: 500,
+            borderRadius: "50%",
+            background: "radial-gradient(circle, rgba(52,199,89,0.08) 0%, transparent 70%)",
+            display: "flex",
+          }}
+        />
+
+        {/* Glass icon container */}
+        <div style={{ display: "flex", position: "relative", marginBottom: 48 }}>
           <div
             style={{
-              width: 192,
-              height: 192,
-              background: "#1d1d1f",
-              borderRadius: 40,
+              width: 160,
+              height: 160,
+              background: "linear-gradient(145deg, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0.5) 100%)",
+              borderRadius: 36,
               display: "flex",
               alignItems: "center",
               justifyContent: "center",
-              border: "4px solid #333",
+              border: "1.5px solid rgba(0,0,0,0.06)",
+              boxShadow: "0 24px 60px rgba(0,0,0,0.08), 0 4px 16px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.9)",
             }}
           >
             <span
               style={{
-                fontSize: 120,
+                fontSize: 100,
                 fontWeight: 700,
-                letterSpacing: "-4px",
-                marginTop: 10,
+                color: "#1d1d1f",
+                letterSpacing: "-3px",
+                fontFamily: "Georgia, serif",
               }}
             >
               F
             </span>
           </div>
-          {/* Green dot */}
+          {/* Green accent dot */}
           <div
             style={{
               position: "absolute",
-              top: 55 - 16,
-              right: 192 - 140 - 16,
-              width: 32,
-              height: 32,
-              background: "#34c759",
+              top: 28,
+              right: 18,
+              width: 26,
+              height: 26,
+              background: "radial-gradient(circle at 38% 32%, #6ee78a, #34c759, #1a8a38)",
               borderRadius: "50%",
-              opacity: 0.9,
+              boxShadow: "0 2px 12px rgba(52,199,89,0.35)",
+              display: "flex",
             }}
           />
         </div>
 
-        {/* Text Area */}
+        {/* Brand name */}
         <div
           style={{
             display: "flex",
             flexDirection: "column",
             alignItems: "center",
             textAlign: "center",
-            padding: "0 64px",
+            padding: "0 80px",
           }}
         >
           <div
             style={{
-              fontSize: 72,
-              fontWeight: 800,
+              fontSize: 64,
+              fontWeight: 700,
               letterSpacing: "-0.02em",
-              marginBottom: 24,
-              color: "#ffffff",
+              marginBottom: 20,
+              color: "#1d1d1f",
+              fontFamily: "Georgia, serif",
             }}
           >
             FinBoom
           </div>
           <div
             style={{
-              fontSize: 36,
-              color: "#a1a1aa",
-              maxWidth: 900,
-              lineHeight: 1.4,
-              fontWeight: 500,
+              fontSize: 28,
+              color: "#6e6e73",
+              maxWidth: 800,
+              lineHeight: 1.5,
+              fontWeight: 400,
+              letterSpacing: "0.01em",
+              fontFamily: "Georgia, serif",
             }}
           >
             Track net worth, income, expenses, and financial goals across 20+ asset classes.
           </div>
         </div>
+
+        {/* Subtle bottom accent line */}
+        <div
+          style={{
+            position: "absolute",
+            bottom: 0,
+            left: 0,
+            right: 0,
+            height: 4,
+            background: "linear-gradient(90deg, transparent, rgba(52,199,89,0.4), transparent)",
+            display: "flex",
+          }}
+        />
       </div>
     ),
     {
