@@ -5,6 +5,7 @@ import Link from "next/link"
 import { notFound } from "next/navigation"
 import type { Metadata } from "next"
 import MermaidDiagram from "@/components/mermaid-diagram"
+import { ShareButton } from "./share-button"
 
 type Post = {
   _id: string
@@ -215,7 +216,8 @@ export default async function BlogPostPage({
             <Link href="/" className="text-[22px] font-bold tracking-[-0.5px] text-[#1d1d1f] dark:text-white">
               FinBoom
             </Link>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <ShareButton title={post.title} text={post.excerpt} />
               <Link href="/blog" className="text-[15px] font-medium text-[#1d1d1f] dark:text-white px-3 py-1.5 rounded-xl hover:bg-black/[0.05] dark:hover:bg-white/[0.08] active:scale-95 transition-all duration-200">
                 Blog
               </Link>
