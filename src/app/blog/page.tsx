@@ -3,6 +3,7 @@ import { auth, clerkClient } from "@clerk/nextjs/server"
 import Link from "next/link"
 import Image from "next/image"
 import type { Metadata } from "next"
+import { BlogCategoryFilter } from "./category-filter"
 
 export const metadata: Metadata = {
   title: "Blog",
@@ -43,8 +44,21 @@ async function getPosts(): Promise<Post[]> {
 
 export const revalidate = 60
 
-export default async function BlogPage() {
+export default async function BlogPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ category?: string }>
+}) {
   const posts = await getPosts()
+  const { category: activeCategory } = await searchParams
+
+  // Get unique categories from posts
+  const categories = [...new Set(posts.map((p) => p.category).filter(Boolean))]
+
+  // Filter posts by category
+  const filteredPosts = activeCategory
+    ? posts.filter((p) => p.category === activeCategory)
+    : posts
 
   let isAdmin = false
   const { userId } = await auth()
@@ -101,15 +115,22 @@ export default async function BlogPage() {
           <p className="mt-3 text-lg text-[#6e6e73] dark:text-[#98989d]">
             Financial tips, market insights, and product updates.
           </p>
+          <BlogCategoryFilter
+            categories={categories}
+            labels={CATEGORY_LABELS}
+            active={activeCategory}
+          />
         </div>
 
-        {posts.length === 0 ? (
+        {filteredPosts.length === 0 ? (
           <div className="text-center py-20">
-            <p className="text-[#86868b] dark:text-[#98989d] text-lg">No posts yet. Check back soon!</p>
+            <p className="text-[#86868b] dark:text-[#98989d] text-lg">
+              {activeCategory ? "No posts in this category." : "No posts yet. Check back soon!"}
+            </p>
           </div>
         ) : (
           <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-            {posts.map((post) => (
+            {filteredPosts.map((post) => (
               <Link
                 key={post._id}
                 href={`/blog/${post.slug.current}`}

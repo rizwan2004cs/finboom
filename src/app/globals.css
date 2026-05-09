@@ -495,3 +495,5 @@ body::after {
 
 /* Hide Clerk built-in footer (toggle link + branding) — we use our own */
 .cl-footer { display: none !important; }
+/* Hide Clerk "Use phone" alternative method toggle */
+.cl-alternativeMethods { display: none !important; }
