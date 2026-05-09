@@ -7,6 +7,7 @@ import { OfflineProvider } from "@/components/offline-provider"
 import { ProfileProvider } from "@/hooks/use-profile"
 import { QueryProvider } from "@/components/query-provider"
 import { usePushSubscription } from "@/hooks/use-push"
+import { PinLockGate } from "@/components/pin-lock"
 import { cn } from "@/lib/utils"
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
@@ -37,13 +38,15 @@ export default function DashboardLayout({
 }) {
   return (
     <QueryProvider>
-      <SidebarProvider>
-        <OfflineProvider>
-          <ProfileProvider>
-            <DashboardShell>{children}</DashboardShell>
-          </ProfileProvider>
-        </OfflineProvider>
-      </SidebarProvider>
+      <PinLockGate>
+        <SidebarProvider>
+          <OfflineProvider>
+            <ProfileProvider>
+              <DashboardShell>{children}</DashboardShell>
+            </ProfileProvider>
+          </OfflineProvider>
+        </SidebarProvider>
+      </PinLockGate>
     </QueryProvider>
   )
 }

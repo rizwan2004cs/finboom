@@ -49,7 +49,7 @@ export const metadata: Metadata = {
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
-    statusBarStyle: "black-translucent",
+    statusBarStyle: "default",
     title: "FinBoom",
   },
   alternates: {
@@ -95,7 +95,10 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,
   viewportFit: "cover",
-  themeColor: "#1d1d1f",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#e8eaf0" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
+  ],
 };
 
 export default function RootLayout({
@@ -120,15 +123,19 @@ export default function RootLayout({
             else if (t === 'system') {
               if (window.matchMedia('(prefers-color-scheme: dark)').matches) document.documentElement.classList.add('dark');
             }
-            function setFavicon() {
+            function updateTheme() {
               var isDark = document.documentElement.classList.contains('dark');
               var href = isDark ? '/icons/favicon-dark.svg' : '/icons/favicon-light.svg';
               var link = document.querySelector('link[data-favicon]');
               if (!link) { link = document.createElement('link'); link.rel = 'icon'; link.type = 'image/svg+xml'; link.setAttribute('data-favicon',''); document.head.appendChild(link); }
               link.href = href;
+              var metas = document.querySelectorAll('meta[name="theme-color"]');
+              var color = isDark ? '#0a0a0a' : '#e8eaf0';
+              if (metas.length) { metas.forEach(function(m) { m.setAttribute('content', color); }); }
+              else { var m = document.createElement('meta'); m.name = 'theme-color'; m.content = color; document.head.appendChild(m); }
             }
-            setFavicon();
-            new MutationObserver(function() { setFavicon(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+            updateTheme();
+            new MutationObserver(function() { updateTheme(); }).observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
           })();
         `}</Script>
         <ClerkProvider>

@@ -4,13 +4,14 @@
  */
 
 const DB_NAME = "finboom-offline"
-const DB_VERSION = 2
+const DB_VERSION = 3
 
 const STORES = [
   "assets",
   "liabilities",
   "transactions",
   "goals",
+  "budgets",
   "snapshots",
   "parties",
   "party_transactions",
@@ -45,7 +46,7 @@ function openDB(): Promise<IDBDatabase> {
 
       // V1 → V2: add updated_at index on data stores for delta sync
       if (oldVersion < 2) {
-        const dataStores = ["assets", "liabilities", "transactions", "goals", "snapshots", "parties", "party_transactions", "profiles"] as const
+        const dataStores = ["assets", "liabilities", "transactions", "goals", "snapshots", "parties", "party_transactions", "profiles", "budgets"] as const
         for (const name of dataStores) {
           if (db.objectStoreNames.contains(name)) {
             const tx = (event.target as IDBOpenDBRequest).transaction!
@@ -54,6 +55,14 @@ function openDB(): Promise<IDBDatabase> {
               store.createIndex("updated_at", "updated_at")
             }
           }
+        }
+      }
+
+      // V2 → V3: add budgets store
+      if (oldVersion < 3) {
+        if (!db.objectStoreNames.contains("budgets")) {
+          const store = db.createObjectStore("budgets", { keyPath: "id" })
+          store.createIndex("updated_at", "updated_at")
         }
       }
     }

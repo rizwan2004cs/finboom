@@ -93,6 +93,7 @@ export async function pullAllData(userId: string): Promise<void> {
     { table: "liabilities", store: "liabilities" },
     { table: "transactions", store: "transactions" },
     { table: "goals", store: "goals" },
+    { table: "budgets", store: "budgets" },
     { table: "snapshots", store: "snapshots", order: { column: "snapshot_date", ascending: true }, limit: 12 },
     { table: "parties", store: "parties" },
     { table: "party_transactions", store: "party_transactions" },

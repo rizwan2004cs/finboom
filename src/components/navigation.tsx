@@ -21,6 +21,7 @@ import {
   MoreHorizontal,
   X,
   BookOpen,
+  PiggyBank,
 } from "lucide-react"
 
 const navItems = [
@@ -28,6 +29,7 @@ const navItems = [
   { href: "/dashboard/assets", label: "Assets", icon: Wallet },
   { href: "/dashboard/liabilities", label: "Liabilities", icon: CreditCard },
   { href: "/dashboard/transactions", label: "Transactions", icon: ArrowUpDown },
+  { href: "/dashboard/budget", label: "Budget", icon: PiggyBank },
   { href: "/dashboard/parties", label: "Parties", icon: HandCoins },
   { href: "/dashboard/goals", label: "Goals", icon: Target },
   { href: "/dashboard/snapshots", label: "Snapshots", icon: Camera },
@@ -46,6 +48,7 @@ const mobileNavItems = [
 
 // Pages that should highlight the "More" tab
 const moreSubPages = [
+  "/dashboard/budget",
   "/dashboard/parties",
   "/dashboard/goals",
   "/dashboard/snapshots",
@@ -56,6 +59,7 @@ const moreSubPages = [
 ]
 
 const moreSheetItems = [
+  { href: "/dashboard/budget", label: "Budget", icon: PiggyBank },
   { href: "/dashboard/parties", label: "Parties", icon: HandCoins },
   { href: "/dashboard/goals", label: "Goals", icon: Target },
   { href: "/dashboard/snapshots", label: "Snapshots", icon: Camera },

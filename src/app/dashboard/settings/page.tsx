@@ -3,16 +3,14 @@
 import { useEffect, useState } from "react"
 import { useUser, useAuth } from "@/hooks/use-auth"
 import { createClient } from "@/utils/supabase/client"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
-import { Settings, Download, Globe, Trash2, Users, LogOut, Moon, Sun } from "lucide-react"
+import { Settings, Download, Globe, Trash2, LogOut, Moon, Sun, Lock } from "lucide-react"
 import { CURRENCIES } from "@/lib/constants"
-import type { SharedAccess } from "@/lib/types"
 import { CustomSelect } from "@/components/custom-select"
+import { PinSetup } from "@/components/pin-lock"
 
 export default function SettingsPage() {
   const { user } = useUser()
   const { signOut } = useAuth()
-  const queryClient = useQueryClient()
   const [currency, setCurrency] = useState(() => {
     if (typeof window !== "undefined") {
       return localStorage.getItem("finboom-currency") || "INR"
@@ -25,21 +23,8 @@ export default function SettingsPage() {
     }
     return "light"
   })
-  const [shareEmail, setShareEmail] = useState("")
   const [exporting, setExporting] = useState(false)
-
-  const { data: sharedAccess = [], isLoading: loading } = useQuery({
-    queryKey: ["shared_access", user?.id],
-    queryFn: async () => {
-      const supabase = createClient()
-      const { data } = await supabase
-        .from("shared_access")
-        .select("*")
-        .eq("owner_user_id", user!.id)
-      return (data || []) as SharedAccess[]
-    },
-    enabled: !!user,
-  })
+  const loading = !user
 
   useEffect(() => {
     // Apply theme
@@ -74,6 +59,7 @@ export default function SettingsPage() {
       profilesRes,
       partiesRes,
       partyTxRes,
+      budgetsRes,
     ] = await Promise.all([
       supabase.from("assets").select("*").eq("user_id", user!.id),
       supabase.from("liabilities").select("*").eq("user_id", user!.id),
@@ -83,6 +69,7 @@ export default function SettingsPage() {
       supabase.from("profiles").select("*").eq("user_id", user!.id),
       supabase.from("parties").select("*").eq("user_id", user!.id),
       supabase.from("party_transactions").select("*").eq("user_id", user!.id),
+      supabase.from("budgets").select("*").eq("user_id", user!.id),
     ])
 
     const data = {
@@ -94,6 +81,7 @@ export default function SettingsPage() {
       snapshots: snapshotsRes.data || [],
       parties: partiesRes.data || [],
       partyTransactions: partyTxRes.data || [],
+      budgets: budgetsRes.data || [],
       exportedAt: new Date().toISOString(),
     }
 
@@ -132,6 +120,7 @@ export default function SettingsPage() {
       sections.push(toCsv("Snapshots", data.snapshots))
       sections.push(toCsv("Parties", data.parties))
       sections.push(toCsv("Party Transactions", data.partyTransactions))
+      sections.push(toCsv("Budgets", data.budgets))
 
       blob = new Blob([sections.join("\n")], { type: "text/csv" })
       filename = `finboom-export-${dateStr}.csv`
@@ -145,27 +134,6 @@ export default function SettingsPage() {
     URL.revokeObjectURL(url)
 
     setExporting(false)
-  }
-
-  async function addSharedAccess(e: React.FormEvent) {
-    e.preventDefault()
-    if (!user || !shareEmail.trim()) return
-
-    const supabase = createClient()
-    await supabase.from("shared_access").insert({
-      owner_user_id: user.id,
-      shared_with_email: shareEmail.trim(),
-      permission: "view",
-    })
-
-    setShareEmail("")
-    queryClient.invalidateQueries({ queryKey: ["shared_access", user.id] })
-  }
-
-  async function removeSharedAccess(id: string) {
-    const supabase = createClient()
-    await supabase.from("shared_access").delete().eq("id", id)
-    queryClient.invalidateQueries({ queryKey: ["shared_access", user!.id] })
   }
 
   async function deleteAccount() {
@@ -182,7 +150,6 @@ export default function SettingsPage() {
       supabase.from("snapshots").delete().eq("user_id", user!.id),
       supabase.from("health_checks").delete().eq("user_id", user!.id),
       supabase.from("profiles").delete().eq("user_id", user!.id),
-      supabase.from("shared_access").delete().eq("owner_user_id", user!.id),
     ])
 
     signOut()
@@ -260,6 +227,17 @@ export default function SettingsPage() {
         />
       </div>
 
+      {/* App Lock */}
+      <div className="liquid-glass rounded-2xl p-5">
+        <h3 className="font-semibold text-[#1d1d1f] dark:text-white mb-1 flex items-center gap-2">
+          <Lock className="w-4 h-4" /> App Lock
+        </h3>
+        <p className="text-xs text-[#86868b] mb-3">
+          Set a 4-digit PIN to lock access each session
+        </p>
+        <PinSetup />
+      </div>
+
       {/* Export Data */}
       <div className="liquid-glass rounded-2xl p-5">
         <h3 className="font-semibold text-[#1d1d1f] dark:text-white mb-3 flex items-center gap-2">
@@ -282,48 +260,6 @@ export default function SettingsPage() {
             Export CSV
           </button>
         </div>
-      </div>
-
-      {/* Shared Access */}
-      <div className="liquid-glass rounded-2xl p-5">
-        <h3 className="font-semibold text-[#1d1d1f] dark:text-white mb-3 flex items-center gap-2">
-          <Users className="w-4 h-4" /> Shared Access
-        </h3>
-        <p className="text-xs text-[#86868b] mb-3">
-          Grant read-only access to your financial data
-        </p>
-
-        <form onSubmit={addSharedAccess} className="flex gap-2 mb-3">
-          <input
-            type="email"
-            value={shareEmail}
-            onChange={(e) => setShareEmail(e.target.value)}
-            placeholder="email@example.com"
-            className="flex-1 px-4 py-2.5 rounded-xl bg-[#f5f5f7] dark:bg-[#2c2c2e] border-0 text-sm text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10"
-          />
-          <button
-            type="submit"
-            className="liquid-glass-btn-primary"
-          >
-            Add
-          </button>
-        </form>
-
-        {sharedAccess.length > 0 && (
-          <div className="space-y-2">
-            {sharedAccess.map(access => (
-              <div key={access.id} className="flex items-center justify-between py-2 px-3 bg-[#f5f5f7] dark:bg-[#2c2c2e] rounded-xl">
-                <span className="text-sm text-[#1d1d1f] dark:text-white">{access.shared_with_email}</span>
-                <button
-                  onClick={() => removeSharedAccess(access.id)}
-                  className="p-1 rounded hover:bg-white transition-all"
-                >
-                  <Trash2 className="w-3.5 h-3.5 text-[#86868b]" />
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
       </div>
 
       {/* Sign Out */}

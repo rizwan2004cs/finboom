@@ -134,6 +134,21 @@ create table if not exists party_transactions (
   updated_at timestamptz default now()
 );
 
+-- Budgets table
+create table if not exists budgets (
+  id uuid default uuid_generate_v4() primary key,
+  user_id text not null,
+  profile_id uuid references profiles(id) on delete set null,
+  month text not null,
+  category text not null,
+  amount numeric not null default 0,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create unique index if not exists budgets_unique_entry
+  on budgets (user_id, profile_id, month, category);
+
 -- Auto-update trigger for updated_at
 create or replace function update_updated_at_column()
 returns trigger as $$
@@ -151,6 +166,7 @@ create or replace trigger set_updated_at_snapshots before update on snapshots fo
 create or replace trigger set_updated_at_profiles before update on profiles for each row execute function update_updated_at_column();
 create or replace trigger set_updated_at_parties before update on parties for each row execute function update_updated_at_column();
 create or replace trigger set_updated_at_party_transactions before update on party_transactions for each row execute function update_updated_at_column();
+create or replace trigger set_updated_at_budgets before update on budgets for each row execute function update_updated_at_column();
 
 -- Indexes for fast lookups
 create index if not exists idx_assets_user_id on assets(user_id);
@@ -165,6 +181,9 @@ create index if not exists idx_party_transactions_user_id on party_transactions(
 create index if not exists idx_party_transactions_party_id on party_transactions(party_id);
 create index if not exists idx_party_transactions_due_date on party_transactions(due_date);
 
+create index if not exists idx_budgets_user_id on budgets(user_id);
+create index if not exists idx_budgets_month on budgets(user_id, profile_id, month);
+
 -- Indexes for delta sync
 create index if not exists idx_assets_updated_at on assets(updated_at);
 create index if not exists idx_liabilities_updated_at on liabilities(updated_at);
@@ -174,6 +193,7 @@ create index if not exists idx_snapshots_updated_at on snapshots(updated_at);
 create index if not exists idx_profiles_updated_at on profiles(updated_at);
 create index if not exists idx_parties_updated_at on parties(updated_at);
 create index if not exists idx_party_transactions_updated_at on party_transactions(updated_at);
+create index if not exists idx_budgets_updated_at on budgets(updated_at);
 
 -- Row Level Security (RLS)
 alter table assets enable row level security;
@@ -185,6 +205,7 @@ alter table profiles enable row level security;
 alter table shared_access enable row level security;
 alter table parties enable row level security;
 alter table party_transactions enable row level security;
+alter table budgets enable row level security;
 
 -- RLS Policies: Users can only access their own data
 -- Using permissive policies that check user_id matches the requesting user's JWT claim
@@ -216,4 +237,7 @@ create policy "Users can manage their own parties" on parties
   for all using (true) with check (true);
 
 create policy "Users can manage their own party_transactions" on party_transactions
+  for all using (true) with check (true);
+
+create policy "Users can manage their own budgets" on budgets
   for all using (true) with check (true);

@@ -4,8 +4,8 @@
   "description": "Track net worth, income, expenses, and financial goals across 20+ asset classes. Works offline.",
   "start_url": "/dashboard",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#f8f8fa",
+  "background_color": "#e8eaf0",
+  "theme_color": "#e8eaf0",
   "orientation": "portrait-primary",
   "icons": [
     {

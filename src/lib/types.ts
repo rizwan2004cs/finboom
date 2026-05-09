@@ -44,6 +44,17 @@ export interface Transaction {
   created_at: string
 }
 
+export interface Budget {
+  id: string
+  user_id: string
+  profile_id: string
+  month: string
+  category: string
+  amount: number
+  created_at: string
+  updated_at: string
+}
+
 export interface Goal {
   id: string
   user_id: string

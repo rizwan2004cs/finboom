@@ -13,6 +13,7 @@ const TABLE_TO_STORE: Record<string, StoreName> = {
   liabilities: "liabilities",
   transactions: "transactions",
   goals: "goals",
+  budgets: "budgets",
   snapshots: "snapshots",
   parties: "parties",
   party_transactions: "party_transactions",
