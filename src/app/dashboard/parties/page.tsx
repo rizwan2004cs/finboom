@@ -1,10 +1,12 @@
 "use client"
 
 import { Suspense } from "react"
-import { useEffect, useState, useMemo } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { createClient } from "@/utils/supabase/client"
-import { fetchTable, deleteRow, getAll } from "@/lib/offline"
+import { deleteRow } from "@/lib/offline"
+import { useOfflineQuery } from "@/hooks/use-offline-query"
+import { useQueryClient } from "@tanstack/react-query"
 import { useSearchParams } from "next/navigation"
 import {
   Plus,
@@ -43,10 +45,8 @@ const typeConfig = {
 function PartiesPageInner() {
   const { user } = useUser()
   const searchParams = useSearchParams()
+  const queryClient = useQueryClient()
   const [tab, setTab] = useState<"transactions" | "parties">("transactions")
-  const [parties, setParties] = useState<Party[]>([])
-  const [transactions, setTransactions] = useState<(PartyTransaction & { party: Party })[]>([])
-  const [loading, setLoading] = useState(true)
   const [showAddTransaction, setShowAddTransaction] = useState(false)
   const [showAddParty, setShowAddParty] = useState(false)
   const [settlePartyId, setSettlePartyId] = useState<string | null>(null)
@@ -55,51 +55,25 @@ function PartiesPageInner() {
   const [editingParty, setEditingParty] = useState<Party | null>(null)
   const [deletingPartyId, setDeletingPartyId] = useState<string | null>(null)
 
-  async function loadData() {
-    if (!user) return
+  const { data: parties = [], isLoading: loadingParties } = useOfflineQuery<Party>(
+    "parties", user?.id, { order: { column: "name", ascending: true } }
+  )
+  const { data: rawTx = [], isLoading: loadingTx } = useOfflineQuery<PartyTransaction>(
+    "party_transactions", user?.id, { order: { column: "date", ascending: false } }
+  )
+  const loading = loadingParties || loadingTx
 
-    // Show cached data immediately for instant load
-    try {
-      const [cachedParties, cachedTx] = await Promise.all([
-        getAll<Party>("parties"),
-        getAll<PartyTransaction>("party_transactions"),
-      ])
-      if (cachedParties.length > 0 || cachedTx.length > 0) {
-        const userParties = cachedParties.filter(p => p.user_id === user.id)
-        const userTx = cachedTx.filter(t => t.user_id === user.id)
-        const partyMap = new Map(userParties.map(p => [p.id, p]))
-        setParties(userParties.sort((a, b) => a.name.localeCompare(b.name)))
-        setTransactions(
-          userTx
-            .map(tx => ({ ...tx, party: partyMap.get(tx.party_id) as Party }))
-            .filter(tx => tx.party)
-            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-        )
-        setLoading(false)
-      }
-    } catch {}
+  const transactions = useMemo(() => {
+    const partyMap = new Map(parties.map(p => [p.id, p]))
+    return rawTx
+      .map(tx => ({ ...tx, party: partyMap.get(tx.party_id) as Party }))
+      .filter(tx => tx.party)
+  }, [parties, rawTx])
 
-    // Then fetch fresh data from Supabase
-    const [partiesData, txData] = await Promise.all([
-      fetchTable<Party>("parties", user.id, { order: { column: "name", ascending: true } }),
-      fetchTable<PartyTransaction>("party_transactions", user.id, { order: { column: "date", ascending: false } }),
-    ])
-
-    setParties(partiesData)
-    // Attach party object to each transaction client-side
-    const partyMap = new Map(partiesData.map(p => [p.id, p]))
-    const txWithParty = txData.map(tx => ({
-      ...tx,
-      party: partyMap.get(tx.party_id) as Party,
-    })).filter(tx => tx.party)
-    setTransactions(txWithParty)
-    setLoading(false)
+  const invalidateParties = () => {
+    queryClient.invalidateQueries({ queryKey: ["parties"] })
+    queryClient.invalidateQueries({ queryKey: ["party_transactions"] })
   }
-
-  useEffect(() => {
-    loadData()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user])
 
   useEffect(() => {
     if (searchParams.get("action") === "add") setShowAddTransaction(true)
@@ -139,7 +113,7 @@ function PartiesPageInner() {
       }
     }
     await deleteRow("party_transactions", id)
-    loadData()
+    invalidateParties()
   }
 
   async function handleDeleteParty(id: string) {
@@ -177,7 +151,7 @@ function PartiesPageInner() {
     await deleteRow("parties", id)
     setDeletingPartyId(null)
     setSelectedPartyId(null)
-    loadData()
+    invalidateParties()
   }
 
   // Calculate net balance per party
@@ -661,7 +635,7 @@ function PartiesPageInner() {
       {showAddTransaction && (
         <AddPartyTransactionModal
           onClose={() => { setShowAddTransaction(false); setSettlePartyId(null) }}
-          onSave={() => { setShowAddTransaction(false); setSettlePartyId(null); loadData() }}
+          onSave={() => { setShowAddTransaction(false); setSettlePartyId(null); invalidateParties() }}
           preselectedPartyId={settlePartyId || undefined}
           preselectedType={settlePartyId ? settleType : undefined}
         />
@@ -669,14 +643,14 @@ function PartiesPageInner() {
       {showAddParty && (
         <AddPartyModal
           onClose={() => setShowAddParty(false)}
-          onSave={() => { setShowAddParty(false); loadData() }}
+          onSave={() => { setShowAddParty(false); invalidateParties() }}
         />
       )}
       {editingParty && (
         <EditPartyModal
           party={editingParty}
           onClose={() => setEditingParty(null)}
-          onSave={() => { setEditingParty(null); loadData() }}
+          onSave={() => { setEditingParty(null); invalidateParties() }}
         />
       )}
       {deletingPartyId && (

@@ -69,8 +69,8 @@ export function PwaInstallPopup() {
           </button>
 
           {/* Icon */}
-          <div className="w-14 h-14 rounded-2xl bg-linear-to-br from-[#34c759] to-[#30d158] flex items-center justify-center mb-4 shadow-lg shadow-[#34c759]/20">
-            <Download className="w-7 h-7 text-white" strokeWidth={2} />
+          <div className="w-14 h-14 rounded-2xl bg-[#1d1d1f] dark:bg-white flex items-center justify-center mb-4 shadow-lg shadow-black/10 dark:shadow-white/10">
+            <Download className="w-7 h-7 text-white dark:text-black" strokeWidth={2} />
           </div>
 
           {/* Text */}
@@ -91,7 +91,7 @@ export function PwaInstallPopup() {
             </button>
             <button
               onClick={handleInstall}
-              className="flex-1 py-2.5 rounded-xl text-[14px] font-medium bg-[#34c759] text-white hover:bg-[#30d158] transition-colors shadow-md shadow-[#34c759]/25"
+              className="flex-1 py-2.5 rounded-xl text-[14px] font-medium bg-[#1d1d1f] dark:bg-white text-white dark:text-[#1d1d1f] hover:opacity-90 transition-colors shadow-md shadow-black/10 dark:shadow-white/10"
             >
               Install App
             </button>

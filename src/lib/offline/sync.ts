@@ -5,7 +5,7 @@
 
 import { createClient } from "@/utils/supabase/client"
 import { getQueue, dequeue, type QueuedMutation } from "./queue"
-import { putAll, setMeta, type StoreName } from "./db"
+import { putAll, setMeta, getMeta, type StoreName } from "./db"
 
 type SyncListener = (status: "syncing" | "synced" | "error" | "offline" | "online") => void
 
@@ -81,7 +81,10 @@ export async function replayQueue(): Promise<{ success: number; failed: number }
   return { success, failed }
 }
 
-/** Pull fresh data from Supabase for a specific user and cache in IndexedDB */
+/** Pull fresh data from Supabase for a specific user and cache in IndexedDB.
+ *  Uses delta sync: only fetches rows updated since the last sync per table.
+ *  Falls back to full pull if no previous sync timestamp exists.
+ */
 export async function pullAllData(userId: string): Promise<void> {
   const supabase = createClient()
 
@@ -96,17 +99,30 @@ export async function pullAllData(userId: string): Promise<void> {
     { table: "profiles", store: "profiles" },
   ]
 
+  const syncStart = new Date().toISOString()
+
   // Fetch in batches of 3 to avoid exhausting browser connections
   for (let i = 0; i < tables.length; i += 3) {
     const batch = tables.slice(i, i + 3)
     const results = await Promise.allSettled(
       batch.map(async ({ table, store, order, limit }) => {
+        const lastTableSync = await getMeta(`lastSync_${table}`)
         let query = supabase.from(table).select("*").eq("user_id", userId)
+
+        // Delta sync: only fetch rows updated since last sync
+        if (lastTableSync) {
+          query = query.gte("updated_at", lastTableSync)
+        }
+
         if (order) query = query.order(order.column, { ascending: order.ascending })
-        if (limit) query = query.limit(limit)
+        if (limit && !lastTableSync) query = query.limit(limit) // skip limit for delta pulls
         const { data, error } = await query
         if (error) throw error
-        await putAll(store, data || [])
+        if (data && data.length > 0) {
+          await putAll(store, data)
+        }
+        // Update per-table sync timestamp on success
+        await setMeta(`lastSync_${table}`, syncStart)
       })
     )
 
@@ -116,7 +132,7 @@ export async function pullAllData(userId: string): Promise<void> {
     }
   }
 
-  await setMeta("lastSync", new Date().toISOString())
+  await setMeta("lastSync", syncStart)
 }
 
 /** Full sync: replay queue → pull fresh data */

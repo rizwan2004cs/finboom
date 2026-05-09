@@ -1,9 +1,12 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useMemo, useState } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
-import { fetchTable, insertRow, deleteRow } from "@/lib/offline"
+import { insertRow } from "@/lib/offline"
+import { useOfflineQuery } from "@/hooks/use-offline-query"
+import { useDeleteMutation } from "@/hooks/use-offline-mutation"
+import { useQueryClient } from "@tanstack/react-query"
 import { Users, Plus, Trash2, Building2, User2, CheckCircle } from "lucide-react"
 import type { Profile, Asset, Liability } from "@/lib/types"
 
@@ -17,34 +20,29 @@ function formatCurrency(amount: number) {
 export default function ProfilesPage() {
   const { user } = useUser()
   const { activeProfile, switchProfile, reloadProfiles } = useProfile()
-  const [profiles, setProfiles] = useState<Profile[]>([])
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
   const [showForm, setShowForm] = useState(false)
   const [form, setForm] = useState({ name: "", type: "spouse" as "personal" | "spouse" | "parent" | "child" | "business" })
-  const [profileSummaries, setProfileSummaries] = useState<Record<string, { assets: number; liabilities: number }>>({})
 
-  useEffect(() => {
-    if (!user) return
-    loadProfiles()
-  }, [user])
+  const { data: profiles = [], isLoading: loading } = useOfflineQuery<Profile>(
+    "profiles", user?.id, {
+      order: { column: "created_at", ascending: true },
+    }
+  )
+  const { data: allAssets = [] } = useOfflineQuery<Asset>("assets", user?.id)
+  const { data: allLiabilities = [] } = useOfflineQuery<Liability>("liabilities", user?.id)
+  const deleteMut = useDeleteMutation("profiles")
 
-  async function loadProfiles() {
-    const profilesList = await fetchTable<Profile>("profiles", user!.id, { order: { column: "created_at", ascending: true } })
-    setProfiles(profilesList)
-
-    // Load summaries for each profile
-    const allAssets = await fetchTable<Asset>("assets", user!.id)
-    const allLiabilities = await fetchTable<Liability>("liabilities", user!.id)
+  const profileSummaries = useMemo(() => {
     const summaries: Record<string, { assets: number; liabilities: number }> = {}
-    for (const profile of profilesList) {
+    for (const profile of profiles) {
       summaries[profile.id] = {
         assets: allAssets.filter(a => a.profile_id === profile.id).reduce((sum, a) => sum + Number(a.current_value), 0),
         liabilities: allLiabilities.filter(l => l.profile_id === profile.id).reduce((sum, l) => sum + Number(l.outstanding_amount), 0),
       }
     }
-    setProfileSummaries(summaries)
-    setLoading(false)
-  }
+    return summaries
+  }, [profiles, allAssets, allLiabilities])
 
   async function createProfile(e: React.FormEvent) {
     e.preventDefault()
@@ -59,7 +57,7 @@ export default function ProfilesPage() {
     setForm({ name: "", type: "spouse" })
     setShowForm(false)
     await reloadProfiles()
-    loadProfiles()
+    queryClient.invalidateQueries({ queryKey: ["profiles"] })
   }
 
   async function deleteProfile(id: string) {
@@ -68,8 +66,7 @@ export default function ProfilesPage() {
       return
     }
     if (!confirm("Delete this profile and all associated data?")) return
-    await deleteRow("profiles", id)
-    setProfiles(prev => prev.filter(p => p.id !== id))
+    deleteMut.mutate(id)
     await reloadProfiles()
   }
 

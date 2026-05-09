@@ -1,9 +1,12 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
-import { fetchTable, deleteRow, insertRow, updateRow } from "@/lib/offline"
+import { insertRow, updateRow } from "@/lib/offline"
+import { useOfflineQuery } from "@/hooks/use-offline-query"
+import { useDeleteMutation } from "@/hooks/use-offline-mutation"
+import { useQueryClient } from "@tanstack/react-query"
 import { Plus, Target, Trash2, Edit2, TrendingUp, Calendar } from "lucide-react"
 import type { Goal, Asset } from "@/lib/types"
 
@@ -21,32 +24,30 @@ function calculateInflationAdjusted(target: number, years: number, rate: number)
 export default function GoalsPage() {
   const { user } = useUser()
   const { activeProfile } = useProfile()
-  const [goals, setGoals] = useState<Goal[]>([])
-  const [assets, setAssets] = useState<Asset[]>([])
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
   const [showForm, setShowForm] = useState(false)
   const [editGoal, setEditGoal] = useState<Goal | null>(null)
 
-  useEffect(() => {
-    if (!user || !activeProfile) return
-    loadData()
-  }, [user, activeProfile])
+  const pf = activeProfile ? [{ column: "profile_id", op: "eq" as const, value: activeProfile.id }] : undefined
+  const { data: goals = [], isLoading: loadingGoals } = useOfflineQuery<Goal>(
+    "goals", user?.id, {
+      order: { column: "target_date", ascending: true },
+      filters: pf,
+      enabled: !!activeProfile,
+    }
+  )
+  const { data: assets = [] } = useOfflineQuery<Asset>(
+    "assets", user?.id, {
+      filters: pf,
+      enabled: !!activeProfile,
+    }
+  )
+  const loading = loadingGoals
+  const deleteMut = useDeleteMutation("goals")
 
-  async function loadData() {
-    const pf = { column: "profile_id", op: "eq" as const, value: activeProfile!.id }
-    const [goalsData, assetsData] = await Promise.all([
-      fetchTable<Goal>("goals", user!.id, { order: { column: "target_date", ascending: true }, filters: [pf] }),
-      fetchTable<Asset>("assets", user!.id, { filters: [pf] }),
-    ])
-    setGoals(goalsData)
-    setAssets(assetsData)
-    setLoading(false)
-  }
-
-  async function deleteGoal(id: string) {
+  function deleteGoal(id: string) {
     if (!confirm("Delete this goal?")) return
-    await deleteRow("goals", id)
-    setGoals(prev => prev.filter(g => g.id !== id))
+    deleteMut.mutate(id)
   }
 
   if (loading) {
@@ -188,7 +189,7 @@ export default function GoalsPage() {
           goal={editGoal}
           assets={assets}
           onClose={() => { setShowForm(false); setEditGoal(null) }}
-          onSave={() => { setShowForm(false); setEditGoal(null); loadData() }}
+          onSave={() => { setShowForm(false); setEditGoal(null); queryClient.invalidateQueries({ queryKey: ["goals"] }) }}
         />
       )}
     </div>

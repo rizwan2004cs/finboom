@@ -1,9 +1,12 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
-import { fetchTable, insertRow, deleteRow } from "@/lib/offline"
+import { fetchTable, insertRow } from "@/lib/offline"
+import { useOfflineQuery } from "@/hooks/use-offline-query"
+import { useDeleteMutation } from "@/hooks/use-offline-mutation"
+import { useQueryClient } from "@tanstack/react-query"
 import { Camera, TrendingUp, TrendingDown, Trash2 } from "lucide-react"
 import type { Snapshot, Asset, Liability } from "@/lib/types"
 import { ASSET_CLASSES } from "@/lib/constants"
@@ -19,20 +22,18 @@ function formatCurrency(amount: number) {
 export default function SnapshotsPage() {
   const { user } = useUser()
   const { activeProfile } = useProfile()
-  const [snapshots, setSnapshots] = useState<Snapshot[]>([])
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
   const [taking, setTaking] = useState(false)
 
-  useEffect(() => {
-    if (!user || !activeProfile) return
-    loadSnapshots()
-  }, [user, activeProfile])
-
-  async function loadSnapshots() {
-    const data = await fetchTable<Snapshot>("snapshots", user!.id, { order: { column: "snapshot_date", ascending: false }, filters: [{ column: "profile_id", op: "eq", value: activeProfile!.id }] })
-    setSnapshots(data)
-    setLoading(false)
-  }
+  const pf = activeProfile ? [{ column: "profile_id", op: "eq" as const, value: activeProfile.id }] : undefined
+  const { data: snapshots = [], isLoading: loading } = useOfflineQuery<Snapshot>(
+    "snapshots", user?.id, {
+      order: { column: "snapshot_date", ascending: false },
+      filters: pf,
+      enabled: !!activeProfile,
+    }
+  )
+  const deleteMut = useDeleteMutation("snapshots")
 
   async function takeSnapshot() {
     if (!user || !activeProfile) return
@@ -68,13 +69,12 @@ export default function SnapshotsPage() {
     })
 
     setTaking(false)
-    loadSnapshots()
+    queryClient.invalidateQueries({ queryKey: ["snapshots"] })
   }
 
-  async function deleteSnapshot(id: string) {
+  function deleteSnapshot(id: string) {
     if (!confirm("Delete this snapshot?")) return
-    await deleteRow("snapshots", id)
-    setSnapshots(prev => prev.filter(s => s.id !== id))
+    deleteMut.mutate(id)
   }
 
   if (loading) {

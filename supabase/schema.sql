@@ -11,7 +11,8 @@ create table if not exists profiles (
   name text not null,
   type text not null check (type in ('personal', 'spouse', 'parent', 'child', 'business')),
   is_default boolean default false,
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
 );
 
 -- Assets table
@@ -60,7 +61,8 @@ create table if not exists transactions (
   currency text not null default 'INR',
   description text,
   date date not null default current_date,
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
 );
 
 -- Goals table
@@ -91,7 +93,8 @@ create table if not exists snapshots (
   asset_breakdown jsonb default '{}',
   currency text not null default 'INR',
   snapshot_date date not null default current_date,
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
 );
 
 -- Shared Access table
@@ -111,7 +114,8 @@ create table if not exists parties (
   name text not null,
   phone text,
   notes text,
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
 );
 
 -- Party Transactions table
@@ -126,8 +130,27 @@ create table if not exists party_transactions (
   due_date date,
   notes text,
   linked_transaction_id uuid references transactions(id) on delete set null,
-  created_at timestamptz default now()
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
 );
+
+-- Auto-update trigger for updated_at
+create or replace function update_updated_at_column()
+returns trigger as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$ language plpgsql;
+
+create or replace trigger set_updated_at_assets before update on assets for each row execute function update_updated_at_column();
+create or replace trigger set_updated_at_liabilities before update on liabilities for each row execute function update_updated_at_column();
+create or replace trigger set_updated_at_transactions before update on transactions for each row execute function update_updated_at_column();
+create or replace trigger set_updated_at_goals before update on goals for each row execute function update_updated_at_column();
+create or replace trigger set_updated_at_snapshots before update on snapshots for each row execute function update_updated_at_column();
+create or replace trigger set_updated_at_profiles before update on profiles for each row execute function update_updated_at_column();
+create or replace trigger set_updated_at_parties before update on parties for each row execute function update_updated_at_column();
+create or replace trigger set_updated_at_party_transactions before update on party_transactions for each row execute function update_updated_at_column();
 
 -- Indexes for fast lookups
 create index if not exists idx_assets_user_id on assets(user_id);
@@ -141,6 +164,16 @@ create index if not exists idx_parties_user_id on parties(user_id);
 create index if not exists idx_party_transactions_user_id on party_transactions(user_id);
 create index if not exists idx_party_transactions_party_id on party_transactions(party_id);
 create index if not exists idx_party_transactions_due_date on party_transactions(due_date);
+
+-- Indexes for delta sync
+create index if not exists idx_assets_updated_at on assets(updated_at);
+create index if not exists idx_liabilities_updated_at on liabilities(updated_at);
+create index if not exists idx_transactions_updated_at on transactions(updated_at);
+create index if not exists idx_goals_updated_at on goals(updated_at);
+create index if not exists idx_snapshots_updated_at on snapshots(updated_at);
+create index if not exists idx_profiles_updated_at on profiles(updated_at);
+create index if not exists idx_parties_updated_at on parties(updated_at);
+create index if not exists idx_party_transactions_updated_at on party_transactions(updated_at);
 
 -- Row Level Security (RLS)
 alter table assets enable row level security;

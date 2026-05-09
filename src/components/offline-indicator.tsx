@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { WifiOff, RefreshCw, CloudOff, Check, Download } from "lucide-react"
+import { WifiOff, RefreshCw, CloudOff, Check, Download, HardDrive } from "lucide-react"
 import { onSyncStatus, getPendingCount } from "@/lib/offline"
 import { useAppUpdate } from "@/components/offline-provider"
 
@@ -11,7 +11,8 @@ export function OfflineIndicator() {
   const [status, setStatus] = useState<Status>("online")
   const [pending, setPending] = useState(0)
   const [visible, setVisible] = useState(false)
-  const { updateReady, applyUpdate } = useAppUpdate()
+  const { updateReady, applyUpdate, storageWarning, storageUsage } = useAppUpdate()
+  const [storageDismissed, setStorageDismissed] = useState(false)
 
   useEffect(() => {
     // Check initial state
@@ -45,7 +46,7 @@ export function OfflineIndicator() {
     }
   }, [])
 
-  if (!visible && !updateReady) return null
+  if (!visible && !updateReady && !(storageWarning && !storageDismissed)) return null
 
   return (
     <>
@@ -106,6 +107,22 @@ export function OfflineIndicator() {
           <span>Back online</span>
         </>
       )}
+        </div>
+      )}
+
+      {/* Storage quota warning */}
+      {storageWarning && !storageDismissed && (
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-bottom">
+          <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/90 text-white text-sm font-medium shadow-lg backdrop-blur-xl">
+            <HardDrive size={16} />
+            <span>Storage {storageUsage}% full</span>
+            <button
+              onClick={() => setStorageDismissed(true)}
+              className="ml-1 px-2 py-0.5 rounded-full bg-white/20 hover:bg-white/30 text-xs cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
         </div>
       )}
     </>

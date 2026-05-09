@@ -560,7 +560,7 @@ export default function NewBlogPost() {
           {message && (
             <div className={`px-4 py-3 rounded-xl text-sm ${
               status === "success"
-                ? "bg-green-500/10 text-green-700 dark:text-green-400"
+                ? "bg-black/5 text-[#1d1d1f] dark:bg-white/10 dark:text-white"
                 : "bg-red-500/10 text-red-700 dark:text-red-400"
             }`}>
               {message}

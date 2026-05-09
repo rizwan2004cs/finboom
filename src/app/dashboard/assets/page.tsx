@@ -4,7 +4,10 @@ import { Suspense, useEffect, useState } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
 import { useSearchParams } from "next/navigation"
-import { fetchTable, deleteRow } from "@/lib/offline"
+import { useOfflineQuery } from "@/hooks/use-offline-query"
+import { useDeleteMutation } from "@/hooks/use-offline-mutation"
+import { deleteRow } from "@/lib/offline"
+import { useQueryClient } from "@tanstack/react-query"
 import { Plus, Search, Trash2, Edit2, Upload } from "lucide-react"
 import type { Asset } from "@/lib/types"
 import { ASSET_CLASSES } from "@/lib/constants"
@@ -32,8 +35,6 @@ function AssetsPage() {
   const { user } = useUser()
   const { activeProfile } = useProfile()
   const searchParams = useSearchParams()
-  const [assets, setAssets] = useState<Asset[]>([])
-  const [loading, setLoading] = useState(true)
   const [showAddModal, setShowAddModal] = useState(false)
   const [showImportModal, setShowImportModal] = useState(false)
   const [editAsset, setEditAsset] = useState<Asset | null>(null)
@@ -41,26 +42,25 @@ function AssetsPage() {
   const [filterClass, setFilterClass] = useState<string>("all")
   const [clearing, setClearing] = useState(false)
 
+  const pf = activeProfile ? [{ column: "profile_id", op: "eq" as const, value: activeProfile.id }] : undefined
+  const { data: assets = [], isLoading: loading } = useOfflineQuery<Asset>(
+    "assets", user?.id, {
+      order: { column: "current_value", ascending: false },
+      filters: pf,
+      enabled: !!activeProfile,
+    }
+  )
+  const deleteMut = useDeleteMutation("assets")
+  const queryClient = useQueryClient()
+
   useEffect(() => {
     if (searchParams.get("action") === "add") setShowAddModal(true)
     if (searchParams.get("action") === "import") setShowImportModal(true)
   }, [searchParams])
 
-  useEffect(() => {
-    if (!user || !activeProfile) return
-    loadAssets()
-  }, [user, activeProfile])
-
-  async function loadAssets() {
-    const data = await fetchTable<Asset>("assets", user!.id, { order: { column: "current_value", ascending: false }, filters: [{ column: "profile_id", op: "eq", value: activeProfile!.id }] })
-    setAssets(data)
-    setLoading(false)
-  }
-
   async function deleteAsset(id: string) {
     if (!confirm("Delete this asset?")) return
-    await deleteRow("assets", id)
-    setAssets(prev => prev.filter(a => a.id !== id))
+    deleteMut.mutate(id)
   }
 
   async function clearCategory() {
@@ -72,8 +72,8 @@ function AssetsPage() {
     for (const asset of categoryAssets) {
       await deleteRow("assets", asset.id)
     }
-    setAssets(prev => prev.filter(a => a.asset_class !== filterClass))
     setClearing(false)
+    queryClient.invalidateQueries({ queryKey: ["assets"] })
   }
 
   const filtered = assets.filter(a => {
@@ -250,13 +250,13 @@ function AssetsPage() {
         <AddAssetModal
           asset={editAsset}
           onClose={() => { setShowAddModal(false); setEditAsset(null) }}
-          onSave={() => { setShowAddModal(false); setEditAsset(null); loadAssets() }}
+          onSave={() => { setShowAddModal(false); setEditAsset(null); queryClient.invalidateQueries({ queryKey: ["assets"] }) }}
         />
       )}
       {showImportModal && (
         <ImportModal
           onClose={() => setShowImportModal(false)}
-          onImport={() => { setShowImportModal(false); loadAssets() }}
+          onImport={() => { setShowImportModal(false); queryClient.invalidateQueries({ queryKey: ["assets"] }) }}
         />
       )}
     </div>

@@ -1,9 +1,12 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useState } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
-import { fetchTable, deleteRow, insertRow, updateRow } from "@/lib/offline"
+import { insertRow, updateRow } from "@/lib/offline"
+import { useOfflineQuery } from "@/hooks/use-offline-query"
+import { useDeleteMutation } from "@/hooks/use-offline-mutation"
+import { useQueryClient } from "@tanstack/react-query"
 import { Plus, Trash2, Edit2, CreditCard } from "lucide-react"
 import type { Liability } from "@/lib/types"
 import { LIABILITY_TYPES } from "@/lib/constants"
@@ -19,26 +22,23 @@ function formatCurrency(amount: number) {
 export default function LiabilitiesPage() {
   const { user } = useUser()
   const { activeProfile } = useProfile()
-  const [liabilities, setLiabilities] = useState<Liability[]>([])
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
   const [showAddModal, setShowAddModal] = useState(false)
   const [editLiability, setEditLiability] = useState<Liability | null>(null)
 
-  useEffect(() => {
-    if (!user || !activeProfile) return
-    loadLiabilities()
-  }, [user, activeProfile])
+  const pf = activeProfile ? [{ column: "profile_id", op: "eq" as const, value: activeProfile.id }] : undefined
+  const { data: liabilities = [], isLoading: loading } = useOfflineQuery<Liability>(
+    "liabilities", user?.id, {
+      order: { column: "outstanding_amount", ascending: false },
+      filters: pf,
+      enabled: !!activeProfile,
+    }
+  )
+  const deleteMut = useDeleteMutation("liabilities")
 
-  async function loadLiabilities() {
-    const data = await fetchTable<Liability>("liabilities", user!.id, { order: { column: "outstanding_amount", ascending: false }, filters: [{ column: "profile_id", op: "eq", value: activeProfile!.id }] })
-    setLiabilities(data)
-    setLoading(false)
-  }
-
-  async function deleteLiability(id: string) {
+  function deleteLiability(id: string) {
     if (!confirm("Delete this liability?")) return
-    await deleteRow("liabilities", id)
-    setLiabilities(prev => prev.filter(l => l.id !== id))
+    deleteMut.mutate(id)
   }
 
   const totalOutstanding = liabilities.reduce((sum, l) => sum + Number(l.outstanding_amount), 0)
@@ -183,7 +183,7 @@ export default function LiabilitiesPage() {
         <AddLiabilityModal
           liability={editLiability}
           onClose={() => { setShowAddModal(false); setEditLiability(null) }}
-          onSave={() => { setShowAddModal(false); setEditLiability(null); loadLiabilities() }}
+          onSave={() => { setShowAddModal(false); setEditLiability(null); queryClient.invalidateQueries({ queryKey: ["liabilities"] }) }}
         />
       )}
     </div>

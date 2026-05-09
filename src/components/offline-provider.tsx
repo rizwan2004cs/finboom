@@ -5,9 +5,11 @@ import { useUser } from "@/hooks/use-auth"
 import { setupConnectivityListeners, fullSync } from "@/lib/offline/sync"
 import { OfflineIndicator } from "@/components/offline-indicator"
 
-const UpdateContext = createContext<{ updateReady: boolean; applyUpdate: () => void }>({
+const UpdateContext = createContext<{ updateReady: boolean; applyUpdate: () => void; storageWarning: boolean; storageUsage: number | null }>({
   updateReady: false,
   applyUpdate: () => {},
+  storageWarning: false,
+  storageUsage: null,
 })
 export const useAppUpdate = () => useContext(UpdateContext)
 
@@ -15,6 +17,8 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
   const { user } = useUser()
   const initialized = useRef(false)
   const [updateReady, setUpdateReady] = useState(false)
+  const [storageWarning, setStorageWarning] = useState(false)
+  const [storageUsage, setStorageUsage] = useState<number | null>(null)
   const waitingSW = useRef<ServiceWorker | null>(null)
 
   useEffect(() => {
@@ -78,8 +82,26 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     return cleanup
   }, [user])
 
+  // Storage quota monitoring
+  useEffect(() => {
+    if (!navigator.storage?.estimate) return
+
+    async function checkQuota() {
+      const { usage, quota } = await navigator.storage.estimate()
+      if (usage != null && quota != null && quota > 0) {
+        const pct = usage / quota
+        setStorageUsage(Math.round(pct * 100))
+        setStorageWarning(pct >= 0.8)
+      }
+    }
+
+    checkQuota()
+    const interval = setInterval(checkQuota, 5 * 60 * 1000) // re-check every 5 min
+    return () => clearInterval(interval)
+  }, [])
+
   return (
-    <UpdateContext.Provider value={{ updateReady, applyUpdate }}>
+    <UpdateContext.Provider value={{ updateReady, applyUpdate, storageWarning, storageUsage }}>
       <OfflineIndicator />
       {children}
     </UpdateContext.Provider>

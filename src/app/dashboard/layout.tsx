@@ -5,6 +5,7 @@ import { TopBar } from "@/components/top-bar"
 import { SidebarProvider, useSidebar } from "@/components/sidebar-context"
 import { OfflineProvider } from "@/components/offline-provider"
 import { ProfileProvider } from "@/hooks/use-profile"
+import { QueryProvider } from "@/components/query-provider"
 import { usePushSubscription } from "@/hooks/use-push"
 import { cn } from "@/lib/utils"
 
@@ -35,12 +36,14 @@ export default function DashboardLayout({
   children: React.ReactNode
 }) {
   return (
-    <SidebarProvider>
-      <OfflineProvider>
-        <ProfileProvider>
-          <DashboardShell>{children}</DashboardShell>
-        </ProfileProvider>
-      </OfflineProvider>
-    </SidebarProvider>
+    <QueryProvider>
+      <SidebarProvider>
+        <OfflineProvider>
+          <ProfileProvider>
+            <DashboardShell>{children}</DashboardShell>
+          </ProfileProvider>
+        </OfflineProvider>
+      </SidebarProvider>
+    </QueryProvider>
   )
 }

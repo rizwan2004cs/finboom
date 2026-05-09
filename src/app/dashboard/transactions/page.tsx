@@ -4,8 +4,11 @@ import { Suspense, useEffect, useState } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
 import { useSearchParams } from "next/navigation"
-import { fetchTable, deleteRow } from "@/lib/offline"
+import { useOfflineQuery } from "@/hooks/use-offline-query"
+import { useDeleteMutation } from "@/hooks/use-offline-mutation"
+import { deleteRow } from "@/lib/offline"
 import { createClient } from "@/utils/supabase/client"
+import { useQueryClient } from "@tanstack/react-query"
 import { Plus, ArrowUpCircle, ArrowDownCircle, Filter, Trash2, Receipt } from "lucide-react"
 import type { Transaction } from "@/lib/types"
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/constants"
@@ -30,40 +33,33 @@ function TransactionsPage() {
   const { user } = useUser()
   const { activeProfile } = useProfile()
   const searchParams = useSearchParams()
-  const [transactions, setTransactions] = useState<Transaction[]>([])
-  const [loading, setLoading] = useState(true)
+  const queryClient = useQueryClient()
   const [showAddModal, setShowAddModal] = useState(false)
   const [typeFilter, setTypeFilter] = useState<"all" | "income" | "expense">("all")
   const [monthFilter, setMonthFilter] = useState(
     new Date().toISOString().slice(0, 7) // YYYY-MM
   )
 
-  useEffect(() => {
-    if (searchParams.get("action") === "add") setShowAddModal(true)
-  }, [searchParams])
+  const startDate = `${monthFilter}-01`
+  const endDate = new Date(parseInt(monthFilter.slice(0, 4)), parseInt(monthFilter.slice(5, 7)), 0)
+    .toISOString().slice(0, 10)
 
-  useEffect(() => {
-    if (!user || !activeProfile) return
-    loadTransactions()
-  }, [user, activeProfile, monthFilter])
-
-  async function loadTransactions() {
-    const startDate = `${monthFilter}-01`
-    const endDate = new Date(parseInt(monthFilter.slice(0, 4)), parseInt(monthFilter.slice(5, 7)), 0)
-      .toISOString().slice(0, 10)
-
-    const data = await fetchTable<Transaction>("transactions", user!.id, {
+  const { data: transactions = [], isLoading: loading } = useOfflineQuery<Transaction>(
+    "transactions", user?.id, {
       filters: [
-        { column: "profile_id", op: "eq", value: activeProfile!.id },
+        { column: "profile_id", op: "eq", value: activeProfile?.id ?? "" },
         { column: "date", op: "gte", value: startDate },
         { column: "date", op: "lte", value: endDate },
       ],
       order: { column: "date", ascending: false },
-    })
-    
-    setTransactions(data)
-    setLoading(false)
-  }
+      enabled: !!activeProfile,
+      queryKey: [monthFilter],
+    }
+  )
+
+  useEffect(() => {
+    if (searchParams.get("action") === "add") setShowAddModal(true)
+  }, [searchParams])
 
   async function deleteTransaction(id: string) {
     if (!confirm("Delete this transaction?")) return
@@ -85,7 +81,8 @@ function TransactionsPage() {
     }
 
     await deleteRow("transactions", id)
-    setTransactions(prev => prev.filter(t => t.id !== id))
+    queryClient.invalidateQueries({ queryKey: ["transactions"] })
+    queryClient.invalidateQueries({ queryKey: ["party_transactions"] })
   }
 
   const filtered = transactions.filter(t => typeFilter === "all" || t.type === typeFilter)
@@ -256,7 +253,7 @@ function TransactionsPage() {
       {showAddModal && (
         <AddTransactionModal
           onClose={() => setShowAddModal(false)}
-          onSave={() => { setShowAddModal(false); loadTransactions() }}
+          onSave={() => { setShowAddModal(false); queryClient.invalidateQueries({ queryKey: ["transactions"] }) }}
         />
       )}
     </div>

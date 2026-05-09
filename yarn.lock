@@ -815,10 +815,17 @@
     postcss "^8.5.6"
     tailwindcss "4.2.4"
 
-"@tanstack/query-core@^5.100.6":
+"@tanstack/query-core@^5.100.6", "@tanstack/query-core@5.100.9":
   version "5.100.9"
   resolved "https://registry.npmjs.org/@tanstack/query-core/-/query-core-5.100.9.tgz"
   integrity sha512-SJSFw1S8+kQ0+knv/XGfrbocWoAlT7vDKsSImtLx3ZPQmEcR46hkDjLSvynSy25N8Ms4tIEini1FuBd5k7IscQ==
+
+"@tanstack/react-query@^5.100.9":
+  version "5.100.9"
+  resolved "https://registry.npmjs.org/@tanstack/react-query/-/react-query-5.100.9.tgz"
+  integrity sha512-Oa44XkaI3kCNN6ME0KByU3xT3SEUNOMfZpHxL6+wFoTm+OeUFYHKdeYVe0aOXlRDm/f15sgLwEt2HDorIdW8+A==
+  dependencies:
+    "@tanstack/query-core" "5.100.9"
 
 "@tybys/wasm-util@^0.10.0":
   version "0.10.2"
@@ -1561,7 +1568,12 @@ comma-separated-tokens@^2.0.0:
   resolved "https://registry.npmjs.org/comma-separated-tokens/-/comma-separated-tokens-2.0.3.tgz"
   integrity sha512-Fu4hJdvzeylCfQPp9SGWidpzrMs7tTrlu6Vb8XGaRGck8QSNZJJp538Wrb60Lax4fPwR64ViY468OIUTbRlGZg==
 
-commander@^8.3.0, commander@7:
+commander@^8.3.0:
+  version "8.3.0"
+  resolved "https://registry.npmjs.org/commander/-/commander-8.3.0.tgz"
+  integrity sha512-OkTL9umf+He2DZkUq8f8J9of7yL6RJKI24dVITBmNfZBmri9zYZQrKkuXiKhyfPSu8tUhnVBB1iKXevvnlR4Ww==
+
+commander@7:
   version "7.2.0"
 
 compute-scroll-into-view@^3.0.2:
