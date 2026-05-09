@@ -11,6 +11,7 @@ import { Plus, Trash2, Edit2, CreditCard } from "lucide-react"
 import type { Liability } from "@/lib/types"
 import { LIABILITY_TYPES } from "@/lib/constants"
 import { CategoryIcon } from "@/components/category-icon"
+import { useAppDialog } from "@/components/app-dialog"
 
 function formatCurrency(amount: number) {
   if (amount >= 10000000) return `₹${(amount / 10000000).toFixed(2)} Cr`
@@ -36,8 +37,10 @@ export default function LiabilitiesPage() {
   )
   const deleteMut = useDeleteMutation("liabilities")
 
-  function deleteLiability(id: string) {
-    if (!confirm("Delete this liability?")) return
+  const { showConfirm } = useAppDialog()
+
+  async function deleteLiability(id: string) {
+    if (!(await showConfirm("Delete this liability?", { destructive: true }))) return
     deleteMut.mutate(id)
   }
 

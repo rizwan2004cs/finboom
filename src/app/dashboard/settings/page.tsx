@@ -7,6 +7,7 @@ import { Settings, Download, Globe, Trash2, LogOut, Moon, Sun, Lock } from "luci
 import { CURRENCIES } from "@/lib/constants"
 import { CustomSelect } from "@/components/custom-select"
 import { PinSetup } from "@/components/pin-lock"
+import { useAppDialog } from "@/components/app-dialog"
 
 export default function SettingsPage() {
   const { user } = useUser()
@@ -136,9 +137,11 @@ export default function SettingsPage() {
     setExporting(false)
   }
 
+  const { showConfirm } = useAppDialog()
+
   async function deleteAccount() {
-    if (!confirm("Are you sure? This will permanently delete all your data. This cannot be undone.")) return
-    if (!confirm("Last chance! Type DELETE in the next prompt if you really want to proceed.")) return
+    if (!(await showConfirm("Are you sure? This will permanently delete all your data. This cannot be undone.", { title: "Delete Account", destructive: true, confirmLabel: "Delete Everything" }))) return
+    if (!(await showConfirm("Last chance! This action cannot be reversed.", { title: "Final Confirmation", destructive: true, confirmLabel: "Yes, Delete" }))) return
 
     const supabase = createClient()
     // Delete all user data

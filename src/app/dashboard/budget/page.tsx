@@ -10,6 +10,7 @@ import { PiggyBank, Plus, Trash2, Sparkles, Copy, Pencil, Info, ChevronLeft, Che
 import type { Budget, Transaction } from "@/lib/types"
 import { EXPENSE_CATEGORIES } from "@/lib/constants"
 import { CategoryIcon } from "@/components/category-icon"
+import { useAppDialog } from "@/components/app-dialog"
 
 function formatCurrency(amount: number) {
   if (amount >= 100000) return `₹${(amount / 100000).toFixed(2)} L`
@@ -21,6 +22,7 @@ export default function BudgetPage() {
   const { user } = useUser()
   const { activeProfile } = useProfile()
   const queryClient = useQueryClient()
+  const { showAlert } = useAppDialog()
 
   const [month, setMonth] = useState(new Date().toISOString().slice(0, 7))
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -167,7 +169,7 @@ export default function BudgetPage() {
       })
 
       if (prevBudgets.length === 0) {
-        alert("No budget found for the previous month.")
+        await showAlert("No budget found for the previous month.")
         return
       }
 
@@ -219,7 +221,7 @@ export default function BudgetPage() {
       }
 
       if (added === 0) {
-        alert("No spending history found to suggest from.")
+        await showAlert("No spending history found to suggest from.")
       }
       queryClient.invalidateQueries({ queryKey: ["budgets"] })
     } finally {

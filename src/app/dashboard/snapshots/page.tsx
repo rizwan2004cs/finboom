@@ -11,6 +11,7 @@ import { Camera, TrendingUp, TrendingDown, Trash2 } from "lucide-react"
 import type { Snapshot, Asset, Liability } from "@/lib/types"
 import { ASSET_CLASSES } from "@/lib/constants"
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
+import { useAppDialog } from "@/components/app-dialog"
 
 function formatCurrency(amount: number) {
   if (amount >= 10000000) return `₹${(amount / 10000000).toFixed(2)} Cr`
@@ -72,8 +73,10 @@ export default function SnapshotsPage() {
     queryClient.invalidateQueries({ queryKey: ["snapshots"] })
   }
 
-  function deleteSnapshot(id: string) {
-    if (!confirm("Delete this snapshot?")) return
+  const { showConfirm } = useAppDialog()
+
+  async function deleteSnapshot(id: string) {
+    if (!(await showConfirm("Delete this snapshot?", { destructive: true }))) return
     deleteMut.mutate(id)
   }
 

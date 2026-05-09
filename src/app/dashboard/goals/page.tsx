@@ -9,6 +9,7 @@ import { useDeleteMutation } from "@/hooks/use-offline-mutation"
 import { useQueryClient } from "@tanstack/react-query"
 import { Plus, Target, Trash2, Edit2, TrendingUp, Calendar } from "lucide-react"
 import type { Goal, Asset } from "@/lib/types"
+import { useAppDialog } from "@/components/app-dialog"
 
 function formatCurrency(amount: number) {
   if (amount >= 10000000) return `₹${(amount / 10000000).toFixed(2)} Cr`
@@ -45,8 +46,10 @@ export default function GoalsPage() {
   const loading = loadingGoals
   const deleteMut = useDeleteMutation("goals")
 
-  function deleteGoal(id: string) {
-    if (!confirm("Delete this goal?")) return
+  const { showConfirm } = useAppDialog()
+
+  async function deleteGoal(id: string) {
+    if (!(await showConfirm("Delete this goal?", { destructive: true }))) return
     deleteMut.mutate(id)
   }
 

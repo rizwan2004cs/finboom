@@ -8,6 +8,7 @@ import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { useDeleteMutation } from "@/hooks/use-offline-mutation"
 import { useQueryClient } from "@tanstack/react-query"
 import { Users, Plus, Trash2, Building2, User2, CheckCircle } from "lucide-react"
+import { useAppDialog } from "@/components/app-dialog"
 import type { Profile, Asset, Liability } from "@/lib/types"
 
 function formatCurrency(amount: number) {
@@ -60,12 +61,14 @@ export default function ProfilesPage() {
     queryClient.invalidateQueries({ queryKey: ["profiles"] })
   }
 
+  const { showAlert, showConfirm } = useAppDialog()
+
   async function deleteProfile(id: string) {
     if (id === activeProfile?.id) {
-      alert("Cannot delete the active profile. Switch to another profile first.")
+      await showAlert("Cannot delete the active profile. Switch to another profile first.")
       return
     }
-    if (!confirm("Delete this profile and all associated data?")) return
+    if (!(await showConfirm("Delete this profile and all associated data?", { destructive: true }))) return
     deleteMut.mutate(id)
     await reloadProfiles()
   }

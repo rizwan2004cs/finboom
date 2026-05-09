@@ -10,21 +10,21 @@ export default function LoginPage() {
 
   const clerkAppearance = {
     elements: {
-      rootBox: "w-full",
+      rootBox: "w-full !max-w-[360px] mx-auto",
       cardBox: "shadow-none w-full",
-      card: "clerk-glass-card !rounded-3xl !shadow-none w-full !border-0 !bg-transparent",
+      card: "clerk-glass-card !rounded-3xl !shadow-none w-full !border-0 !bg-transparent !p-6",
       headerTitle: "!text-[#1d1d1f] dark:!text-white !font-semibold !text-lg",
       headerSubtitle: "!text-[#86868b] !text-sm",
       socialButtonsBlockButton:
-        "!rounded-2xl !bg-white/60 dark:!bg-white/[0.08] !border !border-black/[0.06] dark:!border-white/[0.1] !backdrop-blur-md !shadow-sm hover:!shadow-md !transition-all hover:!scale-[1.02] hover:!bg-white/80 dark:hover:!bg-white/[0.12]",
-      socialButtonsBlockButtonText: "!text-[#1d1d1f] dark:!text-white !font-medium",
+        "!rounded-xl !bg-white/60 dark:!bg-white/[0.08] !border !border-black/[0.06] dark:!border-white/[0.1] !backdrop-blur-md !shadow-sm hover:!shadow-md !transition-all hover:!scale-[1.02] hover:!bg-white/80 dark:hover:!bg-white/[0.12] !h-11",
+      socialButtonsBlockButtonText: "!text-[#1d1d1f] dark:!text-white !font-medium !text-sm",
       dividerLine: "!bg-black/[0.08] dark:!bg-white/[0.1]",
       dividerText: "!text-[#86868b] !text-xs",
       formFieldLabel: "!text-[#1d1d1f] dark:!text-[#e5e5e7] !font-medium !text-sm",
       formFieldInput:
-        "!rounded-2xl !bg-white/60 dark:!bg-white/[0.06] !border !border-black/[0.08] dark:!border-white/[0.1] !backdrop-blur-sm !text-[#1d1d1f] dark:!text-white placeholder:!text-[#86868b]/60 focus:!ring-2 focus:!ring-black/[0.08] dark:focus:!ring-white/[0.15] focus:!border-transparent !transition-all !shadow-sm !h-12",
+        "!rounded-xl !bg-white/60 dark:!bg-white/[0.06] !border !border-black/[0.08] dark:!border-white/[0.1] !backdrop-blur-sm !text-[#1d1d1f] dark:!text-white placeholder:!text-[#86868b]/60 focus:!ring-2 focus:!ring-black/[0.08] dark:focus:!ring-white/[0.15] focus:!border-transparent !transition-all !shadow-sm !h-11 !text-sm",
       formButtonPrimary:
-        "!rounded-2xl !bg-[#1d1d1f] dark:!bg-white !text-white dark:!text-[#1d1d1f] !font-semibold !shadow-lg hover:!shadow-xl !transition-all hover:!scale-[1.02] active:!scale-[0.98] !h-12 !text-[15px]",
+        "!rounded-xl !bg-[#1d1d1f] dark:!bg-white !text-white dark:!text-[#1d1d1f] !font-semibold !shadow-lg hover:!shadow-xl !transition-all hover:!scale-[1.02] active:!scale-[0.98] !h-11 !text-sm",
       footer: "hidden",
       alternativeMethods: "hidden",
       logoBox: "hidden",
@@ -38,7 +38,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#e8eaf0] via-[#f0eef5] to-[#eaf4f0] dark:from-[#0a0a0a] dark:via-[#111113] dark:to-[#0d0d0f] mesh-bg px-4">
-      <div className="w-full max-w-[420px]">
+      <div className="w-full max-w-[380px]">
         {/* Logo */}
         <div className="text-center mb-8">
           <Link href="/" className="text-3xl font-bold tracking-[-0.5px] text-[#1d1d1f] dark:text-white">

@@ -13,6 +13,7 @@ import type { Transaction } from "@/lib/types"
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/constants"
 import { CategoryIcon } from "@/components/category-icon"
 import { AddTransactionModal } from "@/components/modals/add-transaction-modal"
+import { useAppDialog } from "@/components/app-dialog"
 
 function formatCurrency(amount: number) {
   if (amount >= 100000) return `₹${(amount / 100000).toFixed(2)} L`
@@ -60,8 +61,10 @@ function TransactionsPage() {
     if (searchParams.get("action") === "add") setShowAddModal(true)
   }, [searchParams])
 
+  const { showConfirm } = useAppDialog()
+
   async function deleteTransaction(id: string) {
-    if (!confirm("Delete this transaction?")) return
+    if (!(await showConfirm("Delete this transaction?", { destructive: true }))) return
 
     // Also delete any linked party_transaction (expense mapped to receivable)
     try {

@@ -12,6 +12,7 @@ import { Plus, Search, Trash2, Edit2, Upload } from "lucide-react"
 import type { Asset } from "@/lib/types"
 import { ASSET_CLASSES } from "@/lib/constants"
 import { CategoryIcon } from "@/components/category-icon"
+import { useAppDialog } from "@/components/app-dialog"
 import { AddAssetModal } from "@/components/modals/add-asset-modal"
 import { ImportModal } from "@/components/modals/import-modal"
 import { CustomSelect } from "@/components/custom-select"
@@ -58,8 +59,10 @@ function AssetsPage() {
     if (searchParams.get("action") === "import") setShowImportModal(true)
   }, [searchParams])
 
+  const { showConfirm } = useAppDialog()
+
   async function deleteAsset(id: string) {
-    if (!confirm("Delete this asset?")) return
+    if (!(await showConfirm("Delete this asset?", { destructive: true }))) return
     deleteMut.mutate(id)
   }
 
@@ -67,7 +70,7 @@ function AssetsPage() {
     const cls = ASSET_CLASSES.find(c => c.id === filterClass)
     const categoryAssets = assets.filter(a => a.asset_class === filterClass)
     if (!categoryAssets.length) return
-    if (!confirm(`Delete all ${categoryAssets.length} assets in "${cls?.label || filterClass}"? This cannot be undone.`)) return
+    if (!(await showConfirm(`Delete all ${categoryAssets.length} assets in "${cls?.label || filterClass}"? This cannot be undone.`, { destructive: true }))) return
     setClearing(true)
     for (const asset of categoryAssets) {
       await deleteRow("assets", asset.id)
