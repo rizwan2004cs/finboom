@@ -7,7 +7,7 @@
  * - Offline fallback for navigation requests
  */
 
-const SW_VERSION = "v1"
+const SW_VERSION = "v2"
 const CACHE_STATIC = `finboom-static-${SW_VERSION}`
 const CACHE_PAGES = `finboom-pages-${SW_VERSION}`
 
@@ -82,28 +82,38 @@ sw.addEventListener("fetch", (event) => {
           }
           return response
         })
-        .catch(() =>
-          caches.match(request).then((cached) => {
-            if (cached) return cached
-            // Fallback to cached dashboard shell
-            return caches.match("/dashboard").then((shell) => {
-              if (shell) return shell
-              return new Response(
-                `<!DOCTYPE html>
-                <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-                <title>FinBoom - Offline</title>
-                <style>
-                  body{font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0a0a0a;color:#fff}
-                  .c{text-align:center}.c h1{font-size:2rem;margin-bottom:0.5rem}.c p{opacity:0.6;margin-bottom:1.5rem}
-                  .c button{background:#34c759;color:#fff;border:none;padding:12px 24px;border-radius:12px;font-size:1rem;cursor:pointer}
-                </style></head><body>
-                <div class="c"><h1>You're offline</h1><p>Check your connection and try again</p>
-                <button onclick="location.reload()">Retry</button></div></body></html>`,
-                { headers: { "Content-Type": "text/html" } }
-              )
-            })
-          })
-        )
+        .catch(async () => {
+          // Try exact URL first
+          const cached = await caches.match(request)
+          if (cached) return cached
+          // For any /dashboard route, serve the cached dashboard shell
+          // Next.js client-side routing will handle the correct page
+          if (url.pathname.startsWith("/dashboard")) {
+            const shell = await caches.match("/dashboard")
+            if (shell) return shell
+          }
+          // Try any cached page as last resort
+          const pages = await caches.open(CACHE_PAGES)
+          const pageKeys = await pages.keys()
+          if (pageKeys.length > 0) {
+            const fallback = await pages.match(pageKeys[0])
+            if (fallback) return fallback
+          }
+          // Final fallback: minimal offline page
+          return new Response(
+            `<!DOCTYPE html>
+            <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+            <title>FinBoom - Offline</title>
+            <style>
+              body{font-family:system-ui;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;background:#0a0a0a;color:#fff}
+              .c{text-align:center}.c h1{font-size:2rem;margin-bottom:0.5rem}.c p{opacity:0.6;margin-bottom:1.5rem}
+              .c button{background:#34c759;color:#fff;border:none;padding:12px 24px;border-radius:12px;font-size:1rem;cursor:pointer}
+            </style></head><body>
+            <div class="c"><h1>You're offline</h1><p>Open the app online once to enable offline mode</p>
+            <button onclick="location.reload()">Retry</button></div></body></html>`,
+            { headers: { "Content-Type": "text/html" } }
+          )
+        })
     )
     return
   }
