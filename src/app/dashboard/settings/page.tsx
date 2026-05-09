@@ -65,34 +65,76 @@ export default function SettingsPage() {
     setExporting(true)
     const supabase = createClient()
 
-    const [assetsRes, liabilitiesRes, transactionsRes] = await Promise.all([
+    const [
+      assetsRes,
+      liabilitiesRes,
+      transactionsRes,
+      goalsRes,
+      snapshotsRes,
+      profilesRes,
+      partiesRes,
+      partyTxRes,
+    ] = await Promise.all([
       supabase.from("assets").select("*").eq("user_id", user!.id),
       supabase.from("liabilities").select("*").eq("user_id", user!.id),
       supabase.from("transactions").select("*").eq("user_id", user!.id),
+      supabase.from("goals").select("*").eq("user_id", user!.id),
+      supabase.from("snapshots").select("*").eq("user_id", user!.id),
+      supabase.from("profiles").select("*").eq("user_id", user!.id),
+      supabase.from("parties").select("*").eq("user_id", user!.id),
+      supabase.from("party_transactions").select("*").eq("user_id", user!.id),
     ])
 
     const data = {
+      profiles: profilesRes.data || [],
       assets: assetsRes.data || [],
       liabilities: liabilitiesRes.data || [],
       transactions: transactionsRes.data || [],
+      goals: goalsRes.data || [],
+      snapshots: snapshotsRes.data || [],
+      parties: partiesRes.data || [],
+      partyTransactions: partyTxRes.data || [],
       exportedAt: new Date().toISOString(),
     }
 
     let blob: Blob
     let filename: string
+    const dateStr = new Date().toISOString().slice(0, 10)
 
     if (format === "json") {
       blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" })
-      filename = `finboom-export-${new Date().toISOString().slice(0, 10)}.json`
+      filename = `finboom-export-${dateStr}.json`
     } else {
-      // CSV - export assets as example
-      const headers = ["name", "asset_class", "invested_value", "current_value", "created_at"]
-      const rows = (data.assets || []).map(a =>
-        headers.map(h => String((a as Record<string, unknown>)[h] ?? "")).join(",")
-      )
-      const csv = [headers.join(","), ...rows].join("\n")
-      blob = new Blob([csv], { type: "text/csv" })
-      filename = `finboom-assets-${new Date().toISOString().slice(0, 10)}.csv`
+      // CSV — one sheet per table, separated by headers
+      const sections: string[] = []
+
+      const toCsv = (label: string, rows: Record<string, unknown>[]) => {
+        if (!rows.length) return `# ${label}\n(no data)\n`
+        const keys = Object.keys(rows[0])
+        const header = keys.join(",")
+        const lines = rows.map(r =>
+          keys.map(k => {
+            const v = r[k]
+            const s = v == null ? "" : String(v)
+            return s.includes(",") || s.includes('"') || s.includes("\n")
+              ? `"${s.replace(/"/g, '""')}"`
+              : s
+          }).join(",")
+        )
+        return `# ${label}\n${header}\n${lines.join("\n")}\n`
+      }
+
+      sections.push(toCsv("Profiles", data.profiles))
+      sections.push(toCsv("Assets", data.assets))
+      sections.push(toCsv("Liabilities", data.liabilities))
+      sections.push(toCsv("Transactions", data.transactions))
+      sections.push(toCsv("Goals", data.goals))
+      sections.push(toCsv("Snapshots", data.snapshots))
+      sections.push(toCsv("Parties", data.parties))
+      sections.push(toCsv("Party Transactions", data.partyTransactions))
+
+      blob = new Blob([sections.join("\n")], { type: "text/csv" })
+      filename = `finboom-export-${dateStr}.csv`
     }
 
     const url = URL.createObjectURL(blob)
