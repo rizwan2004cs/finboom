@@ -64,27 +64,30 @@ function TransactionsPage() {
   const { showConfirm } = useAppDialog()
 
   async function deleteTransaction(id: string) {
-    if (!(await showConfirm("Delete this transaction?", { destructive: true }))) return
-
-    // Also delete any linked party_transaction (expense mapped to receivable)
-    try {
-      const supabase = createClient()
-      const { data: linked } = await supabase
-        .from("party_transactions")
-        .select("id")
-        .eq("linked_transaction_id", id)
-      if (linked && linked.length > 0) {
-        for (const pt of linked) {
-          await deleteRow("party_transactions", pt.id)
+    await showConfirm("Delete this transaction?", {
+      destructive: true,
+      onConfirm: async () => {
+        // Also delete any linked party_transaction (expense mapped to receivable)
+        try {
+          const supabase = createClient()
+          const { data: linked } = await supabase
+            .from("party_transactions")
+            .select("id")
+            .eq("linked_transaction_id", id)
+          if (linked && linked.length > 0) {
+            for (const pt of linked) {
+              await deleteRow("party_transactions", pt.id)
+            }
+          }
+        } catch (e) {
+          console.warn("Could not delete linked party transactions:", e)
         }
-      }
-    } catch (e) {
-      console.warn("Could not delete linked party transactions:", e)
-    }
 
-    await deleteRow("transactions", id)
-    queryClient.invalidateQueries({ queryKey: ["transactions"] })
-    queryClient.invalidateQueries({ queryKey: ["party_transactions"] })
+        await deleteRow("transactions", id)
+        queryClient.invalidateQueries({ queryKey: ["transactions"] })
+        queryClient.invalidateQueries({ queryKey: ["party_transactions"] })
+      },
+    })
   }
 
   const filtered = transactions.filter(t => typeFilter === "all" || t.type === typeFilter)

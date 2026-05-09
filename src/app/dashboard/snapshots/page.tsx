@@ -76,8 +76,10 @@ export default function SnapshotsPage() {
   const { showConfirm } = useAppDialog()
 
   async function deleteSnapshot(id: string) {
-    if (!(await showConfirm("Delete this snapshot?", { destructive: true }))) return
-    deleteMut.mutate(id)
+    await showConfirm("Delete this snapshot?", {
+      destructive: true,
+      onConfirm: async () => { await deleteMut.mutateAsync(id) },
+    })
   }
 
   if (loading) {

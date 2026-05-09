@@ -130,7 +130,7 @@ export default function RootLayout({
               if (!link) { link = document.createElement('link'); link.rel = 'icon'; link.type = 'image/svg+xml'; link.setAttribute('data-favicon',''); document.head.appendChild(link); }
               link.href = href;
               var metas = document.querySelectorAll('meta[name="theme-color"]');
-              var color = isDark ? '#0a0a0a' : '#e8eaf0';
+              var color = isDark ? '#131315' : '#f3f2f5';
               if (metas.length) { metas.forEach(function(m) { m.setAttribute('content', color); }); }
               else { var m = document.createElement('meta'); m.name = 'theme-color'; m.content = color; document.head.appendChild(m); }
             }

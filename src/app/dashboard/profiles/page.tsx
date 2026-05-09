@@ -68,9 +68,13 @@ export default function ProfilesPage() {
       await showAlert("Cannot delete the active profile. Switch to another profile first.")
       return
     }
-    if (!(await showConfirm("Delete this profile and all associated data?", { destructive: true }))) return
-    deleteMut.mutate(id)
-    await reloadProfiles()
+    if (!(await showConfirm("Delete this profile and all associated data?", {
+      destructive: true,
+      onConfirm: async () => {
+        await deleteMut.mutateAsync(id)
+        await reloadProfiles()
+      },
+    }))) return
   }
 
   const totalNetWorth = Object.values(profileSummaries).reduce(

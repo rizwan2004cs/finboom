@@ -141,21 +141,24 @@ export default function SettingsPage() {
 
   async function deleteAccount() {
     if (!(await showConfirm("Are you sure? This will permanently delete all your data. This cannot be undone.", { title: "Delete Account", destructive: true, confirmLabel: "Delete Everything" }))) return
-    if (!(await showConfirm("Last chance! This action cannot be reversed.", { title: "Final Confirmation", destructive: true, confirmLabel: "Yes, Delete" }))) return
-
-    const supabase = createClient()
-    // Delete all user data
-    await Promise.all([
-      supabase.from("assets").delete().eq("user_id", user!.id),
-      supabase.from("liabilities").delete().eq("user_id", user!.id),
-      supabase.from("transactions").delete().eq("user_id", user!.id),
-      supabase.from("goals").delete().eq("user_id", user!.id),
-      supabase.from("snapshots").delete().eq("user_id", user!.id),
-      supabase.from("health_checks").delete().eq("user_id", user!.id),
-      supabase.from("profiles").delete().eq("user_id", user!.id),
-    ])
-
-    signOut()
+    await showConfirm("Last chance! This action cannot be reversed.", {
+      title: "Final Confirmation",
+      destructive: true,
+      confirmLabel: "Yes, Delete",
+      onConfirm: async () => {
+        const supabase = createClient()
+        await Promise.all([
+          supabase.from("assets").delete().eq("user_id", user!.id),
+          supabase.from("liabilities").delete().eq("user_id", user!.id),
+          supabase.from("transactions").delete().eq("user_id", user!.id),
+          supabase.from("goals").delete().eq("user_id", user!.id),
+          supabase.from("snapshots").delete().eq("user_id", user!.id),
+          supabase.from("health_checks").delete().eq("user_id", user!.id),
+          supabase.from("profiles").delete().eq("user_id", user!.id),
+        ])
+        signOut()
+      },
+    })
   }
 
   if (loading) {

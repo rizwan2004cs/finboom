@@ -49,8 +49,10 @@ export default function GoalsPage() {
   const { showConfirm } = useAppDialog()
 
   async function deleteGoal(id: string) {
-    if (!(await showConfirm("Delete this goal?", { destructive: true }))) return
-    deleteMut.mutate(id)
+    await showConfirm("Delete this goal?", {
+      destructive: true,
+      onConfirm: async () => { await deleteMut.mutateAsync(id) },
+    })
   }
 
   if (loading) {

@@ -33,7 +33,7 @@ export function TopBar() {
   }, [profileOpen, profileSwitcherOpen])
 
   return (
-    <header className="sticky top-0 z-40 flex items-center justify-between h-14 px-4 lg:px-8 glass-elevated border-b border-black/[0.06] dark:border-white/[0.06]">
+    <header className="sticky top-0 z-40 flex items-center justify-between h-14 px-4 lg:px-8 glass-elevated border-b border-black/[0.04] dark:border-white/[0.04]">
       <div className="flex items-center gap-2">
         <div className="lg:hidden">
           <p className="text-[17px] font-semibold tracking-[-0.3px] text-[#1d1d1f] leading-tight">

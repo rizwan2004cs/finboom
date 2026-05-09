@@ -62,21 +62,25 @@ function AssetsPage() {
   const { showConfirm } = useAppDialog()
 
   async function deleteAsset(id: string) {
-    if (!(await showConfirm("Delete this asset?", { destructive: true }))) return
-    deleteMut.mutate(id)
+    await showConfirm("Delete this asset?", {
+      destructive: true,
+      onConfirm: async () => { await deleteMut.mutateAsync(id) },
+    })
   }
 
   async function clearCategory() {
     const cls = ASSET_CLASSES.find(c => c.id === filterClass)
     const categoryAssets = assets.filter(a => a.asset_class === filterClass)
     if (!categoryAssets.length) return
-    if (!(await showConfirm(`Delete all ${categoryAssets.length} assets in "${cls?.label || filterClass}"? This cannot be undone.`, { destructive: true }))) return
-    setClearing(true)
-    for (const asset of categoryAssets) {
-      await deleteRow("assets", asset.id)
-    }
-    setClearing(false)
-    queryClient.invalidateQueries({ queryKey: ["assets"] })
+    await showConfirm(`Delete all ${categoryAssets.length} assets in "${cls?.label || filterClass}"? This cannot be undone.`, {
+      destructive: true,
+      onConfirm: async () => {
+        for (const asset of categoryAssets) {
+          await deleteRow("assets", asset.id)
+        }
+        queryClient.invalidateQueries({ queryKey: ["assets"] })
+      },
+    })
   }
 
   const filtered = assets.filter(a => {

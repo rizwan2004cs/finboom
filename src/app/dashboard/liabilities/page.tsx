@@ -40,8 +40,10 @@ export default function LiabilitiesPage() {
   const { showConfirm } = useAppDialog()
 
   async function deleteLiability(id: string) {
-    if (!(await showConfirm("Delete this liability?", { destructive: true }))) return
-    deleteMut.mutate(id)
+    await showConfirm("Delete this liability?", {
+      destructive: true,
+      onConfirm: async () => { await deleteMut.mutateAsync(id) },
+    })
   }
 
   const totalOutstanding = liabilities.reduce((sum, l) => sum + Number(l.outstanding_amount), 0)

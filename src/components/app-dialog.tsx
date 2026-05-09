@@ -9,6 +9,8 @@ interface DialogOptions {
   confirmLabel?: string
   cancelLabel?: string
   destructive?: boolean
+  /** When provided, the dialog stays open with a spinner while this runs. */
+  onConfirm?: () => Promise<void>
 }
 
 interface DialogState {
@@ -31,8 +33,18 @@ export function useAppDialog() {
   return ctx
 }
 
+function Spinner() {
+  return (
+    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+    </svg>
+  )
+}
+
 export function AppDialogProvider({ children }: { children: React.ReactNode }) {
   const [dialog, setDialog] = useState<DialogState | null>(null)
+  const [loading, setLoading] = useState(false)
   const backdropRef = useRef<HTMLDivElement>(null)
 
   const showAlert = useCallback(
@@ -63,12 +75,29 @@ export function AppDialogProvider({ children }: { children: React.ReactNode }) {
 
   const dismiss = useCallback(
     (value: boolean) => {
-      if (!dialog) return
+      if (!dialog || loading) return
       dialog.resolve(value)
       setDialog(null)
     },
-    [dialog]
+    [dialog, loading]
   )
+
+  const handleConfirm = useCallback(async () => {
+    if (!dialog) return
+    const confirmed = dialog.type === "confirm"
+    if (dialog.options.onConfirm && confirmed) {
+      setLoading(true)
+      try {
+        await dialog.options.onConfirm()
+      } finally {
+        setLoading(false)
+      }
+      dialog.resolve(true)
+      setDialog(null)
+    } else {
+      dismiss(confirmed)
+    }
+  }, [dialog, dismiss])
 
   // Escape key
   useEffect(() => {
@@ -89,40 +118,58 @@ export function AppDialogProvider({ children }: { children: React.ReactNode }) {
           <div
             ref={backdropRef}
             className="absolute inset-0 bg-black/40 backdrop-blur-sm animate-fade-in"
-            onClick={() => dismiss(false)}
+            onClick={() => !loading && dismiss(false)}
           />
           {/* Panel */}
           <div className="relative w-full max-w-sm max-w-[calc(100vw-2rem)] glass-elevated rounded-2xl shadow-2xl p-6 animate-fade-in">
-            {dialog.options.title && (
-              <h2 className="text-base font-semibold text-[#1d1d1f] dark:text-white mb-2">
-                {dialog.options.title}
-              </h2>
+            {loading ? (
+              /* Skeleton / loading state while action is running */
+              <div className="flex flex-col gap-3">
+                <div className="skeleton h-4 w-3/4 rounded-lg" />
+                <div className="skeleton h-3 w-full rounded-lg" />
+                <div className="skeleton h-3 w-2/3 rounded-lg" />
+                <div className="flex gap-3 mt-3 justify-end">
+                  <div className="skeleton h-9 w-20 rounded-xl" />
+                  <div className="skeleton h-9 w-24 rounded-xl" />
+                </div>
+              </div>
+            ) : (
+              <>
+                {dialog.options.title && (
+                  <h2 className="text-base font-semibold text-[#1d1d1f] dark:text-white mb-2">
+                    {dialog.options.title}
+                  </h2>
+                )}
+                <p className="text-sm text-[#3a3a3c] dark:text-[#b0b0b8] leading-relaxed">
+                  {dialog.message}
+                </p>
+                <div className="flex gap-3 mt-5 justify-end">
+                  {dialog.type === "confirm" && (
+                    <button
+                      onClick={() => dismiss(false)}
+                      className="liquid-glass-btn px-4 py-2 rounded-xl text-sm font-medium"
+                      disabled={loading}
+                    >
+                      {dialog.options.cancelLabel || "Cancel"}
+                    </button>
+                  )}
+                  <button
+                    onClick={handleConfirm}
+                    className={
+                      dialog.options.destructive
+                        ? "px-4 py-2 rounded-xl text-sm font-medium bg-red-500/90 hover:bg-red-500 text-white shadow-sm transition-all active:scale-95 disabled:opacity-60 flex items-center gap-2"
+                        : "liquid-glass-btn-primary px-4 py-2 rounded-xl text-sm font-medium disabled:opacity-60 flex items-center gap-2"
+                    }
+                    autoFocus
+                    disabled={loading}
+                  >
+                    {loading && <Spinner />}
+                    {dialog.options.confirmLabel ||
+                      (dialog.type === "alert" ? "OK" : "Confirm")}
+                  </button>
+                </div>
+              </>
             )}
-            <p className="text-sm text-[#3a3a3c] dark:text-[#b0b0b8] leading-relaxed">
-              {dialog.message}
-            </p>
-            <div className="flex gap-3 mt-5 justify-end">
-              {dialog.type === "confirm" && (
-                <button
-                  onClick={() => dismiss(false)}
-                  className="liquid-glass-btn px-4 py-2 rounded-xl text-sm font-medium"
-                >
-                  {dialog.options.cancelLabel || "Cancel"}
-                </button>
-              )}
-              <button
-                onClick={() => dismiss(dialog.type === "confirm" ? true : false)}
-                className={
-                  dialog.options.destructive
-                    ? "px-4 py-2 rounded-xl text-sm font-medium bg-red-500/90 hover:bg-red-500 text-white shadow-sm transition-all active:scale-95"
-                    : "liquid-glass-btn-primary px-4 py-2 rounded-xl text-sm font-medium"
-                }
-                autoFocus
-              >
-                {dialog.options.confirmLabel ||
-                  (dialog.type === "alert" ? "OK" : "Confirm")}
-              </button>
-            </div>
           </div>
         </div>
       )}
