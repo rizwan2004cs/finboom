@@ -52,6 +52,7 @@ export default function LoginPage() {
                   formFieldInput: "rounded-xl bg-white/50 dark:bg-white/[0.06] border-black/[0.06] dark:border-white/[0.08]",
                   formButtonPrimary: "liquid-glass-btn-primary rounded-xl",
                   footer: "hidden",
+                  alternativeMethods: "hidden",
                 },
               }}
             />
@@ -68,6 +69,7 @@ export default function LoginPage() {
                   formFieldInput: "rounded-xl bg-white/50 dark:bg-white/[0.06] border-black/[0.06] dark:border-white/[0.08]",
                   formButtonPrimary: "liquid-glass-btn-primary rounded-xl",
                   footer: "hidden",
+                  alternativeMethods: "hidden",
                 },
               }}
             />

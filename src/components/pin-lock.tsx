@@ -42,25 +42,21 @@ function isUnlocked(): boolean {
 }
 
 // --- PIN Input Component ---
-function PinInput({
+const PinInput = function PinInputInner({
   length = 4,
   value,
   onChange,
   error,
   disabled,
+  inputRef,
 }: {
   length?: number
   value: string
   onChange: (v: string) => void
   error?: boolean
   disabled?: boolean
+  inputRef?: React.RefObject<HTMLInputElement | null>
 }) {
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    inputRef.current?.focus()
-  }, [])
-
   return (
     <div className="flex flex-col items-center gap-4">
       {/* Hidden input for keyboard */}
@@ -82,10 +78,7 @@ function PinInput({
       />
 
       {/* Dot indicators */}
-      <div
-        className="flex gap-4 cursor-text"
-        onClick={() => inputRef.current?.focus()}
-      >
+      <div className="flex gap-4">
         {Array.from({ length }).map((_, i) => (
           <div
             key={i}
@@ -107,6 +100,7 @@ function PinInput({
 export function PinLockGate({ children }: { children: React.ReactNode }) {
   const [unlocked, setUnlocked] = useState(true) // default true to avoid flash
   const [hasPin, setHasPin] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
   const [pin, setPin] = useState("")
   const [error, setError] = useState("")
   const [attempts, setAttempts] = useState(0)
@@ -185,16 +179,57 @@ export function PinLockGate({ children }: { children: React.ReactNode }) {
     if (pin.length === 4) handleSubmit(pin)
   }, [pin, handleSubmit])
 
+  // Keep focus on input so any tap/click goes to PIN entry
+  useEffect(() => {
+    if (!unlocked && hasPin) inputRef.current?.focus()
+  }, [unlocked, hasPin])
+
   if (unlocked || !hasPin) return <>{children}</>
 
   const isLockedOut = lockedUntil > Date.now()
 
   return (
-    <div className="fixed inset-0 z-[200] bg-gradient-to-br from-[#e8eaf0] via-[#f0eef5] to-[#eaf4f0] dark:from-[#0a0a0a] dark:via-[#111113] dark:to-[#0d0d0f] flex items-center justify-center">
+    <div
+      className="fixed inset-0 z-[200] bg-gradient-to-br from-[#e8eaf0] via-[#f0eef5] to-[#eaf4f0] dark:from-[#0a0a0a] dark:via-[#111113] dark:to-[#0d0d0f] flex items-center justify-center cursor-default"
+      onClick={() => inputRef.current?.focus()}
+    >
       <div className="flex flex-col items-center gap-8 px-6">
-        {/* Logo */}
-        <div className="w-16 h-16 rounded-2xl bg-[#1d1d1f] dark:bg-white flex items-center justify-center">
-          <span className="text-2xl font-bold text-white dark:text-[#1d1d1f]">F</span>
+        {/* Logo — frosted glass with theme-aware icon */}
+        <div className="w-20 h-20 rounded-[22px] liquid-glass shadow-lg flex items-center justify-center">
+          {/* Light mode icon */}
+          <svg className="w-10 h-10 block dark:hidden" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="pinFGradL" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#1d1d1f"/>
+                <stop offset="100%" stopColor="#3a3a3c"/>
+              </linearGradient>
+              <radialGradient id="pinOrbL" cx="0.38" cy="0.32" r="0.55">
+                <stop offset="0%" stopColor="#6ee78a"/>
+                <stop offset="50%" stopColor="#34c759"/>
+                <stop offset="100%" stopColor="#1a8a38"/>
+              </radialGradient>
+            </defs>
+            <path d="M168 130 h176 v44 H220 v56 h100 v44 H220 v108 h-52 V130z" fill="url(#pinFGradL)"/>
+            <circle cx="380" cy="138" r="44" fill="url(#pinOrbL)"/>
+            <ellipse cx="370" cy="124" rx="18" ry="12" fill="#ffffff" opacity="0.5"/>
+          </svg>
+          {/* Dark mode icon */}
+          <svg className="w-10 h-10 hidden dark:block" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <linearGradient id="pinFGradD" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor="#ffffff"/>
+                <stop offset="100%" stopColor="#b0b0b8"/>
+              </linearGradient>
+              <radialGradient id="pinOrbD" cx="0.38" cy="0.32" r="0.55">
+                <stop offset="0%" stopColor="#80f09a"/>
+                <stop offset="50%" stopColor="#34c759"/>
+                <stop offset="100%" stopColor="#1a8a38"/>
+              </radialGradient>
+            </defs>
+            <path d="M168 130 h176 v44 H220 v56 h100 v44 H220 v108 h-52 V130z" fill="url(#pinFGradD)"/>
+            <circle cx="380" cy="138" r="44" fill="url(#pinOrbD)"/>
+            <ellipse cx="370" cy="124" rx="18" ry="12" fill="#ffffff" opacity="0.45"/>
+          </svg>
         </div>
 
         <div className="text-center">
@@ -222,6 +257,7 @@ export function PinLockGate({ children }: { children: React.ReactNode }) {
               onChange={setPin}
               error={!!error}
               disabled={isLockedOut}
+              inputRef={inputRef}
             />
             {error && (
               <p className="text-xs text-red-500 font-medium">{error}</p>

@@ -509,3 +509,5 @@ body::after {
 .cl-footer { display: none !important; }
 /* Hide Clerk "Use phone" alternative method toggle */
 .cl-alternativeMethods { display: none !important; }
+[data-localization-key*="use_phone"],
+[data-localization-key*="usePhone"] { display: none !important; }
