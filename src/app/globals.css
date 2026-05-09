@@ -511,3 +511,32 @@ body::after {
 .cl-alternativeMethods { display: none !important; }
 [data-localization-key*="use_phone"],
 [data-localization-key*="usePhone"] { display: none !important; }
+
+/* ============================================================
+   CLERK GLASS CARD — frosted card for login/signup
+   ============================================================ */
+.clerk-glass-card {
+  background: rgba(255, 255, 255, 0.55) !important;
+  backdrop-filter: blur(40px) saturate(1.8) !important;
+  -webkit-backdrop-filter: blur(40px) saturate(1.8) !important;
+  border: 1px solid rgba(255, 255, 255, 0.5) !important;
+  box-shadow:
+    0 8px 40px rgba(0, 0, 0, 0.08),
+    0 1px 3px rgba(0, 0, 0, 0.04),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6) !important;
+}
+
+.dark .clerk-glass-card {
+  background: rgba(30, 30, 32, 0.6) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow:
+    0 8px 40px rgba(0, 0, 0, 0.4),
+    0 1px 3px rgba(0, 0, 0, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05) !important;
+}
+
+/* Hide Clerk's own header since we have our own logo above */
+.clerk-glass-card .cl-header { display: none !important; }
+
+/* Clean up internal Clerk padding */
+.clerk-glass-card .cl-main { padding: 1.5rem !important; }

@@ -8,11 +8,39 @@ export default function LoginPage() {
   const [mode, setMode] = useState<"signin" | "signup">("signin")
   const { loaded } = useClerk()
 
+  const clerkAppearance = {
+    elements: {
+      rootBox: "w-full",
+      cardBox: "shadow-none w-full",
+      card: "clerk-glass-card !rounded-3xl !shadow-none w-full !border-0 !bg-transparent",
+      headerTitle: "!text-[#1d1d1f] dark:!text-white !font-semibold !text-lg",
+      headerSubtitle: "!text-[#86868b] !text-sm",
+      socialButtonsBlockButton:
+        "!rounded-2xl !bg-white/60 dark:!bg-white/[0.08] !border !border-black/[0.06] dark:!border-white/[0.1] !backdrop-blur-md !shadow-sm hover:!shadow-md !transition-all hover:!scale-[1.02] hover:!bg-white/80 dark:hover:!bg-white/[0.12]",
+      socialButtonsBlockButtonText: "!text-[#1d1d1f] dark:!text-white !font-medium",
+      dividerLine: "!bg-black/[0.08] dark:!bg-white/[0.1]",
+      dividerText: "!text-[#86868b] !text-xs",
+      formFieldLabel: "!text-[#1d1d1f] dark:!text-[#e5e5e7] !font-medium !text-sm",
+      formFieldInput:
+        "!rounded-2xl !bg-white/60 dark:!bg-white/[0.06] !border !border-black/[0.08] dark:!border-white/[0.1] !backdrop-blur-sm !text-[#1d1d1f] dark:!text-white placeholder:!text-[#86868b]/60 focus:!ring-2 focus:!ring-black/[0.08] dark:focus:!ring-white/[0.15] focus:!border-transparent !transition-all !shadow-sm !h-12",
+      formButtonPrimary:
+        "!rounded-2xl !bg-[#1d1d1f] dark:!bg-white !text-white dark:!text-[#1d1d1f] !font-semibold !shadow-lg hover:!shadow-xl !transition-all hover:!scale-[1.02] active:!scale-[0.98] !h-12 !text-[15px]",
+      footer: "hidden",
+      alternativeMethods: "hidden",
+      logoBox: "hidden",
+      internal: "!font-[var(--font-sans)]",
+    },
+    layout: {
+      socialButtonsPlacement: "top" as const,
+      logoPlacement: "none" as const,
+    },
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#e8eaf0] via-[#f0eef5] to-[#eaf4f0] dark:from-[#0a0a0a] dark:via-[#111113] dark:to-[#0d0d0f] mesh-bg px-4">
       <div className="w-full max-w-[420px]">
         {/* Logo */}
-        <div className="text-center mb-6">
+        <div className="text-center mb-8">
           <Link href="/" className="text-3xl font-bold tracking-[-0.5px] text-[#1d1d1f] dark:text-white">
             FinBoom
           </Link>
@@ -24,54 +52,29 @@ export default function LoginPage() {
         {/* Clerk component */}
         <div className="flex justify-center">
           {!loaded ? (
-            <div className="w-full liquid-glass rounded-2xl p-8 animate-pulse">
+            <div className="w-full clerk-glass-card rounded-3xl p-8 animate-pulse">
               <div className="flex flex-col items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-black/[0.06] dark:bg-white/[0.06]" />
-                <div className="h-5 w-40 rounded bg-black/[0.06] dark:bg-white/[0.06]" />
-                <div className="h-3 w-52 rounded bg-black/[0.04] dark:bg-white/[0.04]" />
-                <div className="w-full h-11 rounded-xl bg-black/[0.06] dark:bg-white/[0.06] mt-2" />
+                <div className="w-full h-12 rounded-2xl bg-black/[0.04] dark:bg-white/[0.06]" />
                 <div className="flex items-center gap-3 w-full my-1">
                   <div className="flex-1 h-px bg-black/[0.06] dark:bg-white/[0.06]" />
                   <div className="h-3 w-6 rounded bg-black/[0.04] dark:bg-white/[0.04]" />
                   <div className="flex-1 h-px bg-black/[0.06] dark:bg-white/[0.06]" />
                 </div>
-                <div className="w-full h-11 rounded-xl bg-black/[0.06] dark:bg-white/[0.06]" />
-                <div className="w-full h-11 rounded-xl bg-black/[0.08] dark:bg-white/[0.08]" />
+                <div className="w-full h-12 rounded-2xl bg-black/[0.04] dark:bg-white/[0.06]" />
+                <div className="w-full h-12 rounded-2xl bg-black/[0.08] dark:bg-white/[0.08]" />
               </div>
             </div>
           ) : mode === "signin" ? (
             <SignIn
               routing="hash"
               forceRedirectUrl="/dashboard"
-              appearance={{
-                elements: {
-                  rootBox: "w-full",
-                  cardBox: "shadow-none w-full",
-                  card: "liquid-glass rounded-2xl shadow-none w-full",
-                  socialButtonsBlockButton: "liquid-glass-btn rounded-xl",
-                  formFieldInput: "rounded-xl bg-white/50 dark:bg-white/[0.06] border-black/[0.06] dark:border-white/[0.08]",
-                  formButtonPrimary: "liquid-glass-btn-primary rounded-xl",
-                  footer: "hidden",
-                  alternativeMethods: "hidden",
-                },
-              }}
+              appearance={clerkAppearance}
             />
           ) : (
             <SignUp
               routing="hash"
               forceRedirectUrl="/dashboard"
-              appearance={{
-                elements: {
-                  rootBox: "w-full",
-                  cardBox: "shadow-none w-full",
-                  card: "liquid-glass rounded-2xl shadow-none w-full",
-                  socialButtonsBlockButton: "liquid-glass-btn rounded-xl",
-                  formFieldInput: "rounded-xl bg-white/50 dark:bg-white/[0.06] border-black/[0.06] dark:border-white/[0.08]",
-                  formButtonPrimary: "liquid-glass-btn-primary rounded-xl",
-                  footer: "hidden",
-                  alternativeMethods: "hidden",
-                },
-              }}
+              appearance={clerkAppearance}
             />
           )}
         </div>
@@ -79,17 +82,17 @@ export default function LoginPage() {
         {/* Toggle sign in / sign up — only show once Clerk is loaded */}
         {loaded && (
           <>
-            <p className="text-[12px] text-[#86868b] text-center mt-5">
+            <p className="text-[13px] text-[#86868b] text-center mt-6">
               {mode === "signin" ? "Don\u2019t have an account?" : "Already have an account?"}{" "}
               <button
                 onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-                className="text-blue-500 hover:text-blue-600 font-semibold transition-colors"
+                className="text-[#1d1d1f] dark:text-white font-semibold hover:underline transition-colors"
               >
                 {mode === "signin" ? "Sign up" : "Sign in"}
               </button>
             </p>
 
-            <p className="text-[10px] text-[#86868b]/60 text-center mt-4">
+            <p className="text-[10px] text-[#86868b]/50 text-center mt-4">
               By signing in, you agree to our terms of use and privacy policy.
             </p>
           </>

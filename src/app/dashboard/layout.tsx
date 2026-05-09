@@ -8,6 +8,7 @@ import { ProfileProvider } from "@/hooks/use-profile"
 import { QueryProvider } from "@/components/query-provider"
 import { usePushSubscription } from "@/hooks/use-push"
 import { PinLockGate } from "@/components/pin-lock"
+import { AppDialogProvider } from "@/components/app-dialog"
 import { cn } from "@/lib/utils"
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
@@ -39,6 +40,7 @@ export default function DashboardLayout({
   return (
     <QueryProvider>
       <PinLockGate>
+        <AppDialogProvider>
         <SidebarProvider>
           <OfflineProvider>
             <ProfileProvider>
@@ -46,6 +48,7 @@ export default function DashboardLayout({
             </ProfileProvider>
           </OfflineProvider>
         </SidebarProvider>
+        </AppDialogProvider>
       </PinLockGate>
     </QueryProvider>
   )
