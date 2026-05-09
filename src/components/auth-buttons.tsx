@@ -1,7 +1,22 @@
 "use client"
 
 import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { useEffect } from "react"
 import { useAuth } from "@/hooks/use-auth"
+
+export function AuthRedirect() {
+  const { isSignedIn, isLoaded } = useAuth()
+  const router = useRouter()
+
+  useEffect(() => {
+    if (isLoaded && isSignedIn) {
+      router.replace("/dashboard")
+    }
+  }, [isLoaded, isSignedIn, router])
+
+  return null
+}
 
 export function NavAuthButtons() {
   const { isSignedIn } = useAuth()

@@ -75,7 +75,7 @@ function PinInput({
           const v = e.target.value.replace(/\D/g, "").slice(0, length)
           onChange(v)
         }}
-        className="absolute opacity-0 w-0 h-0"
+        className="sr-only"
         autoFocus
         disabled={disabled}
         autoComplete="off"

@@ -4,7 +4,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { PwaInstallBanner } from "@/components/pwa-install-banner"
-import { NavAuthButtons, HeroCTA } from "@/components/auth-buttons"
+import { NavAuthButtons, HeroCTA, AuthRedirect } from "@/components/auth-buttons"
 
 const jsonLd = {
   "@context": "https://schema.org",
@@ -44,6 +44,7 @@ export default function Home() {
 
   return (
     <>
+      <AuthRedirect />
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
