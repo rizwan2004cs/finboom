@@ -97,7 +97,7 @@ const portableTextComponents = {
       </ZoomableImage>
     ),
     mermaid: ({ value }: { value: { code: string } }) => (
-      <MermaidDiagram code={value.code} />
+      <MermaidDiagram code={value.code} zoomable />
     ),
     table: ({ value }: { value: { rows: Array<{ isHeader: boolean; cells: Array<{ text: string }> }> } }) => (
       <div className="my-6 overflow-x-auto rounded-xl border border-black/[0.08] dark:border-white/[0.08]">
