@@ -194,7 +194,7 @@ export function FeatureTour({
   const Icon = current.icon
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-[100] flex items-end sm:items-center justify-center p-0 sm:p-4">
       {/* Backdrop */}
       <div
         className="absolute inset-0 bg-black/50 backdrop-blur-md"
@@ -202,8 +202,8 @@ export function FeatureTour({
       />
 
       {/* Card */}
-      <div className="relative w-full max-w-md animate-in fade-in zoom-in-95 duration-200">
-        <div className="liquid-glass rounded-2xl p-6 relative overflow-hidden">
+      <div className="relative w-full sm:max-w-md animate-in fade-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200">
+        <div className="liquid-glass rounded-t-2xl sm:rounded-2xl p-5 sm:p-6 relative overflow-hidden max-h-[85dvh] overflow-y-auto">
           {/* Close button */}
           <button
             onClick={onClose}
@@ -213,15 +213,16 @@ export function FeatureTour({
           </button>
 
           {/* Step indicator */}
-          <div className="flex items-center gap-1.5 mb-6">
+          <div className="flex items-center gap-1 sm:gap-1.5 mb-5 sm:mb-6 overflow-x-auto no-scrollbar">
             {tourSteps.map((_, i) => (
               <button
                 key={i}
                 onClick={() => setStep(i)}
+                aria-label={`Go to step ${i + 1}`}
                 className={cn(
-                  "h-1.5 rounded-full transition-all duration-300",
+                  "h-1 sm:h-1.5 rounded-full transition-all duration-300 flex-shrink-0",
                   i === step
-                    ? "w-6 bg-[#1d1d1f] dark:bg-white"
+                    ? "w-5 sm:w-6 bg-[#1d1d1f] dark:bg-white"
                     : i < step
                     ? "w-1.5 bg-[#1d1d1f]/40 dark:bg-white/40"
                     : "w-1.5 bg-[#1d1d1f]/15 dark:bg-white/15"
@@ -233,24 +234,24 @@ export function FeatureTour({
           {/* Icon */}
           <div
             className={cn(
-              "w-14 h-14 rounded-2xl flex items-center justify-center mb-5",
+              "w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center mb-4 sm:mb-5",
               current.color,
               current.darkColor
             )}
           >
-            <Icon className="w-7 h-7" strokeWidth={1.5} />
+            <Icon className="w-6 h-6 sm:w-7 sm:h-7" strokeWidth={1.5} />
           </div>
 
           {/* Content */}
-          <h2 className="text-[22px] font-semibold tracking-[-0.3px] text-[#1d1d1f] dark:text-white mb-2">
+          <h2 className="text-[20px] sm:text-[22px] font-semibold tracking-[-0.3px] text-[#1d1d1f] dark:text-white mb-1.5 sm:mb-2">
             {current.title}
           </h2>
-          <p className="text-[15px] leading-relaxed text-[#86868b] dark:text-[#aeaeb2] min-h-[72px]">
+          <p className="text-[14px] sm:text-[15px] leading-relaxed text-[#86868b] dark:text-[#aeaeb2]">
             {current.description}
           </p>
 
           {/* Navigation */}
-          <div className="flex items-center justify-between mt-6">
+          <div className="flex items-center justify-between mt-5 sm:mt-6">
             <button
               onClick={() => setStep((s) => Math.max(s - 1, 0))}
               disabled={isFirst}

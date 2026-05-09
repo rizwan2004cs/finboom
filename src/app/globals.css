@@ -141,6 +141,15 @@ body::after {
   padding-top: env(safe-area-inset-top, 0px);
 }
 
+/* Hide scrollbar but keep scroll */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 /* ============================================================
    LIQUID GLASS CARD
    Based on einui GlassCard: translucent, real-time blur,
