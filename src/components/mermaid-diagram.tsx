@@ -32,18 +32,68 @@ export default function MermaidDiagram({ code, zoomable = false }: { code: strin
 
         mermaid.initialize({
           startOnLoad: false,
-          theme: isDark ? "dark" : "neutral",
+          theme: isDark ? "base" : "neutral",
           fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif",
           ...(isDark && {
             themeVariables: {
+              // Base colors
+              background: "#1c1c1e",
               primaryColor: "#48484a",
               primaryBorderColor: "#636366",
               primaryTextColor: "#e5e5ea",
-              lineColor: "#48484a",
               secondaryColor: "#3a3a3c",
+              secondaryBorderColor: "#545456",
+              secondaryTextColor: "#e5e5ea",
               tertiaryColor: "#2c2c2e",
+              tertiaryBorderColor: "#48484a",
+              tertiaryTextColor: "#e5e5ea",
+              lineColor: "#636366",
+              textColor: "#e5e5ea",
+              mainBkg: "#48484a",
+              nodeBorder: "#636366",
+              // Notes
               noteBkgColor: "#2c2c2e",
               noteTextColor: "#e5e5ea",
+              noteBorderColor: "#48484a",
+              // Timeline / journey / gantt section colors
+              cScale0: "#48484a",
+              cScale1: "#545456",
+              cScale2: "#636366",
+              cScale3: "#48484a",
+              cScale4: "#545456",
+              cScale5: "#636366",
+              cScale6: "#48484a",
+              cScale7: "#545456",
+              cScale8: "#636366",
+              cScale9: "#48484a",
+              cScale10: "#545456",
+              cScale11: "#636366",
+              cScaleLabel0: "#e5e5ea",
+              cScaleLabel1: "#e5e5ea",
+              cScaleLabel2: "#e5e5ea",
+              cScaleLabel3: "#e5e5ea",
+              cScaleLabel4: "#e5e5ea",
+              cScaleLabel5: "#e5e5ea",
+              // Pie
+              pie1: "#48484a",
+              pie2: "#636366",
+              pie3: "#8e8e93",
+              pie4: "#545456",
+              pie5: "#787880",
+              // XY chart
+              xyChart: {
+                backgroundColor: "transparent",
+                titleColor: "#e5e5ea",
+                xAxisTitleColor: "#aeaeb2",
+                yAxisTitleColor: "#aeaeb2",
+                xAxisLabelColor: "#aeaeb2",
+                yAxisLabelColor: "#aeaeb2",
+                xAxisTickColor: "#48484a",
+                yAxisTickColor: "#48484a",
+                xAxisLineColor: "#48484a",
+                yAxisLineColor: "#48484a",
+                plotColorPalette: "#8e8e93,#a1a1a6,#636366,#787880,#aeaeb2",
+              },
             },
           }),
         })
@@ -209,7 +259,7 @@ function ZoomOverlay({
         Pinch to zoom · Double tap to toggle
       </p>
       <div
-        className="w-[95vw] max-h-[85vh] overflow-visible select-none bg-white dark:bg-[#161618] rounded-xl p-4 [&_svg]:mx-auto [&_svg]:w-full [&_svg]:h-auto [&_svg]:max-h-[80vh]"
+        className="w-[95vw] overflow-visible select-none bg-white dark:bg-[#161618] rounded-xl p-4 [&_svg]:mx-auto [&_svg]:!w-full [&_svg]:!h-auto [&_svg]:!max-w-none"
         style={{
           transform: `translate(${translate.x}px, ${translate.y}px) scale(${scale})`,
           transition: dragging.current ? "none" : "transform 0.2s ease-out",
@@ -219,7 +269,7 @@ function ZoomOverlay({
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        dangerouslySetInnerHTML={{ __html: svg }}
+        dangerouslySetInnerHTML={{ __html: svg.replace(/<svg([^>]*?)(?:\s+width="[^"]*")?([^>]*?)(?:\s+height="[^"]*")?([^>]*)>/, '<svg$1$2$3 width="100%" preserveAspectRatio="xMidYMid meet">') }}
       />
     </div>
   )
