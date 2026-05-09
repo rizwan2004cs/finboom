@@ -51,7 +51,7 @@ export default function LoginPage() {
                   socialButtonsBlockButton: "liquid-glass-btn rounded-xl",
                   formFieldInput: "rounded-xl bg-white/50 dark:bg-white/[0.06] border-black/[0.06] dark:border-white/[0.08]",
                   formButtonPrimary: "liquid-glass-btn-primary rounded-xl",
-                  footerAction: "hidden",
+                  footer: "hidden",
                 },
               }}
             />
@@ -67,7 +67,7 @@ export default function LoginPage() {
                   socialButtonsBlockButton: "liquid-glass-btn rounded-xl",
                   formFieldInput: "rounded-xl bg-white/50 dark:bg-white/[0.06] border-black/[0.06] dark:border-white/[0.08]",
                   formButtonPrimary: "liquid-glass-btn-primary rounded-xl",
-                  footerAction: "hidden",
+                  footer: "hidden",
                 },
               }}
             />
