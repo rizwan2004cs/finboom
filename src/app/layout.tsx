@@ -105,7 +105,8 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
-        <link rel="apple-touch-icon" href="/icons/icon-192.svg" />
+        <link rel="apple-touch-icon" href="/icons/icon-192-light.svg" media="(prefers-color-scheme: light)" />
+        <link rel="apple-touch-icon" href="/icons/icon-192.svg" media="(prefers-color-scheme: dark)" />
       </head>
       <body className="min-h-full flex flex-col">
         <Script id="theme-init" strategy="beforeInteractive">{`
