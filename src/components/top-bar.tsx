@@ -6,6 +6,8 @@ import { PanelLeftClose, PanelLeftOpen, LogOut, ChevronDown } from "lucide-react
 import { useSidebar } from "@/components/sidebar-context"
 import { useProfile } from "@/hooks/use-profile"
 import { NotificationBell } from "@/components/notification-bell"
+import { SyncButton } from "@/components/offline-indicator"
+import { useAppUpdate } from "@/components/offline-provider"
 import Link from "next/link"
 
 export function TopBar() {
@@ -13,6 +15,7 @@ export function TopBar() {
   const { user, isSignedIn } = useUser()
   const { signOut } = useAuth()
   const { profiles, activeProfile, switchProfile } = useProfile()
+  const { triggerSync } = useAppUpdate()
   const [profileOpen, setProfileOpen] = useState(false)
   const [profileSwitcherOpen, setProfileSwitcherOpen] = useState(false)
   const profileRef = useRef<HTMLDivElement>(null)
@@ -89,6 +92,7 @@ export function TopBar() {
           </div>
         )}
 
+        <SyncButton onSync={triggerSync} />
         <NotificationBell />
         
         {isSignedIn ? (

@@ -1,15 +1,24 @@
 "use client"
 
-import { useEffect, useRef, useState, createContext, useContext } from "react"
+import { useEffect, useRef, useState, useCallback, createContext, useContext } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { setupConnectivityListeners, fullSync } from "@/lib/offline/sync"
 import { OfflineIndicator } from "@/components/offline-indicator"
 
-const UpdateContext = createContext<{ updateReady: boolean; applyUpdate: () => void; storageWarning: boolean; storageUsage: number | null }>({
+interface AppContextValue {
+  updateReady: boolean
+  applyUpdate: () => void
+  storageWarning: boolean
+  storageUsage: number | null
+  triggerSync: () => void
+}
+
+const UpdateContext = createContext<AppContextValue>({
   updateReady: false,
   applyUpdate: () => {},
   storageWarning: false,
   storageUsage: null,
+  triggerSync: () => {},
 })
 export const useAppUpdate = () => useContext(UpdateContext)
 
@@ -91,6 +100,10 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
     return cleanup
   }, [user])
 
+  const triggerSync = useCallback(() => {
+    if (user) fullSync(user.id)
+  }, [user])
+
   // Storage quota monitoring
   useEffect(() => {
     if (!navigator.storage?.estimate) return
@@ -110,7 +123,7 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   return (
-    <UpdateContext.Provider value={{ updateReady, applyUpdate, storageWarning, storageUsage }}>
+    <UpdateContext.Provider value={{ updateReady, applyUpdate, storageWarning, storageUsage, triggerSync }}>
       <OfflineIndicator />
       {children}
     </UpdateContext.Provider>

@@ -1,56 +1,21 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { WifiOff, RefreshCw, CloudOff, Check, Download, HardDrive } from "lucide-react"
+import { WifiOff, RefreshCw, Download, HardDrive } from "lucide-react"
 import { onSyncStatus, getPendingCount } from "@/lib/offline"
 import { useAppUpdate } from "@/components/offline-provider"
 
 type Status = "online" | "offline" | "syncing" | "synced" | "error"
 
+/* ── Floating banners (update + storage) ── */
 export function OfflineIndicator() {
-  const [status, setStatus] = useState<Status>("online")
-  const [pending, setPending] = useState(0)
-  const [visible, setVisible] = useState(false)
   const { updateReady, applyUpdate, storageWarning, storageUsage } = useAppUpdate()
   const [storageDismissed, setStorageDismissed] = useState(false)
 
-  useEffect(() => {
-    // Check initial state
-    if (!navigator.onLine) {
-      setStatus("offline")
-      setVisible(true)
-    }
-
-    const cleanup = onSyncStatus((s) => {
-      setStatus(s)
-      setVisible(true)
-      if (s === "synced" || s === "online") {
-        // Hide after 3s on success/reconnect
-        setTimeout(() => setVisible(false), 3000)
-      }
-      if (s === "error") {
-        // Auto-hide error after 5s (retry happens in background)
-        setTimeout(() => setVisible(false), 5000)
-      }
-    })
-
-    // Track pending count
-    const interval = setInterval(async () => {
-      const count = await getPendingCount()
-      setPending(count)
-    }, 5000)
-
-    return () => {
-      cleanup()
-      clearInterval(interval)
-    }
-  }, [])
-
-  if (!visible && !updateReady && !(storageWarning && !storageDismissed)) return null
+  if (!updateReady && !(storageWarning && !storageDismissed)) return null
 
   return (
     <>
-      {/* App update banner */}
       {updateReady && (
         <div className="fixed top-16 left-1/2 -translate-x-1/2 z-[101] animate-in slide-in-from-top">
           <button
@@ -63,54 +28,6 @@ export function OfflineIndicator() {
         </div>
       )}
 
-      {/* Sync status pill */}
-      {visible && (
-        <div
-          className={`
-            fixed ${updateReady ? "top-28" : "top-16"} left-1/2 -translate-x-1/2 z-[100] px-4 py-2 rounded-full
-            flex items-center gap-2 text-sm font-medium shadow-lg backdrop-blur-xl
-            transition-all duration-300 animate-in slide-in-from-top
-            ${status === "offline" ? "bg-amber-500/90 text-white" : ""}
-            ${status === "syncing" ? "bg-blue-500/90 text-white" : ""}
-            ${status === "synced" ? "bg-green-500/90 text-white" : ""}
-            ${status === "error" ? "bg-red-500/90 text-white" : ""}
-            ${status === "online" ? "bg-green-500/90 text-white" : ""}
-          `}
-        >
-      {status === "offline" && (
-        <>
-          <WifiOff size={16} />
-          <span>Offline{pending > 0 ? ` · ${pending} pending` : ""}</span>
-        </>
-      )}
-      {status === "syncing" && (
-        <>
-          <RefreshCw size={16} className="animate-spin" />
-          <span>Syncing changes...</span>
-        </>
-      )}
-      {status === "synced" && (
-        <>
-          <Check size={16} />
-          <span>All synced</span>
-        </>
-      )}
-      {status === "error" && (
-        <>
-          <CloudOff size={16} />
-          <span>Sync failed · will retry</span>
-        </>
-      )}
-      {status === "online" && (
-        <>
-          <Check size={16} />
-          <span>Back online</span>
-        </>
-      )}
-        </div>
-      )}
-
-      {/* Storage quota warning */}
       {storageWarning && !storageDismissed && (
         <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-[100] animate-in slide-in-from-bottom">
           <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-amber-500/90 text-white text-sm font-medium shadow-lg backdrop-blur-xl">
@@ -126,5 +43,67 @@ export function OfflineIndicator() {
         </div>
       )}
     </>
+  )
+}
+
+/* ── Inline sync icon for TopBar ── */
+export function SyncButton({ onSync }: { onSync: () => void }) {
+  const [status, setStatus] = useState<Status>("online")
+  const [pending, setPending] = useState(0)
+
+  useEffect(() => {
+    if (!navigator.onLine) setStatus("offline")
+
+    const cleanup = onSyncStatus((s) => setStatus(s))
+
+    const interval = setInterval(async () => {
+      const count = await getPendingCount()
+      setPending(count)
+    }, 5000)
+
+    return () => { cleanup(); clearInterval(interval) }
+  }, [])
+
+  const spinning = status === "syncing"
+  const isOffline = status === "offline"
+  const hasError = status === "error"
+
+  let color = "text-[#1d1d1f] dark:text-white"
+  if (spinning) color = "text-[#1d1d1f] dark:text-white"
+  else if (isOffline) color = "text-amber-500"
+  else if (hasError) color = "text-red-500"
+
+  const title = isOffline
+    ? `Offline${pending > 0 ? ` · ${pending} pending` : ""}`
+    : spinning
+      ? "Syncing..."
+      : hasError
+        ? "Sync failed · tap to retry"
+        : status === "synced"
+          ? "All synced"
+          : "Tap to sync"
+
+  return (
+    <button
+      onClick={onSync}
+      disabled={spinning || isOffline}
+      title={title}
+      suppressHydrationWarning
+      className={`relative p-2 rounded-xl transition-all duration-200 hover:bg-white/60 dark:hover:bg-white/[0.06] disabled:opacity-60 disabled:cursor-not-allowed cursor-pointer ${color}`}
+    >
+      {isOffline ? (
+        <WifiOff className="w-[18px] h-[18px]" strokeWidth={1.5} />
+      ) : (
+        <RefreshCw
+          className={`w-[18px] h-[18px] transition-transform duration-300 ${spinning ? "animate-spin" : ""}`}
+          strokeWidth={1.5}
+        />
+      )}
+      {pending > 0 && !spinning && (
+        <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-amber-500 text-white text-[10px] font-bold leading-none">
+          {pending}
+        </span>
+      )}
+    </button>
   )
 }
