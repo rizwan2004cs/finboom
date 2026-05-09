@@ -109,7 +109,7 @@ function TransactionsPage() {
     return acc
   }, {} as Record<string, Transaction[]>)
 
-  if (loading) {
+  if (loading || !user || !activeProfile) {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">

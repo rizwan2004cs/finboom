@@ -9,15 +9,17 @@ import { QueryProvider } from "@/components/query-provider"
 import { usePushSubscription } from "@/hooks/use-push"
 import { PinLockGate } from "@/components/pin-lock"
 import { AppDialogProvider } from "@/components/app-dialog"
+import { FeatureTour, useFeatureTour } from "@/components/feature-tour"
 import { cn } from "@/lib/utils"
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
   const { collapsed } = useSidebar()
+  const { open, startTour, closeTour } = useFeatureTour()
   usePushSubscription()
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#e8eaf0] via-[#f0eef5] to-[#eaf4f0] dark:from-[#0a0a0a] dark:via-[#111113] dark:to-[#0d0d0f] mesh-bg">
-      <Sidebar />
+      <Sidebar onStartTour={startTour} />
       <div className={cn(
         "flex flex-col min-h-screen transition-all duration-300 ease-in-out",
         collapsed ? "lg:pl-[72px]" : "lg:pl-[260px]"
@@ -27,7 +29,8 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
           {children}
         </main>
       </div>
-      <MobileBottomNav />
+      <MobileBottomNav onStartTour={startTour} />
+      <FeatureTour open={open} onClose={closeTour} />
     </div>
   )
 }

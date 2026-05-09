@@ -47,7 +47,7 @@ export default function DashboardPage() {
     "party_transactions", user?.id, { enabled: !!activeProfile }
   )
 
-  const loading = loadingAssets || loadingLiabilities || loadingGoals
+  const loading = loadingAssets || loadingLiabilities || loadingGoals || !user || !activeProfile
 
   const totalAssets = assets.reduce((sum, a) => sum + Number(a.current_value), 0)
   const totalLiabilities = liabilities.reduce((sum, l) => sum + Number(l.outstanding_amount), 0)

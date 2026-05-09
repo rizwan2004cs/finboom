@@ -108,7 +108,7 @@ export default function HealthPage() {
     return <AlertTriangle className="w-5 h-5 text-[#86868b]" />
   }
 
-  if (loading) {
+  if (loading || !user) {
     return (
       <div className="space-y-4">
         <div className="skeleton h-7 w-32 rounded-lg" />

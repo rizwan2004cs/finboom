@@ -81,7 +81,7 @@ export default function ProfilesPage() {
     (sum, s) => sum + s.assets - s.liabilities, 0
   )
 
-  if (loading) {
+  if (loading || !user) {
     return (
       <div className="space-y-4">
         <div className="skeleton h-7 w-28 rounded-lg" />

@@ -43,7 +43,7 @@ export default function GoalsPage() {
       enabled: !!activeProfile,
     }
   )
-  const loading = loadingGoals
+  const loading = loadingGoals || !user || !activeProfile
   const deleteMut = useDeleteMutation("goals")
 
   const { showConfirm } = useAppDialog()

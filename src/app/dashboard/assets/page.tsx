@@ -94,7 +94,7 @@ function AssetsPage() {
   const totalGain = totalValue - totalInvested
   const gainPercent = totalInvested > 0 ? (totalGain / totalInvested) * 100 : 0
 
-  if (loading) {
+  if (loading || !user || !activeProfile) {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">

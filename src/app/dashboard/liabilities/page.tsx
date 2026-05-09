@@ -51,7 +51,7 @@ export default function LiabilitiesPage() {
   const totalEmi = liabilities.reduce((sum, l) => sum + Number(l.emi_amount || 0), 0)
   const paidOff = totalOriginal - totalOutstanding
 
-  if (loading) {
+  if (loading || !user || !activeProfile) {
     return (
       <div className="space-y-4">
         <div className="skeleton h-7 w-28 rounded-lg" />

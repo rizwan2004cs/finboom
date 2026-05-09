@@ -22,6 +22,7 @@ import {
   X,
   BookOpen,
   PiggyBank,
+  Map,
 } from "lucide-react"
 
 const navItems = [
@@ -69,7 +70,10 @@ const moreSheetItems = [
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ]
 
-export function Sidebar() {
+// Tour button item (handled via callback, not a link)
+const tourItem = { label: "Tour", icon: Map }
+
+export function Sidebar({ onStartTour }: { onStartTour?: () => void }) {
   const pathname = usePathname()
   const { collapsed, toggle } = useSidebar()
 
@@ -113,6 +117,22 @@ export function Sidebar() {
             </Link>
           )
         })}
+
+        {/* Tour button */}
+        {onStartTour && (
+          <button
+            onClick={onStartTour}
+            title={collapsed ? tourItem.label : undefined}
+            className={cn(
+              "flex items-center gap-3 w-full rounded-xl text-[14px] font-medium transition-all duration-200",
+              collapsed ? "justify-center px-2 py-2.5" : "px-3 py-2",
+              "text-[#6e6e73] hover:bg-white/50 hover:text-[#1d1d1f]"
+            )}
+          >
+            <tourItem.icon className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={1.5} />
+            {!collapsed && <span>{tourItem.label}</span>}
+          </button>
+        )}
       </nav>
 
       {/* Collapse toggle */}
@@ -138,7 +158,7 @@ export function Sidebar() {
   )
 }
 
-export function MobileBottomNav() {
+export function MobileBottomNav({ onStartTour }: { onStartTour?: () => void }) {
   const pathname = usePathname()
   const [sheetOpen, setSheetOpen] = useState(false)
   const sheetRef = useRef<HTMLDivElement>(null)
@@ -232,6 +252,22 @@ export function MobileBottomNav() {
                 </Link>
               )
             })}
+
+            {/* Tour button */}
+            {onStartTour && (
+              <button
+                onClick={() => { setSheetOpen(false); onStartTour() }}
+                className="flex flex-col items-center gap-2 py-4 rounded-xl transition-all duration-150 active:scale-95 bg-white dark:bg-[#2c2c2e] hover:bg-[#e5e5ea] dark:hover:bg-[#38383a]"
+              >
+                <tourItem.icon
+                  className="w-[22px] h-[22px] text-[#3a3a3c] dark:text-[#aeaeb2]"
+                  strokeWidth={1.5}
+                />
+                <span className="text-[11px] font-medium text-[#3a3a3c] dark:text-[#aeaeb2]">
+                  {tourItem.label}
+                </span>
+              </button>
+            )}
           </div>
         </div>
       </div>

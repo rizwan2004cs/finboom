@@ -230,7 +230,7 @@ export default function BudgetPage() {
   }
 
   // Loading skeleton
-  if (loadingBudgets) {
+  if (loadingBudgets || !user || !activeProfile) {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">

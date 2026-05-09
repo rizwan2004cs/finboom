@@ -82,7 +82,7 @@ export default function SnapshotsPage() {
     })
   }
 
-  if (loading) {
+  if (loading || !user || !activeProfile) {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
