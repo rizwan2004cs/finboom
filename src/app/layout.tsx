@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Source_Serif_4, JetBrains_Mono } from "next/font/google";
+import { Inter, Source_Serif_4, JetBrains_Mono, Playfair_Display } from "next/font/google";
 import Script from "next/script";
 import { ClerkProvider } from "@clerk/nextjs";
 import { PwaInstallPopup } from "@/components/pwa-install-popup";
@@ -17,6 +17,11 @@ const sourceSerif = Source_Serif_4({
 
 const jetbrainsMono = JetBrains_Mono({
   variable: "--font-mono",
+  subsets: ["latin"],
+});
+
+const playfair = Playfair_Display({
+  variable: "--font-display",
   subsets: ["latin"],
 });
 
@@ -101,12 +106,11 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${sourceSerif.variable} ${jetbrainsMono.variable} h-full antialiased`}
+      className={`${inter.variable} ${sourceSerif.variable} ${jetbrainsMono.variable} ${playfair.variable} h-full antialiased`}
       suppressHydrationWarning
     >
       <head>
-        <link rel="apple-touch-icon" href="/icons/icon-192-light.svg" media="(prefers-color-scheme: light)" />
-        <link rel="apple-touch-icon" href="/icons/icon-192.svg" media="(prefers-color-scheme: dark)" />
+
       </head>
       <body className="min-h-full flex flex-col">
         <Script id="theme-init" strategy="beforeInteractive">{`

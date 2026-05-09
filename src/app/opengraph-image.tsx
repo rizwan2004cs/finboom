@@ -11,6 +11,10 @@ export const size = {
 export const contentType = "image/png";
 
 export default async function Image() {
+  const playfairBold = await fetch(
+    "https://fonts.gstatic.com/s/playfairdisplay/v40/nuFvD-vYSZviVYUb_rj3ij__anPXJzDwcbmjWBN2PKeiukDQ.ttf"
+  ).then((res) => res.arrayBuffer());
+
   return new ImageResponse(
     (
       <div
@@ -22,7 +26,7 @@ export default async function Image() {
           flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
-          fontFamily: "Georgia, 'Times New Roman', serif",
+          fontFamily: "'Playfair Display', Georgia, serif",
           position: "relative",
           overflow: "hidden",
         }}
@@ -61,7 +65,7 @@ export default async function Image() {
                 fontWeight: 700,
                 color: "#1d1d1f",
                 letterSpacing: "-3px",
-                fontFamily: "Georgia, serif",
+                fontFamily: "'Playfair Display', serif",
               }}
             >
               F
@@ -100,7 +104,7 @@ export default async function Image() {
               letterSpacing: "-0.02em",
               marginBottom: 20,
               color: "#1d1d1f",
-              fontFamily: "Georgia, serif",
+              fontFamily: "'Playfair Display', serif",
             }}
           >
             FinBoom
@@ -113,7 +117,7 @@ export default async function Image() {
               lineHeight: 1.5,
               fontWeight: 400,
               letterSpacing: "0.01em",
-              fontFamily: "Georgia, serif",
+              fontFamily: "'Playfair Display', serif",
             }}
           >
             Track net worth, income, expenses, and financial goals across 20+ asset classes.
@@ -136,6 +140,14 @@ export default async function Image() {
     ),
     {
       ...size,
+      fonts: [
+        {
+          name: "Playfair Display",
+          data: playfairBold,
+          weight: 700,
+          style: "normal",
+        },
+      ],
     }
   );
 }

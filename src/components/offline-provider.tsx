@@ -53,11 +53,13 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
         console.warn("[sw] Registration failed:", err)
       })
 
-    // When the new SW takes over, reload the page
+    // When the new SW takes over, clear caches and reload the page
     let refreshing = false
-    navigator.serviceWorker.addEventListener("controllerchange", () => {
+    navigator.serviceWorker.addEventListener("controllerchange", async () => {
       if (!refreshing) {
         refreshing = true
+        const keys = await caches.keys()
+        await Promise.all(keys.map((k) => caches.delete(k)))
         window.location.reload()
       }
     })
@@ -66,6 +68,13 @@ export function OfflineProvider({ children }: { children: React.ReactNode }) {
   function applyUpdate() {
     if (waitingSW.current) {
       waitingSW.current.postMessage({ type: "SKIP_WAITING" })
+      // Fallback: if controllerchange doesn't fire within 2s, force reload
+      setTimeout(async () => {
+        // Clear all SW caches so the reload gets fresh content
+        const keys = await caches.keys()
+        await Promise.all(keys.map((k) => caches.delete(k)))
+        window.location.reload()
+      }, 2000)
     }
   }
 
