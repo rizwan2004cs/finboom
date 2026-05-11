@@ -3,12 +3,14 @@
 import { useEffect, useState } from "react"
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Area, AreaChart } from "recharts"
 import type { Snapshot } from "@/lib/types"
+import { useCurrency } from "@/hooks/use-currency"
 
 interface Props {
   snapshots: Snapshot[]
 }
 
 export function NetWorthChart({ snapshots }: Props) {
+  const { formatCompact } = useCurrency()
   const [isDark, setIsDark] = useState(false)
 
   useEffect(() => {
@@ -34,12 +36,7 @@ export function NetWorthChart({ snapshots }: Props) {
     liabilities: Number(s.total_liabilities),
   }))
 
-  const formatValue = (value: number) => {
-    if (value >= 10000000) return `₹${(value / 10000000).toFixed(1)}Cr`
-    if (value >= 100000) return `₹${(value / 100000).toFixed(1)}L`
-    if (value >= 1000) return `₹${(value / 1000).toFixed(0)}K`
-    return `₹${value}`
-  }
+  const formatValue = (value: number) => formatCompact(value)
 
   const strokeColor = isDark ? "#f5f5f7" : "#1d1d1f"
   const tickColor = isDark ? "#98989d" : "#86868b"

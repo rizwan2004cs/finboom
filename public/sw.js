@@ -7,7 +7,7 @@
  * - Offline fallback for navigation requests
  */
 
-const SW_VERSION = "v2"
+const SW_VERSION = "v3"
 const CACHE_STATIC = `finboom-static-${SW_VERSION}`
 const CACHE_PAGES = `finboom-pages-${SW_VERSION}`
 
@@ -20,6 +20,16 @@ const sw = /** @type {any} */ (self)
 // Static assets to precache
 const PRECACHE_URLS = [
   "/dashboard",
+  "/dashboard/assets",
+  "/dashboard/liabilities",
+  "/dashboard/transactions",
+  "/dashboard/goals",
+  "/dashboard/health",
+  "/dashboard/snapshots",
+  "/dashboard/profiles",
+  "/dashboard/settings",
+  "/dashboard/parties",
+  "/dashboard/more",
   "/manifest.json",
   "/icons/icon-192.svg",
   "/icons/icon-512.svg",

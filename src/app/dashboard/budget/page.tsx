@@ -11,14 +11,10 @@ import type { Budget, Transaction } from "@/lib/types"
 import { EXPENSE_CATEGORIES } from "@/lib/constants"
 import { CategoryIcon } from "@/components/category-icon"
 import { useAppDialog } from "@/components/app-dialog"
-
-function formatCurrency(amount: number) {
-  if (amount >= 100000) return `₹${(amount / 100000).toFixed(2)} L`
-  if (amount >= 1000) return `₹${(amount / 1000).toFixed(1)}K`
-  return `₹${amount.toLocaleString("en-IN")}`
-}
+import { useCurrency } from "@/hooks/use-currency"
 
 export default function BudgetPage() {
+  const { formatCompact: formatCurrency } = useCurrency()
   const { user } = useUser()
   const { activeProfile } = useProfile()
   const queryClient = useQueryClient()
@@ -383,7 +379,7 @@ export default function BudgetPage() {
             <div className="flex gap-2">
               <input
                 type="number"
-                placeholder="Amount (₹)"
+                placeholder="Amount"
                 value={newAmount}
                 onChange={e => setNewAmount(e.target.value)}
                 className="flex-1 px-3 py-2.5 rounded-xl bg-[#f5f5f7] dark:bg-[#2c2c2e] text-sm text-[#1d1d1f] dark:text-white border-0 focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10"
@@ -514,7 +510,7 @@ export default function BudgetPage() {
                 </span>
                 <span className={isOver ? "text-red-500 font-medium" : ""}>
                   {isOver
-                    ? `₹${(spent - budgetAmt).toLocaleString("en-IN")} over`
+                    ? `${formatCurrency(spent - budgetAmt)} over`
                     : `${formatCurrency(remaining)} left`}
                 </span>
               </div>

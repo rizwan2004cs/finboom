@@ -7,9 +7,11 @@ import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Shield, Heart, AlertTriangle, CheckCircle, Info } from "lucide-react"
 import type { HealthCheck } from "@/lib/types"
+import { useCurrency } from "@/hooks/use-currency"
 
 export default function HealthPage() {
   const { user } = useUser()
+  const { formatCompact, symbol: currencySymbol } = useCurrency()
   const queryClient = useQueryClient()
   const [health, setHealth] = useState<HealthCheck>({
     has_term_insurance: false,
@@ -193,7 +195,7 @@ export default function HealthPage() {
 
             {health.has_term_insurance && (
               <div>
-                <label className="text-xs text-[#86868b]">Cover Amount (₹)</label>
+                <label className="text-xs text-[#86868b]">Cover Amount ({currencySymbol})</label>
                 <input
                   type="number"
                   value={health.term_insurance_cover || ""}
@@ -203,7 +205,7 @@ export default function HealthPage() {
                 />
                 {idealTermCover > 0 && (
                   <p className="text-xs text-[#86868b] mt-1">
-                    Ideal: ₹{idealTermCover.toLocaleString("en-IN")} (10x your estimated income)
+                    Ideal: {formatCompact(idealTermCover)} (10x your estimated income)
                   </p>
                 )}
               </div>
@@ -223,7 +225,7 @@ export default function HealthPage() {
             </div>
             <div className="flex-1">
               <p className="font-semibold text-[#1d1d1f]">Health Insurance</p>
-              <p className="text-xs text-[#86868b]">Min ₹5L or 50% of annual income</p>
+              <p className="text-xs text-[#86868b]">Min {formatCompact(500000)} or 50% of annual income</p>
             </div>
             {getScoreIcon(healthScore)}
           </div>
@@ -241,7 +243,7 @@ export default function HealthPage() {
 
             {health.has_health_insurance && (
               <div>
-                <label className="text-xs text-[#86868b]">Cover Amount (₹)</label>
+                <label className="text-xs text-[#86868b]">Cover Amount ({currencySymbol})</label>
                 <input
                   type="number"
                   value={health.health_insurance_cover || ""}
@@ -274,7 +276,7 @@ export default function HealthPage() {
           <div className="space-y-3">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-[#86868b]">Monthly Expenses (₹)</label>
+                <label className="text-xs text-[#86868b]">Monthly Expenses ({currencySymbol})</label>
                 <input
                   type="number"
                   value={health.monthly_expenses || ""}
@@ -299,7 +301,7 @@ export default function HealthPage() {
             {health.monthly_expenses > 0 && (
               <p className="text-xs text-[#86868b] flex items-center gap-1">
                 <Info className="w-3 h-3" />
-                You need ₹{(health.monthly_expenses * 6).toLocaleString("en-IN")} for 6 months
+                You need {formatCompact(health.monthly_expenses * 6)} for 6 months
               </p>
             )}
 
@@ -334,19 +336,19 @@ export default function HealthPage() {
           {health.has_term_insurance && termScore < 80 && (
             <li className="flex items-start gap-2 text-sm text-[#6e6e73]">
               <span className="text-[#86868b] mt-0.5">•</span>
-              Consider increasing your term cover to at least ₹{idealTermCover.toLocaleString("en-IN")}.
+              Consider increasing your term cover to at least {formatCompact(idealTermCover)}.
             </li>
           )}
           {!health.has_health_insurance && (
             <li className="flex items-start gap-2 text-sm text-[#6e6e73]">
               <span className="text-[#86868b] mt-0.5">•</span>
-              Get health insurance with at least ₹5L cover. Medical costs are rising rapidly.
+              Get health insurance with at least {formatCompact(500000)} cover. Medical costs are rising rapidly.
             </li>
           )}
           {health.emergency_fund_months < 6 && (
             <li className="flex items-start gap-2 text-sm text-[#6e6e73]">
               <span className="text-[#86868b] mt-0.5">•</span>
-              Build your emergency fund to 6 months of expenses ({health.monthly_expenses > 0 ? `₹${(health.monthly_expenses * 6).toLocaleString("en-IN")}` : "calculate your expenses first"}).
+              Build your emergency fund to 6 months of expenses ({health.monthly_expenses > 0 ? formatCompact(health.monthly_expenses * 6) : "calculate your expenses first"}).
             </li>
           )}
           {overallScore >= 80 && (

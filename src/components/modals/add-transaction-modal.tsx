@@ -9,6 +9,7 @@ import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/constants"
 import { CategoryIcon } from "@/components/category-icon"
 import type { Party } from "@/lib/types"
 import { CustomSelect } from "@/components/custom-select"
+import { useCurrency } from "@/hooks/use-currency"
 
 interface Props {
   onClose: () => void
@@ -16,6 +17,7 @@ interface Props {
 }
 
 export function AddTransactionModal({ onClose, onSave }: Props) {
+  const { symbol } = useCurrency()
   const { user } = useUser()
   const { activeProfile } = useProfile()
   const [saving, setSaving] = useState(false)
@@ -135,7 +137,7 @@ export function AddTransactionModal({ onClose, onSave }: Props) {
 
           {/* Amount */}
           <div>
-            <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">Amount (₹)</label>
+            <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">Amount ({symbol})</label>
             <input
               type="number"
               required

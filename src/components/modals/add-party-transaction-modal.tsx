@@ -9,6 +9,7 @@ import { X, ArrowUpRight, ArrowDownLeft, ArrowDownRight, ArrowUpLeft, Plus, Load
 import type { Party } from "@/lib/types"
 import { PARTY_TRANSACTION_TYPES } from "@/lib/constants"
 import { CustomSelect } from "@/components/custom-select"
+import { useCurrency } from "@/hooks/use-currency"
 
 const typeIcons = {
   lent: ArrowUpRight,
@@ -25,6 +26,7 @@ interface Props {
 }
 
 export function AddPartyTransactionModal({ onClose, onSave, preselectedPartyId, preselectedType }: Props) {
+  const { symbol } = useCurrency()
   const { user } = useUser()
   const { activeProfile } = useProfile()
   const [saving, setSaving] = useState(false)
@@ -290,7 +292,7 @@ export function AddPartyTransactionModal({ onClose, onSave, preselectedPartyId, 
 
           {/* Amount */}
           <div>
-            <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">Amount (₹)</label>
+            <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">Amount ({symbol})</label>
             <input
               type="number"
               required

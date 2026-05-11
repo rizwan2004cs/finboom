@@ -5,6 +5,7 @@ import { TopBar } from "@/components/top-bar"
 import { SidebarProvider, useSidebar } from "@/components/sidebar-context"
 import { OfflineProvider } from "@/components/offline-provider"
 import { ProfileProvider } from "@/hooks/use-profile"
+import { CurrencyProvider } from "@/hooks/use-currency"
 import { QueryProvider } from "@/components/query-provider"
 import { usePushSubscription } from "@/hooks/use-push"
 import { AppDialogProvider } from "@/components/app-dialog"
@@ -45,7 +46,9 @@ export default function DashboardLayout({
         <SidebarProvider>
           <OfflineProvider>
             <ProfileProvider>
-              <DashboardShell>{children}</DashboardShell>
+              <CurrencyProvider>
+                <DashboardShell>{children}</DashboardShell>
+              </CurrencyProvider>
             </ProfileProvider>
           </OfflineProvider>
         </SidebarProvider>

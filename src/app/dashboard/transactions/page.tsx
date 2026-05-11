@@ -14,12 +14,7 @@ import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/constants"
 import { CategoryIcon } from "@/components/category-icon"
 import { AddTransactionModal } from "@/components/modals/add-transaction-modal"
 import { useAppDialog } from "@/components/app-dialog"
-
-function formatCurrency(amount: number) {
-  if (amount >= 100000) return `₹${(amount / 100000).toFixed(2)} L`
-  if (amount >= 1000) return `₹${(amount / 1000).toFixed(1)}K`
-  return `₹${amount.toLocaleString("en-IN")}`
-}
+import { useCurrency } from "@/hooks/use-currency"
 
 export default function TransactionsPageWrapper() {
   return (
@@ -30,6 +25,7 @@ export default function TransactionsPageWrapper() {
 }
 
 function TransactionsPage() {
+  const { formatCompact: formatCurrency, symbol: currencySymbol } = useCurrency()
   const { user } = useUser()
   const { activeProfile } = useProfile()
   const searchParams = useSearchParams()
@@ -236,7 +232,7 @@ function TransactionsPage() {
                         </div>
                         <div className="text-right">
                           <p className={`font-semibold ${t.type === "income" ? "text-[#1d1d1f] dark:text-white" : "text-[#6e6e73] dark:text-[#aeaeb2]"}`}>
-                            {t.type === "income" ? "+" : "-"}₹{Number(t.amount).toLocaleString("en-IN")}
+                            {t.type === "income" ? "+" : "-"}{formatCurrency(Number(t.amount))}
                           </p>
                         </div>
                         <button

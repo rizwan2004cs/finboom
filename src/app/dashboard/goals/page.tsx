@@ -10,19 +10,14 @@ import { useQueryClient } from "@tanstack/react-query"
 import { Plus, Target, Trash2, Edit2, TrendingUp, Calendar } from "lucide-react"
 import type { Goal, Asset } from "@/lib/types"
 import { useAppDialog } from "@/components/app-dialog"
-
-function formatCurrency(amount: number) {
-  if (amount >= 10000000) return `₹${(amount / 10000000).toFixed(2)} Cr`
-  if (amount >= 100000) return `₹${(amount / 100000).toFixed(2)} L`
-  if (amount >= 1000) return `₹${(amount / 1000).toFixed(1)}K`
-  return `₹${amount.toLocaleString("en-IN")}`
-}
+import { useCurrency } from "@/hooks/use-currency"
 
 function calculateInflationAdjusted(target: number, years: number, rate: number) {
   return target * Math.pow(1 + rate / 100, years)
 }
 
 export default function GoalsPage() {
+  const { formatCompact: formatCurrency } = useCurrency()
   const { user } = useUser()
   const { activeProfile } = useProfile()
   const queryClient = useQueryClient()

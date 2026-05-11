@@ -12,15 +12,10 @@ import type { Snapshot, Asset, Liability } from "@/lib/types"
 import { ASSET_CLASSES } from "@/lib/constants"
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
 import { useAppDialog } from "@/components/app-dialog"
-
-function formatCurrency(amount: number) {
-  if (amount >= 10000000) return `₹${(amount / 10000000).toFixed(2)} Cr`
-  if (amount >= 100000) return `₹${(amount / 100000).toFixed(2)} L`
-  if (amount >= 1000) return `₹${(amount / 1000).toFixed(1)}K`
-  return `₹${amount.toLocaleString("en-IN")}`
-}
+import { useCurrency } from "@/hooks/use-currency"
 
 export default function SnapshotsPage() {
+  const { formatCompact: formatCurrency } = useCurrency()
   const { user } = useUser()
   const { activeProfile } = useProfile()
   const queryClient = useQueryClient()

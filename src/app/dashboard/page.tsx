@@ -9,18 +9,10 @@ import { NetWorthChart } from "@/components/charts/net-worth-chart"
 import { AllocationChart } from "@/components/charts/allocation-chart"
 import type { Asset, Liability, Goal, Snapshot, PartyTransaction } from "@/lib/types"
 import { ASSET_CLASSES } from "@/lib/constants"
-
-function formatCurrency(amount: number, currency = "INR") {
-  if (currency === "INR") {
-    if (amount >= 10000000) return `₹${(amount / 10000000).toFixed(2)} Cr`
-    if (amount >= 100000) return `₹${(amount / 100000).toFixed(2)} L`
-    if (amount >= 1000) return `₹${(amount / 1000).toFixed(1)}K`
-    return `₹${amount.toLocaleString("en-IN")}`
-  }
-  return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(amount)
-}
+import { useCurrency } from "@/hooks/use-currency"
 
 export default function DashboardPage() {
+  const { formatCompact: formatCurrency } = useCurrency()
   const { user } = useUser()
   const { activeProfile } = useProfile()
 

@@ -3,20 +3,17 @@
 import { useEffect, useState } from "react"
 import { useUser, useAuth } from "@/hooks/use-auth"
 import { createClient } from "@/utils/supabase/client"
-import { Settings, Download, Globe, Trash2, LogOut, Moon, Sun } from "lucide-react"
+import { Settings, Download, Globe, Trash2, LogOut, Moon, Sun, RefreshCw } from "lucide-react"
 import { CURRENCIES } from "@/lib/constants"
 import { CustomSelect } from "@/components/custom-select"
 import { useAppDialog } from "@/components/app-dialog"
+import { useCurrency } from "@/hooks/use-currency"
 
 export default function SettingsPage() {
   const { user } = useUser()
   const { signOut } = useAuth()
-  const [currency, setCurrency] = useState(() => {
-    if (typeof window !== "undefined") {
-      return localStorage.getItem("finboom-currency") || "INR"
-    }
-    return "INR"
-  })
+  const { currency, setCurrency, refreshRates, loading: ratesLoading, lastUpdated } = useCurrency()
+  const [fetchingRates, setFetchingRates] = useState(false)
   const [theme, setTheme] = useState<"light" | "dark" | "system">(() => {
     if (typeof window !== "undefined") {
       return (localStorage.getItem("theme") as "light" | "dark" | "system") || "light"
@@ -43,7 +40,6 @@ export default function SettingsPage() {
 
   async function saveCurrency(newCurrency: string) {
     setCurrency(newCurrency)
-    localStorage.setItem("finboom-currency", newCurrency)
   }
 
   async function exportData(format: "csv" | "json") {
@@ -230,6 +226,24 @@ export default function SettingsPage() {
           onChange={(val) => saveCurrency(val)}
           options={CURRENCIES.map(c => ({ value: c.code, label: `${c.symbol} ${c.code} - ${c.name}` }))}
         />
+        <div className="flex items-center justify-between mt-3">
+          <p className="text-xs text-[#86868b]">
+            {lastUpdated
+              ? `Rates updated: ${new Date(lastUpdated).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}`
+              : "No rates fetched yet"}
+          </p>
+          <button
+            onClick={async () => {
+              setFetchingRates(true)
+              try { await refreshRates() } finally { setFetchingRates(false) }
+            }}
+            disabled={fetchingRates || ratesLoading}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#f5f5f7] dark:bg-[#2c2c2e] text-xs font-medium text-[#6e6e73] dark:text-[#aeaeb2] hover:text-[#1d1d1f] dark:hover:text-white hover:bg-[#e8e8ed] dark:hover:bg-[#3a3a3c] transition-all disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${fetchingRates ? "animate-spin" : ""}`} />
+            {fetchingRates ? "Fetching…" : "Fetch latest rates"}
+          </button>
+        </div>
       </div>
 
       {/* Export Data */}

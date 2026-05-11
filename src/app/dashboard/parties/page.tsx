@@ -27,13 +27,7 @@ import type { Party, PartyTransaction } from "@/lib/types"
 import { AddPartyTransactionModal } from "@/components/modals/add-party-transaction-modal"
 import { AddPartyModal } from "@/components/modals/add-party-modal"
 import { EditPartyModal } from "@/components/modals/edit-party-modal"
-
-function formatCurrency(amount: number) {
-  if (amount >= 10000000) return `₹${(amount / 10000000).toFixed(2)} Cr`
-  if (amount >= 100000) return `₹${(amount / 100000).toFixed(2)} L`
-  if (amount >= 1000) return `₹${(amount / 1000).toFixed(1)}K`
-  return `₹${amount.toLocaleString("en-IN")}`
-}
+import { useCurrency } from "@/hooks/use-currency"
 
 const typeConfig = {
   lent: { label: "Gave", icon: ArrowUpRight, color: "text-red-600", bg: "bg-red-50 dark:bg-red-500/10" },
@@ -43,6 +37,7 @@ const typeConfig = {
 }
 
 function PartiesPageInner() {
+  const { formatCompact: formatCurrency } = useCurrency()
   const { user } = useUser()
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()

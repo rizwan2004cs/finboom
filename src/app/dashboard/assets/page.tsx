@@ -16,13 +16,7 @@ import { useAppDialog } from "@/components/app-dialog"
 import { AddAssetModal } from "@/components/modals/add-asset-modal"
 import { ImportModal } from "@/components/modals/import-modal"
 import { CustomSelect } from "@/components/custom-select"
-
-function formatCurrency(amount: number) {
-  if (amount >= 10000000) return `₹${(amount / 10000000).toFixed(2)} Cr`
-  if (amount >= 100000) return `₹${(amount / 100000).toFixed(2)} L`
-  if (amount >= 1000) return `₹${(amount / 1000).toFixed(1)}K`
-  return `₹${amount.toLocaleString("en-IN")}`
-}
+import { useCurrency } from "@/hooks/use-currency"
 
 export default function AssetsPageWrapper() {
   return (
@@ -33,6 +27,7 @@ export default function AssetsPageWrapper() {
 }
 
 function AssetsPage() {
+  const { formatCompact: formatCurrency } = useCurrency()
   const { user } = useUser()
   const { activeProfile } = useProfile()
   const searchParams = useSearchParams()

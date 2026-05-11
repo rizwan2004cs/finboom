@@ -7,6 +7,7 @@ import { insertRow } from "@/lib/offline"
 import { X, Upload, CheckCircle } from "lucide-react"
 import * as XLSX from "xlsx"
 import { ASSET_CLASSES } from "@/lib/constants"
+import { useCurrency } from "@/hooks/use-currency"
 
 interface Props {
   onClose: () => void
@@ -22,6 +23,7 @@ interface ParsedRow {
 }
 
 export function ImportModal({ onClose, onImport }: Props) {
+  const { formatCompact } = useCurrency()
   const { user } = useUser()
   const { activeProfile } = useProfile()
   const [step, setStep] = useState<"upload" | "preview" | "done">("upload")
@@ -287,7 +289,7 @@ export function ImportModal({ onClose, onImport }: Props) {
                       <p className="text-sm font-medium text-[#1d1d1f]">{row.name}</p>
                       <p className="text-xs text-[#86868b]">{row.asset_class} {row.units ? `· ${row.units} units` : ""}</p>
                     </div>
-                    <p className="text-sm font-semibold text-[#1d1d1f]">₹{row.current_value.toLocaleString("en-IN")}</p>
+                    <p className="text-sm font-semibold text-[#1d1d1f]">{formatCompact(row.current_value)}</p>
                   </div>
                 ))}
               </div>
