@@ -8,6 +8,20 @@ interface ExchangeRates {
   [targetCurrency: string]: number // e.g. { USD: 0.012, EUR: 0.011 } — rates from INR
 }
 
+// Fallback rates (fetched 2026-05-11) used when Supabase has no data yet
+const FALLBACK_RATES: ExchangeRates = {
+  INR: 1,
+  USD: 0.010540505,
+  EUR: 0.0089653319,
+  GBP: 0.0077558458,
+  SGD: 0.013380803,
+  AED: 0.038709981,
+  AUD: 0.014577836,
+  CAD: 0.014425999,
+  JPY: 1.65653032,
+  CHF: 0.0082101551,
+}
+
 interface CurrencyContextValue {
   /** The user-selected display currency code, e.g. "USD" */
   currency: string
@@ -33,7 +47,7 @@ const CurrencyContext = createContext<CurrencyContextValue | null>(null)
 
 export function CurrencyProvider({ children }: { children: ReactNode }) {
   const [currency, setCurrencyState] = useState("INR")
-  const [rates, setRates] = useState<ExchangeRates>({})
+  const [rates, setRates] = useState<ExchangeRates>(FALLBACK_RATES)
   const [loading, setLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<string | null>(null)
 
