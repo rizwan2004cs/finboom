@@ -14,6 +14,15 @@ export default function SettingsPage() {
   const { signOut } = useAuth()
   const { currency, setCurrency, refreshRates, loading: ratesLoading, lastUpdated } = useCurrency()
   const [fetchingRates, setFetchingRates] = useState(false)
+  const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true)
+
+  useEffect(() => {
+    const goOnline = () => setIsOnline(true)
+    const goOffline = () => setIsOnline(false)
+    window.addEventListener("online", goOnline)
+    window.addEventListener("offline", goOffline)
+    return () => { window.removeEventListener("online", goOnline); window.removeEventListener("offline", goOffline) }
+  }, [])
   const [theme, setTheme] = useState<"light" | "dark" | "system">(() => {
     if (typeof window !== "undefined") {
       return (localStorage.getItem("theme") as "light" | "dark" | "system") || "light"
@@ -237,7 +246,7 @@ export default function SettingsPage() {
               setFetchingRates(true)
               try { await refreshRates() } finally { setFetchingRates(false) }
             }}
-            disabled={fetchingRates || ratesLoading}
+            disabled={fetchingRates || ratesLoading || !isOnline}
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#f5f5f7] dark:bg-[#2c2c2e] text-xs font-medium text-[#6e6e73] dark:text-[#aeaeb2] hover:text-[#1d1d1f] dark:hover:text-white hover:bg-[#e8e8ed] dark:hover:bg-[#3a3a3c] transition-all disabled:opacity-50"
           >
             <RefreshCw className={`w-3.5 h-3.5 ${fetchingRates ? "animate-spin" : ""}`} />

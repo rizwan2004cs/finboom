@@ -85,12 +85,14 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
   }, [loadRatesFromDB])
 
   const refreshRates = useCallback(async () => {
-    setLoading(true)
-    const res = await fetch("/api/exchange-rates/refresh", { method: "POST" })
-    if (res.ok) {
-      await loadRatesFromDB()
+    try {
+      const res = await fetch("/api/exchange-rates/refresh", { method: "POST" })
+      if (res.ok) {
+        await loadRatesFromDB()
+      }
+    } catch {
+      // Network error or offline — silently ignore
     }
-    setLoading(false)
   }, [loadRatesFromDB])
 
   const setCurrency = useCallback((code: string) => {
