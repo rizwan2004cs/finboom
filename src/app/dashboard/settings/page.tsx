@@ -3,10 +3,9 @@
 import { useEffect, useState } from "react"
 import { useUser, useAuth } from "@/hooks/use-auth"
 import { createClient } from "@/utils/supabase/client"
-import { Settings, Download, Globe, Trash2, LogOut, Moon, Sun, Lock } from "lucide-react"
+import { Settings, Download, Globe, Trash2, LogOut, Moon, Sun } from "lucide-react"
 import { CURRENCIES } from "@/lib/constants"
 import { CustomSelect } from "@/components/custom-select"
-import { PinSetup } from "@/components/pin-lock"
 import { useAppDialog } from "@/components/app-dialog"
 
 export default function SettingsPage() {
@@ -231,17 +230,6 @@ export default function SettingsPage() {
           onChange={(val) => saveCurrency(val)}
           options={CURRENCIES.map(c => ({ value: c.code, label: `${c.symbol} ${c.code} - ${c.name}` }))}
         />
-      </div>
-
-      {/* App Lock */}
-      <div className="liquid-glass rounded-2xl p-5">
-        <h3 className="font-semibold text-[#1d1d1f] dark:text-white mb-1 flex items-center gap-2">
-          <Lock className="w-4 h-4" /> App Lock
-        </h3>
-        <p className="text-xs text-[#86868b] mb-3">
-          Set a 4-digit PIN to lock access each session
-        </p>
-        <PinSetup />
       </div>
 
       {/* Export Data */}

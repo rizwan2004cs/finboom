@@ -5,7 +5,7 @@ import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
 import { fetchTable, insertRow } from "@/lib/offline"
 import { createClient } from "@/utils/supabase/client"
-import { X, ArrowUpRight, ArrowDownLeft, ArrowDownRight, ArrowUpLeft, Plus } from "lucide-react"
+import { X, ArrowUpRight, ArrowDownLeft, ArrowDownRight, ArrowUpLeft, Plus, Loader2 } from "lucide-react"
 import type { Party } from "@/lib/types"
 import { PARTY_TRANSACTION_TYPES } from "@/lib/constants"
 import { CustomSelect } from "@/components/custom-select"
@@ -348,7 +348,7 @@ export function AddPartyTransactionModal({ onClose, onSave, preselectedPartyId, 
             disabled={saving || !form.amount || !form.party_id}
             className="w-full py-3 rounded-xl bg-[#1d1d1f] text-white font-medium hover:opacity-90 transition-all disabled:opacity-50"
           >
-            {saving ? "Saving..." : "Add Entry"}
+            {saving ? <><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Saving...</> : "Add Entry"}
           </button>
         </form>
       </div>

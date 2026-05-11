@@ -50,8 +50,9 @@ export default function LoginPage() {
         </div>
 
         {/* Clerk component */}
-        <div className="flex justify-center">
-          {!loaded ? (
+        <div className="flex justify-center relative">
+          {/* Skeleton loader — shown while Clerk loads */}
+          {!loaded && (
             <div className="w-full clerk-glass-card rounded-3xl p-8 animate-pulse">
               <div className="flex flex-col items-center gap-4">
                 <div className="w-full h-12 rounded-2xl bg-black/[0.04] dark:bg-white/[0.06]" />
@@ -64,7 +65,9 @@ export default function LoginPage() {
                 <div className="w-full h-12 rounded-2xl bg-black/[0.08] dark:bg-white/[0.08]" />
               </div>
             </div>
-          ) : mode === "signin" ? (
+          )}
+          {/* Clerk form — rendered once loaded */}
+          {loaded && (mode === "signin" ? (
             <SignIn
               routing="hash"
               forceRedirectUrl="/dashboard"
@@ -76,27 +79,23 @@ export default function LoginPage() {
               forceRedirectUrl="/dashboard"
               appearance={clerkAppearance}
             />
-          )}
+          ))}
         </div>
 
-        {/* Toggle sign in / sign up — only show once Clerk is loaded */}
-        {loaded && (
-          <>
-            <p className="text-[13px] text-[#86868b] text-center mt-6">
-              {mode === "signin" ? "Don\u2019t have an account?" : "Already have an account?"}{" "}
-              <button
-                onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
-                className="text-[#1d1d1f] dark:text-white font-semibold hover:underline transition-colors"
-              >
-                {mode === "signin" ? "Sign up" : "Sign in"}
-              </button>
-            </p>
+        {/* Toggle sign in / sign up — always visible */}
+        <p className="text-[13px] text-[#86868b] text-center mt-6">
+          {mode === "signin" ? "Don\u2019t have an account?" : "Already have an account?"}{" "}
+          <button
+            onClick={() => setMode(mode === "signin" ? "signup" : "signin")}
+            className="text-[#1d1d1f] dark:text-white font-semibold hover:underline transition-colors"
+          >
+            {mode === "signin" ? "Sign up" : "Sign in"}
+          </button>
+        </p>
 
-            <p className="text-[10px] text-[#86868b]/50 text-center mt-4">
-              By signing in, you agree to our terms of use and privacy policy.
-            </p>
-          </>
-        )}
+        <p className="text-[10px] text-[#86868b]/50 text-center mt-4">
+          By signing in, you agree to our terms of use and privacy policy.
+        </p>
       </div>
     </div>
   )

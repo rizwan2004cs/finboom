@@ -7,7 +7,6 @@ import { OfflineProvider } from "@/components/offline-provider"
 import { ProfileProvider } from "@/hooks/use-profile"
 import { QueryProvider } from "@/components/query-provider"
 import { usePushSubscription } from "@/hooks/use-push"
-import { PinLockGate } from "@/components/pin-lock"
 import { AppDialogProvider } from "@/components/app-dialog"
 import { FeatureTour, useFeatureTour } from "@/components/feature-tour"
 import { cn } from "@/lib/utils"
@@ -42,8 +41,7 @@ export default function DashboardLayout({
 }) {
   return (
     <QueryProvider>
-      <PinLockGate>
-        <AppDialogProvider>
+      <AppDialogProvider>
         <SidebarProvider>
           <OfflineProvider>
             <ProfileProvider>
@@ -51,8 +49,7 @@ export default function DashboardLayout({
             </ProfileProvider>
           </OfflineProvider>
         </SidebarProvider>
-        </AppDialogProvider>
-      </PinLockGate>
+      </AppDialogProvider>
     </QueryProvider>
   )
 }

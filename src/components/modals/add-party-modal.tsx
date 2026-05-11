@@ -3,7 +3,7 @@
 import { useState } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { insertRow } from "@/lib/offline"
-import { X } from "lucide-react"
+import { X, Loader2 } from "lucide-react"
 
 interface Props {
   onClose: () => void
@@ -90,7 +90,7 @@ export function AddPartyModal({ onClose, onSave }: Props) {
             disabled={saving || !form.name.trim()}
             className="w-full py-3 rounded-xl bg-[#1d1d1f] text-white font-medium hover:opacity-90 transition-all disabled:opacity-50"
           >
-            {saving ? "Saving..." : "Add Party"}
+            {saving ? <><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Saving...</> : "Add Party"}
           </button>
         </form>
       </div>

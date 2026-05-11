@@ -123,7 +123,7 @@ const tourSteps: TourStep[] = [
   {
     icon: Settings,
     title: "Settings",
-    description: "Currency, theme, export data, PIN lock & preferences.",
+    description: "Currency, theme, export data & preferences.",
     href: "/dashboard/settings",
     elSelector: "[data-tour-el='settings-header']",
     navSelector: "[data-tour='settings']",

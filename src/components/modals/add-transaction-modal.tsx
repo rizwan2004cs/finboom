@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
 import { fetchTable, insertRow } from "@/lib/offline"
-import { X, Plus } from "lucide-react"
+import { X, Plus, Loader2 } from "lucide-react"
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/constants"
 import { CategoryIcon } from "@/components/category-icon"
 import type { Party } from "@/lib/types"
@@ -280,7 +280,7 @@ export function AddTransactionModal({ onClose, onSave }: Props) {
             disabled={saving || !form.amount}
             className="w-full py-3 rounded-xl bg-[#1d1d1f] dark:bg-white/[0.12] text-white font-medium hover:opacity-90 transition-all disabled:opacity-50"
           >
-            {saving ? "Saving..." : "Add Transaction"}
+            {saving ? <><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Saving...</> : "Add Transaction"}
           </button>
         </form>
       </div>

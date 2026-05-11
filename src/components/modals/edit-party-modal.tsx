@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { updateRow } from "@/lib/offline"
-import { X } from "lucide-react"
+import { X, Loader2 } from "lucide-react"
 import type { Party } from "@/lib/types"
 
 interface Props {
@@ -84,7 +84,7 @@ export function EditPartyModal({ party, onClose, onSave }: Props) {
             disabled={saving || !form.name.trim()}
             className="w-full py-3 rounded-xl bg-[#1d1d1f] text-white font-medium hover:opacity-90 transition-all disabled:opacity-50"
           >
-            {saving ? "Saving..." : "Save Changes"}
+            {saving ? <><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Saving...</> : "Save Changes"}
           </button>
         </form>
       </div>

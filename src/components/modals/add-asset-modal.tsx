@@ -4,7 +4,7 @@ import { useState } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
 import { insertRow, updateRow } from "@/lib/offline"
-import { X } from "lucide-react"
+import { X, Loader2 } from "lucide-react"
 import { ASSET_CLASSES, CURRENCIES } from "@/lib/constants"
 import type { Asset } from "@/lib/types"
 import { CustomSelect } from "@/components/custom-select"
@@ -169,7 +169,7 @@ export function AddAssetModal({ asset, onClose, onSave }: Props) {
             disabled={saving}
             className="w-full py-3 rounded-xl bg-[#1d1d1f] text-white font-medium hover:opacity-90 transition-all disabled:opacity-50"
           >
-            {saving ? "Saving..." : asset ? "Update Asset" : "Add Asset"}
+            {saving ? <><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Saving...</> : asset ? "Update Asset" : "Add Asset"}
           </button>
         </form>
       </div>
