@@ -14,7 +14,7 @@ export default function SettingsPage() {
   const { signOut } = useAuth()
   const { currency, setCurrency, refreshRates, loading: ratesLoading, lastUpdated } = useCurrency()
   const [fetchingRates, setFetchingRates] = useState(false)
-  const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true)
+           const [isOnline, setIsOnline] = useState(typeof navigator !== "undefined" ? navigator.onLine : true)
 
   useEffect(() => {
     const goOnline = () => setIsOnline(true)

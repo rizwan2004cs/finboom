@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Area, AreaChart } from "recharts"
+import { XAxis, YAxis, Tooltip, ResponsiveContainer, Area, AreaChart } from "recharts"
 import type { Snapshot } from "@/lib/types"
 import { useCurrency } from "@/hooks/use-currency"
 
@@ -29,12 +29,33 @@ export function NetWorthChart({ snapshots }: Props) {
     )
   }
 
-  const data = snapshots.map((s) => ({
-    date: new Date(s.snapshot_date).toLocaleDateString("en-IN", { month: "short", year: "2-digit" }),
-    netWorth: Number(s.net_worth),
-    assets: Number(s.total_assets),
-    liabilities: Number(s.total_liabilities),
-  }))
+  // Smart date formatting based on actual date range spread
+  const dates = snapshots.map(s => new Date(s.snapshot_date))
+  const minDate = dates[dates.length - 1]
+  const maxDate = dates[0]
+  const diffMs = maxDate.getTime() - minDate.getTime()
+  const diffDays = diffMs / (1000 * 60 * 60 * 24)
+
+  const data = snapshots.map((s) => {
+    const d = new Date(s.snapshot_date)
+    let dateLabel: string
+    if (diffDays <= 60) {
+      // Within ~2 months: show day + short month
+      dateLabel = d.toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+    } else if (diffDays <= 365) {
+      // Within a year: show day + short month
+      dateLabel = d.toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+    } else {
+      // Multi-year: show month + year
+      dateLabel = d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" })
+    }
+    return {
+      date: dateLabel,
+      netWorth: Number(s.net_worth),
+      assets: Number(s.total_assets),
+      liabilities: Number(s.total_liabilities),
+    }
+  })
 
   const formatValue = (value: number) => formatCompact(value)
 
@@ -57,6 +78,7 @@ export function NetWorthChart({ snapshots }: Props) {
             tick={{ fontSize: 11, fill: tickColor }}
             axisLine={false}
             tickLine={false}
+            minTickGap={20}
           />
           <YAxis 
             tickFormatter={formatValue}
@@ -64,6 +86,7 @@ export function NetWorthChart({ snapshots }: Props) {
             axisLine={false}
             tickLine={false}
             width={60}
+            domain={[(dataMin: number) => Math.floor(dataMin * 0.95), (dataMax: number) => Math.ceil(dataMax * 1.02)]}
           />
           <Tooltip
             contentStyle={{

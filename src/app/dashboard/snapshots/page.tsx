@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
 import { fetchTable, insertRow } from "@/lib/offline"
@@ -13,6 +13,22 @@ import { ASSET_CLASSES } from "@/lib/constants"
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
 import { useAppDialog } from "@/components/app-dialog"
 import { useCurrency } from "@/hooks/use-currency"
+import { subMonths, subYears } from "@/lib/utils"
+
+type TimeRange = "1M" | "6M" | "1Y" | "3Y" | "5Y" | "All"
+
+function getSmartDateLabel(d: Date, diffDays: number): string {
+  if (diffDays <= 60) {
+    // Data spans less than ~2 months: show day + month
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+  } else if (diffDays <= 365) {
+    // Data spans less than a year: show day + month
+    return d.toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+  } else {
+    // Multi-year data: show month + year
+    return d.toLocaleDateString("en-IN", { month: "short", year: "2-digit" })
+  }
+}
 
 export default function SnapshotsPage() {
   const { formatCompact: formatCurrency } = useCurrency()
@@ -30,6 +46,7 @@ export default function SnapshotsPage() {
     }
   )
   const deleteMut = useDeleteMutation("snapshots")
+  const [timeRange, setTimeRange] = useState<TimeRange>("All")
 
   async function takeSnapshot() {
     if (!user || !activeProfile) return
@@ -77,6 +94,37 @@ export default function SnapshotsPage() {
     })
   }
 
+  // Filter by time range
+  const rangeMonthsMap: Record<TimeRange, number> = { "1M": 1, "6M": 6, "1Y": 12, "3Y": 36, "5Y": 60, "All": Infinity }
+  const rangeMonths = rangeMonthsMap[timeRange]
+
+  const sortedSnapshots = useMemo(() => [...snapshots].reverse(), [snapshots])
+
+  const filteredSnapshots = useMemo(() => {
+    if (timeRange === "All") return sortedSnapshots
+    const cutoff = rangeMonths <= 12
+      ? subMonths(new Date(), rangeMonths)
+      : subYears(new Date(), rangeMonths / 12)
+    return sortedSnapshots.filter(s => new Date(s.snapshot_date) >= cutoff)
+  }, [sortedSnapshots, timeRange, rangeMonths])
+
+  const chartData = useMemo(() => {
+    if (filteredSnapshots.length === 0) return []
+    const dates = filteredSnapshots.map(s => new Date(s.snapshot_date))
+    const oldest = dates[0]
+    const newest = dates[dates.length - 1]
+    const diffDays = (newest.getTime() - oldest.getTime()) / (1000 * 60 * 60 * 24)
+    return filteredSnapshots.map(s => {
+      const d = new Date(s.snapshot_date)
+      return {
+        date: getSmartDateLabel(d, diffDays),
+        netWorth: Number(s.net_worth),
+        assets: Number(s.total_assets),
+        liabilities: Number(s.total_liabilities),
+      }
+    })
+  }, [filteredSnapshots])
+
   if (loading || !user || !activeProfile) {
     return (
       <div className="space-y-4">
@@ -102,15 +150,6 @@ export default function SnapshotsPage() {
     )
   }
 
-  const chartData = [...snapshots]
-    .reverse()
-    .map(s => ({
-      date: new Date(s.snapshot_date).toLocaleDateString("en-IN", { month: "short", year: "2-digit" }),
-      netWorth: Number(s.net_worth),
-      assets: Number(s.total_assets),
-      liabilities: Number(s.total_liabilities),
-    }))
-
   return (
     <div className="space-y-4" data-tour-page="snapshots">
       {/* Header */}
@@ -132,10 +171,27 @@ export default function SnapshotsPage() {
       {/* Chart */}
       {chartData.length > 1 && (
         <div className="liquid-glass rounded-2xl p-5">
-          <h3 className="font-semibold text-[#1d1d1f] mb-4">Net Worth Over Time</h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-[#1d1d1f]">Net Worth Over Time</h3>
+            <div className="flex gap-1">
+              {(["1M", "6M", "1Y", "3Y", "5Y", "All"] as TimeRange[]).map(range => (
+                <button
+                  key={range}
+                  onClick={() => setTimeRange(range)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+                    timeRange === range
+                      ? "bg-[#1d1d1f] text-white"
+                      : "text-[#86868b] hover:bg-[#f5f5f7]"
+                  }`}
+                >
+                  {range}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="h-52">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={chartData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
+                <AreaChart data={chartData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
                 <defs>
                   <linearGradient id="snapshotGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="currentColor" stopOpacity={0.1} />
@@ -147,6 +203,7 @@ export default function SnapshotsPage() {
                   tick={{ fontSize: 11, fill: "var(--muted-foreground)" }}
                   axisLine={false}
                   tickLine={false}
+                  minTickGap={20}
                 />
                 <YAxis
                   tickFormatter={(v) => formatCurrency(v)}
@@ -154,6 +211,7 @@ export default function SnapshotsPage() {
                   axisLine={false}
                   tickLine={false}
                   width={65}
+                  domain={[(dataMin: number) => Math.floor(dataMin * 0.95), (dataMax: number) => Math.ceil(dataMax * 1.02)]}
                 />
                 <Tooltip
                   contentStyle={{
