@@ -20,6 +20,14 @@
     {
       "path": "/api/cron/blog-post",
       "schedule": "0 8 * * *"
+    },
+    {
+      "path": "/api/cron/monthly-snapshot",
+      "schedule": "0 0 1 * *"
+    },
+    {
+      "path": "/api/cron/weekly-summary",
+      "schedule": "0 3 * * 1"
     }
   ]
 }

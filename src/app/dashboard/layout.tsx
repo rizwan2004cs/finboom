@@ -10,6 +10,7 @@ import { QueryProvider } from "@/components/query-provider"
 import { usePushSubscription } from "@/hooks/use-push"
 import { AppDialogProvider } from "@/components/app-dialog"
 import { FeatureTour, useFeatureTour } from "@/components/feature-tour"
+import { PinLockGate } from "@/components/pin-lock"
 import { cn } from "@/lib/utils"
 
 function DashboardShell({ children }: { children: React.ReactNode }) {
@@ -47,7 +48,9 @@ export default function DashboardLayout({
           <OfflineProvider>
             <ProfileProvider>
               <CurrencyProvider>
-                <DashboardShell>{children}</DashboardShell>
+                <PinLockGate>
+                  <DashboardShell>{children}</DashboardShell>
+                </PinLockGate>
               </CurrencyProvider>
             </ProfileProvider>
           </OfflineProvider>

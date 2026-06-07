@@ -3,20 +3,22 @@
 import { useState, useEffect } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
-import { fetchTable, insertRow } from "@/lib/offline"
+import { fetchTable, insertRow, updateRow } from "@/lib/offline"
 import { X, Plus, Loader2 } from "lucide-react"
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/constants"
 import { CategoryIcon } from "@/components/category-icon"
-import type { Party } from "@/lib/types"
+import type { Party, Transaction } from "@/lib/types"
 import { CustomSelect } from "@/components/custom-select"
 import { useCurrency } from "@/hooks/use-currency"
 
 interface Props {
+  transaction?: Transaction | null
   onClose: () => void
   onSave: () => void
 }
 
-export function AddTransactionModal({ onClose, onSave }: Props) {
+export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
+  const isEditing = !!transaction
   const { symbol } = useCurrency()
   const { user } = useUser()
   const { activeProfile } = useProfile()
@@ -27,11 +29,11 @@ export function AddTransactionModal({ onClose, onSave }: Props) {
   const [newPartyPhone, setNewPartyPhone] = useState("")
   const [newPartyNotes, setNewPartyNotes] = useState("")
   const [form, setForm] = useState({
-    type: "expense" as "income" | "expense",
-    category: "",
-    amount: "",
-    description: "",
-    date: new Date().toISOString().slice(0, 10),
+    type: (transaction?.type || "expense") as "income" | "expense",
+    category: transaction?.category || "",
+    amount: transaction?.amount?.toString() || "",
+    description: transaction?.description || "",
+    date: transaction?.date || new Date().toISOString().slice(0, 10),
     spent_for_party_id: "",
     due_date: "",
   })
@@ -67,30 +69,40 @@ export function AddTransactionModal({ onClose, onSave }: Props) {
     if (!user) return
     setSaving(true)
 
-    const { data: txData } = await insertRow("transactions", {
-      user_id: user.id,
-      profile_id: activeProfile!.id,
-      type: form.type,
-      category: form.category || categories[0].id,
-      amount: parseFloat(form.amount) || 0,
-      description: form.description || null,
-      date: form.date,
-      currency: "INR",
-    })
-
-    // If expense was "spent for" a party, also create a party_transaction (lent)
-    if (form.type === "expense" && form.spent_for_party_id && txData) {
-      await insertRow("party_transactions", {
-        user_id: user.id,
-        party_id: form.spent_for_party_id,
-        type: "lent",
+    if (isEditing) {
+      await updateRow("transactions", transaction.id, {
+        type: form.type,
+        category: form.category || categories[0].id,
         amount: parseFloat(form.amount) || 0,
-        currency: "INR",
+        description: form.description || null,
         date: form.date,
-        due_date: form.due_date || null,
-        notes: form.description || null,
-        linked_transaction_id: txData.id,
       })
+    } else {
+      const { data: txData } = await insertRow("transactions", {
+        user_id: user.id,
+        profile_id: activeProfile!.id,
+        type: form.type,
+        category: form.category || categories[0].id,
+        amount: parseFloat(form.amount) || 0,
+        description: form.description || null,
+        date: form.date,
+        currency: "INR",
+      })
+
+      // If expense was "spent for" a party, also create a party_transaction (lent)
+      if (form.type === "expense" && form.spent_for_party_id && txData) {
+        await insertRow("party_transactions", {
+          user_id: user.id,
+          party_id: form.spent_for_party_id,
+          type: "lent",
+          amount: parseFloat(form.amount) || 0,
+          currency: "INR",
+          date: form.date,
+          due_date: form.due_date || null,
+          notes: form.description || null,
+          linked_transaction_id: txData.id,
+        })
+      }
     }
 
     setSaving(false)
@@ -106,7 +118,7 @@ export function AddTransactionModal({ onClose, onSave }: Props) {
         </div>
 
         <div className="flex items-center justify-between p-5 border-b border-black/[0.04] dark:border-white/[0.06]">
-          <h2 className="text-lg font-bold text-[#1d1d1f] dark:text-white">Add Transaction</h2>
+          <h2 className="text-lg font-bold text-[#1d1d1f] dark:text-white">{isEditing ? "Edit Transaction" : "Add Transaction"}</h2>
           <button onClick={onClose} className="p-2 rounded-full hover:bg-[#f5f5f7] dark:hover:bg-white/[0.08] transition-all">
             <X className="w-5 h-5 text-[#86868b]" />
           </button>
@@ -282,7 +294,7 @@ export function AddTransactionModal({ onClose, onSave }: Props) {
             disabled={saving || !form.amount}
             className="w-full py-3 rounded-xl bg-[#1d1d1f] dark:bg-white/[0.12] text-white font-medium hover:opacity-90 transition-all disabled:opacity-50"
           >
-            {saving ? <><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Saving...</> : "Add Transaction"}
+            {saving ? <><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Saving...</> : isEditing ? "Update Transaction" : "Add Transaction"}
           </button>
         </form>
       </div>

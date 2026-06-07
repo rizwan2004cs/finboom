@@ -224,6 +224,7 @@ function GoalFormModal({ goal, assets, onClose, onSave }: {
       user_id: user.id,
       profile_id: activeProfile!.id,
       name: form.name,
+      target_amount: parseFloat(form.target_amount) || 0,
       current_amount: parseFloat(form.current_amount) || 0,
       target_date: form.target_date,
       inflation_rate: parseFloat(form.inflation_rate) || 6,

@@ -7,7 +7,8 @@ import { TrendingUp, Wallet, CreditCard, Target, ArrowUpRight, Plus, Receipt, Ca
 import Link from "next/link"
 import { NetWorthChart } from "@/components/charts/net-worth-chart"
 import { AllocationChart } from "@/components/charts/allocation-chart"
-import type { Asset, Liability, Goal, Snapshot, PartyTransaction } from "@/lib/types"
+import { SpendingChart } from "@/components/charts/spending-chart"
+import type { Asset, Liability, Goal, Snapshot, PartyTransaction, Transaction } from "@/lib/types"
 import { ASSET_CLASSES } from "@/lib/constants"
 import { useCurrency } from "@/hooks/use-currency"
 
@@ -37,6 +38,9 @@ export default function DashboardPage() {
   )
   const { data: partyTransactions = [] } = useOfflineQuery<PartyTransaction>(
     "party_transactions", user?.id, { enabled: !!activeProfile }
+  )
+  const { data: transactions = [], isLoading: loadingTransactions } = useOfflineQuery<Transaction>(
+    "transactions", user?.id, { filters: pf, enabled: !!activeProfile }
   )
 
   const loading = loadingAssets || loadingLiabilities || loadingGoals || !user || !activeProfile
@@ -216,6 +220,17 @@ export default function DashboardPage() {
           </div>
           <AllocationChart data={allocationData} total={totalAssets} />
         </div>
+      </div>
+
+      {/* Spending This Month */}
+      <div className="liquid-glass rounded-2xl p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-[17px] font-semibold text-[#1d1d1f]">Spending This Month</h3>
+          <Link href="/dashboard/transactions" className="text-[12px] text-[#86868b] flex items-center gap-1 hover:text-[#1d1d1f] transition-colors">
+            All transactions <ArrowUpRight className="w-3 h-3" />
+          </Link>
+        </div>
+        <SpendingChart transactions={transactions} isLoading={loadingTransactions} />
       </div>
 
       {/* Goals Progress */}

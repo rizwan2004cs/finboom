@@ -8,7 +8,7 @@ import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { deleteRow } from "@/lib/offline"
 import { createClient } from "@/utils/supabase/client"
 import { useQueryClient } from "@tanstack/react-query"
-import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Receipt } from "lucide-react"
+import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Edit2, Receipt } from "lucide-react"
 import type { Transaction } from "@/lib/types"
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/constants"
 import { CategoryIcon } from "@/components/category-icon"
@@ -31,6 +31,7 @@ function TransactionsPage() {
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
   const [showAddModal, setShowAddModal] = useState(false)
+  const [editTransaction, setEditTransaction] = useState<Transaction | null>(null)
   const [typeFilter, setTypeFilter] = useState<"all" | "income" | "expense">("all")
   const [monthFilter, setMonthFilter] = useState(
     new Date().toISOString().slice(0, 7) // YYYY-MM
@@ -235,12 +236,20 @@ function TransactionsPage() {
                             {t.type === "income" ? "+" : "-"}{formatCurrency(Number(t.amount))}
                           </p>
                         </div>
-                        <button
-                          onClick={() => deleteTransaction(t.id)}
-                          className="p-1.5 rounded-lg hover:bg-[#f5f5f7] transition-all"
-                        >
-                          <Trash2 className="w-3.5 h-3.5 text-[#86868b]" />
-                        </button>
+                        <div className="flex gap-1 ml-1">
+                          <button
+                            onClick={() => setEditTransaction(t)}
+                            className="p-1.5 rounded-lg hover:bg-[#f5f5f7] transition-all"
+                          >
+                            <Edit2 className="w-3.5 h-3.5 text-[#86868b]" />
+                          </button>
+                          <button
+                            onClick={() => deleteTransaction(t.id)}
+                            className="p-1.5 rounded-lg hover:bg-[#f5f5f7] transition-all"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-[#86868b]" />
+                          </button>
+                        </div>
                       </div>
                     </div>
                   )
@@ -251,10 +260,11 @@ function TransactionsPage() {
         </div>
       )}
 
-      {showAddModal && (
+      {(showAddModal || editTransaction) && (
         <AddTransactionModal
-          onClose={() => setShowAddModal(false)}
-          onSave={() => { setShowAddModal(false); queryClient.invalidateQueries({ queryKey: ["transactions"] }) }}
+          transaction={editTransaction}
+          onClose={() => { setShowAddModal(false); setEditTransaction(null) }}
+          onSave={() => { setShowAddModal(false); setEditTransaction(null); queryClient.invalidateQueries({ queryKey: ["transactions"] }) }}
         />
       )}
     </div>
