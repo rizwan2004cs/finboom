@@ -16,6 +16,10 @@
     {
       "path": "/api/cron/exchange-rates",
       "schedule": "0 6 * * *"
+    },
+    {
+      "path": "/api/cron/blog-post",
+      "schedule": "0 8 * * *"
     }
   ]
 }

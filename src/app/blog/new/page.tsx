@@ -5,148 +5,7 @@ import { useRouter } from "next/navigation"
 import { useUser } from "@/hooks/use-auth"
 import { useUser as useClerkUser } from "@clerk/nextjs"
 import Link from "next/link"
-import { Clipboard, Check, Sparkles } from "lucide-react"
-
-const AI_PROMPT = `You are a financial content writer for FinBoom, a free net worth tracker for Indian investors.
-
-STRICT RULES:
-- ZERO emojis anywhere in output
-- Indian context only: INR amounts, Indian tax laws, Indian instruments (PPF, NPS, EPF, ELSS, FDs, SGBs, etc.)
-- Conversational tone, like a smart friend explaining finance
-- No jargon without explanation
-- Short paragraphs (2-3 sentences max)
-
-OUTPUT FORMAT:
-Return each field in its OWN SEPARATE code block so each can be copied individually.
-Use exactly this format with 4 separate fenced code blocks:
-
-TITLE:
-\`\`\`
-<title here, under 70 chars>
-\`\`\`
-
-CATEGORY:
-\`\`\`
-<one of: guides | tips | market | product>
-\`\`\`
-
-EXCERPT:
-\`\`\`
-<1-2 sentence summary, under 160 chars>
-\`\`\`
-
-CONTENT:
-\`\`\`
-<full markdown body here>
-\`\`\`
-
-MARKDOWN RULES (the blog engine ONLY supports these):
-- ## for main sections, ### for sub-sections (NO # H1)
-- **bold text**
-- \`inline code\` for numbers, formulas, tickers
-- > blockquote for key takeaways
-- - bullet lists (dash only, not asterisk)
-- 1. numbered lists
-- ![alt text](image-url) for images (use relevant free stock image URLs from unsplash/pexels)
-- | tables | with | pipes | for comparisons (include header row and separator row)
-- \`\`\`mermaid code blocks — use generously to visualize concepts:
-  - Flowcharts: graph TD / graph LR
-  - Pie charts: pie title "Title"
-  - Bar charts: xychart-beta (x-axis, y-axis, bar, line)
-  - Timelines: timeline
-  - Quadrant charts: quadrantChart
-- Blank lines between paragraphs
-
-DO NOT USE: links, ---, ~~strikethrough~~, *italic*, nested lists, HTML, emojis
-
-REFERENCE BLOG POST (match this exact style, depth, and structure):
----
-TITLE: Fundamental Analysis: A Beginner's Guide to Reading Stocks Like a Pro
-CATEGORY: guides
-EXCERPT: Learn the basics of fundamental analysis - from P/E ratios to debt-to-equity - explained simply so you can pick better stocks.
-CONTENT:
-## What is Fundamental Analysis?
-
-Imagine you are buying a business, not just a stock ticker. Fundamental analysis is exactly that - studying a company's financial health, earnings, and growth to decide if its stock price is fair, cheap, or expensive.
-
-While technical analysis looks at charts and patterns, fundamental analysis looks at the business behind the stock. Think of it as checking the engine before buying a car.
-
-## The Key Numbers You Need to Know
-
-### 1. EPS (Earnings Per Share)
-
-EPS tells you how much profit a company makes for each share you own. If a company earns \`100 crore\` and has \`10 crore\` shares, the EPS is \`10\`.
-
-Higher EPS = more profitable. But always compare EPS with companies in the same industry - comparing Infosys with Tata Steel does not make sense.
-
-### 2. P/E Ratio (Price-to-Earnings)
-
-The P/E ratio is the most popular valuation metric. It tells you how much investors are willing to pay for \`1\` of earnings.
-
-**Formula:** \`P/E = Stock Price / EPS\`
-
-A P/E of \`20\` means investors pay \`20\` for every \`1\` the company earns. A low P/E might mean the stock is undervalued (or struggling). A high P/E could mean it is overvalued (or growing fast).
-
-> Nifty 50's average P/E hovers around 20-22. Stocks trading well above this need strong growth to justify the premium.
-
-### 3. P/B Ratio (Price-to-Book)
-
-P/B compares the stock price with the company's book value (assets minus liabilities, per share). A P/B of \`1\` means you are paying exactly what the company's assets are worth on paper.
-
-P/B below \`1\`? The stock might be a bargain - or the company might be in trouble. Banks and NBFCs are best evaluated using P/B since their main business is lending money.
-
-### 4. ROE (Return on Equity)
-
-ROE measures how efficiently a company uses shareholders' money to generate profits. An ROE of \`20%\` means the company generates \`20\` of profit for every \`100\` of equity.
-
-Consistently high ROE (above \`15%\`) is a sign of a quality business. Think Asian Paints, TCS, or HDFC Bank.
-
-### 5. Debt-to-Equity Ratio (D/E)
-
-This tells you how much debt the company has compared to its own money (equity). A D/E of \`0.5\` means for every \`100\` of equity, the company has \`50\` of debt.
-
-Low D/E (below \`1\`) is generally safer. High D/E is not always bad - infra and real estate companies naturally carry more debt - but excessive debt during rising interest rates can crush profits.
-
-### 6. Revenue and Profit Growth
-
-A company can have great ratios today but if revenue is shrinking, those ratios will deteriorate. Look for consistent revenue and profit growth over 3-5 years, not just one great quarter.
-
-> One quarter does not make a trend. Always check at least 3 years of results before drawing conclusions.
-
-## Putting It All Together: A Quick Checklist
-
-- EPS growing year over year?
-- P/E reasonable compared to peers?
-- ROE consistently above \`15%\`?
-- Debt-to-Equity under control?
-- Revenue and profit growing for 3+ years?
-- Business you understand?
-
-If a stock checks most of these boxes, it is worth deeper research. If it fails multiple checks, move on - there are thousands of stocks out there.
-
-## Common Mistakes Beginners Make
-
-**Buying only because P/E is low.** A low P/E can be a value trap - the stock might be cheap because the business is dying. Always check WHY the P/E is low.
-
-**Ignoring debt.** Companies like Vodafone Idea or Yes Bank looked great on revenue - until their debt became unmanageable. Always check D/E.
-
-**Chasing one metric.** No single number tells the full story. Use EPS, P/E, ROE, and D/E together to build a complete picture.
-
-## Start Tracking Your Picks
-
-Once you have done your fundamental analysis and invested, the next step is tracking how your portfolio performs. FinBoom lets you track all your stocks, mutual funds, and 22+ asset classes in one place - so you always know your true net worth.
-
-> Import your Groww or Zerodha holdings in seconds and watch your wealth grow.
----
-
-Write a new blog post on the topic I give you. Match the reference post's style exactly:
-- Same depth of explanation with Indian examples
-- Same use of \`backticks\` for numbers
-- Same mix of ##/### headings, bold key terms, blockquote callouts, bullet checklists
-- Same conversational but authoritative tone
-- Same length (800-1500 words)
-- End with a natural FinBoom mention (not salesy)
-- ZERO emojis`
+import { Sparkles, Loader2 } from "lucide-react"
 
 function markdownToPortableText(markdown: string) {
   const lines = markdown.split("\n")
@@ -356,49 +215,17 @@ function slugify(text: string) {
     .trim()
 }
 
-function CopyPromptButton() {
-  const [copied, setCopied] = useState(false)
-
-  async function handleCopy() {
-    await navigator.clipboard.writeText(AI_PROMPT)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  return (
-    <button
-      onClick={handleCopy}
-      className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-[13px] font-medium border transition-all cursor-pointer
-        border-black/10 dark:border-white/10 text-[#6e6e73] dark:text-[#98989d]
-        hover:bg-black/[0.03] dark:hover:bg-white/[0.03] hover:text-[#1d1d1f] dark:hover:text-white
-        active:scale-[0.97]"
-      title="Copy AI prompt for generating blog content"
-    >
-      {copied ? (
-        <>
-          <Check className="w-3.5 h-3.5 text-accent" strokeWidth={2} />
-          <span className="text-accent">Copied</span>
-        </>
-      ) : (
-        <>
-          <Sparkles className="w-3.5 h-3.5" strokeWidth={2} />
-          <span>AI Prompt</span>
-          <Clipboard className="w-3.5 h-3.5" strokeWidth={2} />
-        </>
-      )}
-    </button>
-  )
-}
 
 export default function NewBlogPost() {
   const { user, isLoaded } = useUser()
   const { user: clerkUser } = useClerkUser()
   const router = useRouter()
+  const [topic, setTopic] = useState("")
   const [title, setTitle] = useState("")
   const [category, setCategory] = useState("guides")
   const [excerpt, setExcerpt] = useState("")
   const [markdown, setMarkdown] = useState("")
-  const [status, setStatus] = useState<"idle" | "publishing" | "success" | "error">("idle")
+  const [status, setStatus] = useState<"idle" | "generating" | "publishing" | "success" | "error">("idle")
   const [message, setMessage] = useState("")
 
   const role = (clerkUser?.publicMetadata as { role?: string })?.role
@@ -424,6 +251,42 @@ export default function NewBlogPost() {
         </div>
       </div>
     )
+  }
+
+  async function handleGenerate() {
+    if (!topic.trim()) {
+      setMessage("Enter a topic to generate a blog post.")
+      setStatus("error")
+      return
+    }
+
+    setStatus("generating")
+    setMessage("")
+
+    try {
+      const res = await fetch("/api/blog/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ topic: topic.trim() }),
+      })
+
+      const data = await res.json()
+
+      if (res.ok) {
+        setTitle(data.title || "")
+        setCategory(data.category || "guides")
+        setExcerpt(data.excerpt || "")
+        setMarkdown(data.content || "")
+        setStatus("idle")
+        setMessage("")
+      } else {
+        setStatus("error")
+        setMessage(data.error || "Failed to generate. Try again.")
+      }
+    } catch {
+      setStatus("error")
+      setMessage("Network error. Check your connection.")
+    }
   }
 
   async function handlePublish() {
@@ -490,10 +353,49 @@ export default function NewBlogPost() {
           <h1 className="text-3xl font-bold tracking-tight text-[#1d1d1f] dark:text-white font-serif">
             New Blog Post
           </h1>
-          <CopyPromptButton />
         </div>
 
         <div className="space-y-5">
+          {/* AI Generate Section */}
+          <div className="p-5 rounded-2xl border border-accent/20 bg-accent/[0.03]">
+            <label className="block text-sm font-medium text-[#1d1d1f] dark:text-white mb-1.5">
+              Generate with AI
+            </label>
+            <p className="text-xs text-[#86868b] mb-3">
+              Enter a topic and the AI will write a complete blog post for you.
+            </p>
+            <div className="flex gap-3">
+              <input
+                type="text"
+                value={topic}
+                onChange={(e) => setTopic(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && status !== "generating") handleGenerate()
+                }}
+                placeholder="e.g. FIRE Movement for Indian Investors, SIP vs Lumpsum..."
+                className="flex-1 px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-accent/30"
+                disabled={status === "generating"}
+              />
+              <button
+                onClick={handleGenerate}
+                disabled={status === "generating"}
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-accent text-white font-medium text-sm hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+              >
+                {status === "generating" ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" strokeWidth={2} />
+                    <span>Generating...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" strokeWidth={2} />
+                    <span>Generate</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+
           {/* Title */}
           <div>
             <label className="block text-sm font-medium text-[#1d1d1f] dark:text-white mb-1.5">
@@ -570,7 +472,7 @@ export default function NewBlogPost() {
           {/* Publish Button */}
           <button
             onClick={handlePublish}
-            disabled={status === "publishing"}
+            disabled={status === "publishing" || status === "generating"}
             className="w-full py-3 rounded-xl bg-[#1d1d1f] dark:bg-white text-white dark:text-[#1d1d1f] font-semibold text-sm hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {status === "publishing" ? "Publishing..." : "Publish Post"}
