@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { auth, clerkClient } from "@clerk/nextjs/server"
+import { requireEditorRole } from "@/lib/blog/admin-auth"
 import { runBlogAutomation } from "@/lib/blog/run-automation"
 
 export const maxDuration = 60
@@ -7,17 +7,9 @@ export const maxDuration = 60
 // POST /api/admin/blog-automation/trigger - Manually runs the daily blog
 // pipeline. Admin/editor only. Bypasses the once-per-24h guard.
 export async function POST() {
-  const { userId } = await auth()
-  if (!userId) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
-  }
-
-  const client = await clerkClient()
-  const user = await client.users.getUser(userId)
-  const role = (user.publicMetadata as { role?: string })?.role
-
-  if (role !== "admin" && role !== "editor") {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 })
+  const denied = await requireEditorRole()
+  if (denied) {
+    return NextResponse.json({ error: denied.error }, { status: denied.status })
   }
 
   try {

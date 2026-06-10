@@ -76,6 +76,49 @@ export async function addFallbackTopicsToQueue(topics: string[]) {
   await supabase.from("blog_topics").upsert(rows, { onConflict: "normalized_title" })
 }
 
+// Manual topics sort ahead of seeded ones (sort_order 1000) so an
+// admin-added topic is picked on the next run.
+export async function addManualTopicToQueue(title: string) {
+  const { available, supabase } = await tableAvailable()
+  if (!available || !supabase) {
+    return { ok: false as const, error: "Topic queue is not available." }
+  }
+
+  const { error } = await supabase.from("blog_topics").upsert(
+    {
+      title,
+      normalized_title: normalizeTopic(title),
+      source: "manual",
+      status: "pending",
+      sort_order: 500,
+    },
+    { onConflict: "normalized_title" }
+  )
+
+  if (error) {
+    return { ok: false as const, error: error.message }
+  }
+  return { ok: true as const }
+}
+
+export async function skipQueueTopic(id: string) {
+  const { available, supabase } = await tableAvailable()
+  if (!available || !supabase) {
+    return { ok: false as const, error: "Topic queue is not available." }
+  }
+
+  const { error } = await supabase
+    .from("blog_topics")
+    .update({ status: "skipped" })
+    .eq("id", id)
+    .eq("status", "pending")
+
+  if (error) {
+    return { ok: false as const, error: error.message }
+  }
+  return { ok: true as const }
+}
+
 export async function markQueueTopicPosted(params: {
   id: string
   publishedTitle: string

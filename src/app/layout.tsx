@@ -52,9 +52,6 @@ export const metadata: Metadata = {
     statusBarStyle: "default",
     title: "FinBoom",
   },
-  alternates: {
-    canonical: "https://finboom-cyan.vercel.app",
-  },
   openGraph: {
     title: "FinBoom - Know Your True Wealth | Free Net Worth Tracker",
     description: "Track stocks, mutual funds, real estate, gold, and 22+ asset classes. Free forever. Built for Indian investors.",

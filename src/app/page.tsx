@@ -1,10 +1,17 @@
-import { 
-  TrendingUp, Layers, Camera, Crosshair, ArrowLeftRight, 
-  ShieldCheck, Users, Download, Lock 
+import {
+  TrendingUp, Layers, Camera, Crosshair, ArrowLeftRight,
+  ShieldCheck, Users, Download, Lock
 } from "lucide-react"
 import Link from "next/link"
+import type { Metadata } from "next"
 import { PwaInstallBanner } from "@/components/pwa-install-banner"
 import { NavAuthButtons, HeroCTA, AuthRedirect } from "@/components/auth-buttons"
+
+export const metadata: Metadata = {
+  alternates: {
+    canonical: "/",
+  },
+}
 
 const jsonLd = {
   "@context": "https://schema.org",

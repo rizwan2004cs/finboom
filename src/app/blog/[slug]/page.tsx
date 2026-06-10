@@ -54,11 +54,15 @@ export async function generateMetadata({
   return {
     title: post.title,
     description: post.excerpt || `Read "${post.title}" on FinBoom Blog`,
+    alternates: {
+      canonical: `/blog/${post.slug.current}`,
+    },
     openGraph: {
       title: post.title,
       description: post.excerpt,
       type: "article",
       publishedTime: post.publishedAt,
+      url: `/blog/${post.slug.current}`,
       ...(post.mainImage && {
         images: [urlFor(post.mainImage).width(1200).height(630).url()],
       }),
@@ -216,8 +220,35 @@ export default async function BlogPostPage({
 
   if (!post) notFound()
 
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "BlogPosting",
+    headline: post.title,
+    description: post.excerpt,
+    datePublished: post.publishedAt,
+    url: `https://finboom-cyan.vercel.app/blog/${post.slug.current}`,
+    mainEntityOfPage: `https://finboom-cyan.vercel.app/blog/${post.slug.current}`,
+    ...(post.mainImage && {
+      image: urlFor(post.mainImage).width(1200).height(630).url(),
+    }),
+    author: {
+      "@type": "Organization",
+      name: "FinBoom",
+      url: "https://finboom-cyan.vercel.app",
+    },
+    publisher: {
+      "@type": "Organization",
+      name: "FinBoom",
+      url: "https://finboom-cyan.vercel.app",
+    },
+  }
+
   return (
     <div className="min-h-screen bg-white dark:bg-black">
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+      />
       <header>
         <nav className="sticky top-0 z-50 glass-elevated border-b border-black/[0.04] dark:border-white/[0.06]">
           <div className="max-w-[1200px] mx-auto px-6 lg:px-10 h-14 flex items-center justify-between">

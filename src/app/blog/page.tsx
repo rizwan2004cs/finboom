@@ -8,6 +8,9 @@ import { BlogCategoryFilter } from "./category-filter"
 export const metadata: Metadata = {
   title: "Blog",
   description: "Financial tips, market updates, and product news from FinBoom.",
+  alternates: {
+    canonical: "/blog",
+  },
 }
 
 type Post = {

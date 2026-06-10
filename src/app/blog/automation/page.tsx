@@ -3,6 +3,7 @@ import { auth, clerkClient } from "@clerk/nextjs/server"
 import { redirect } from "next/navigation"
 import { getBlogAutomationStatus } from "@/lib/blog/automation-status"
 import { TriggerButton } from "./trigger-button"
+import { AddTopicForm, SkipTopicButton } from "./queue-actions"
 
 export const revalidate = 0
 
@@ -77,15 +78,25 @@ export default async function BlogAutomationPage() {
         <section className="mt-6 rounded-2xl border border-black/10 dark:border-white/10 p-5">
           <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-white">Next Topic</h2>
           {status.nextTopic ? (
-            <div className="mt-3 space-y-2">
+            <div className="mt-3 space-y-3">
               <p className="text-[#1d1d1f] dark:text-white">{status.nextTopic.title}</p>
               <p className="text-xs text-[#86868b]">
                 Source: <code>{status.nextTopic.source}</code>
               </p>
+              <SkipTopicButton topicId={status.nextTopic.id} />
             </div>
           ) : (
             <p className="mt-3 text-sm text-[#86868b]">No pending topics in queue.</p>
           )}
+        </section>
+
+        <section className="mt-6 rounded-2xl border border-black/10 dark:border-white/10 p-5">
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-white">Queue a Topic</h2>
+          <p className="mt-1 mb-4 text-sm text-[#6e6e73] dark:text-[#98989d]">
+            Add your own topic - it jumps ahead of the seeded list and will be used for the next
+            post (scheduled or manual).
+          </p>
+          <AddTopicForm />
         </section>
 
         <section className="mt-6 rounded-2xl border border-black/10 dark:border-white/10 p-5">
