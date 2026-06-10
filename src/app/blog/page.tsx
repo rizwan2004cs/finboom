@@ -4,6 +4,7 @@ import Link from "next/link"
 import Image from "next/image"
 import type { Metadata } from "next"
 import { BlogCategoryFilter } from "./category-filter"
+import { BlogSearchBox } from "./search-box"
 
 export const metadata: Metadata = {
   title: "Blog",
@@ -88,21 +89,30 @@ export const revalidate = 60
 export default async function BlogPage({
   searchParams,
 }: {
-  searchParams: Promise<{ category?: string }>
+  searchParams: Promise<{ category?: string; q?: string }>
 }) {
   const posts = await getPosts()
-  const { category: activeCategory } = await searchParams
+  const { category: activeCategory, q } = await searchParams
+  const query = q?.trim().toLowerCase() ?? ""
 
   // Get unique categories from posts
   const categories = [...new Set(posts.map((p) => p.category).filter(Boolean))]
 
-  // Filter posts by category
-  const filteredPosts = activeCategory
+  // Filter posts by category, then by search query
+  const categoryPosts = activeCategory
     ? posts.filter((p) => p.category === activeCategory)
     : posts
+  const filteredPosts = query
+    ? categoryPosts.filter(
+        (p) =>
+          p.title.toLowerCase().includes(query) ||
+          (p.excerpt ?? "").toLowerCase().includes(query)
+      )
+    : categoryPosts
 
   // Feature the newest post with a large card on the unfiltered view.
-  const featuredPost = !activeCategory && filteredPosts.length > 0 ? filteredPosts[0] : null
+  const featuredPost =
+    !activeCategory && !query && filteredPosts.length > 0 ? filteredPosts[0] : null
   const gridPosts = featuredPost ? filteredPosts.slice(1) : filteredPosts
 
   let isAdmin = false
@@ -173,12 +183,23 @@ export default async function BlogPage({
             labels={CATEGORY_LABELS}
             active={activeCategory}
           />
+          <BlogSearchBox initialQuery={q} />
+          {query && filteredPosts.length > 0 && (
+            <p className="mt-4 text-sm text-[#6e6e73] dark:text-[#98989d]">
+              {filteredPosts.length} {filteredPosts.length === 1 ? "post" : "posts"} matching
+              {" "}&ldquo;{q}&rdquo;
+            </p>
+          )}
         </div>
 
         {filteredPosts.length === 0 ? (
           <div className="text-center py-20">
             <p className="text-[#86868b] dark:text-[#98989d] text-lg">
-              {activeCategory ? "No posts in this category." : "No posts yet. Check back soon!"}
+              {query
+                ? `No posts matching "${q}".`
+                : activeCategory
+                  ? "No posts in this category."
+                  : "No posts yet. Check back soon!"}
             </p>
           </div>
         ) : (
