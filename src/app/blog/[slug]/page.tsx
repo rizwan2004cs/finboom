@@ -35,6 +35,37 @@ async function getPost(slug: string): Promise<Post | null> {
   )
 }
 
+type RelatedPost = {
+  title: string
+  slug: string
+  excerpt?: string
+  publishedAt: string
+  category?: string
+}
+
+async function getRelatedPosts(slug: string, category: string | undefined): Promise<RelatedPost[]> {
+  // Same-category posts first, then newest others to fill up to 3.
+  return sanityClient.fetch(
+    `*[_type == "post" && slug.current != $slug] {
+      title, "slug": slug.current, excerpt, publishedAt, category,
+      "sameCategory": category == $category
+    } | order(sameCategory desc, publishedAt desc)[0...3]`,
+    { slug, category: category ?? "" }
+  )
+}
+
+// Average adult reading speed ~200 wpm.
+function estimateReadingMinutes(body: Array<Record<string, unknown>>): number {
+  let words = 0
+  for (const block of body) {
+    if (block._type !== "block" || !Array.isArray(block.children)) continue
+    for (const child of block.children as Array<{ text?: string }>) {
+      if (child.text) words += child.text.split(/\s+/).filter(Boolean).length
+    }
+  }
+  return Math.max(1, Math.round(words / 200))
+}
+
 export async function generateStaticParams() {
   const posts = await sanityClient.fetch<{ slug: { current: string } }[]>(
     `*[_type == "post"]{ slug }`
@@ -219,6 +250,9 @@ export default async function BlogPostPage({
   const post = await getPost(slug)
 
   if (!post) notFound()
+
+  const relatedPosts = await getRelatedPosts(slug, post.category)
+  const readingMinutes = estimateReadingMinutes(post.body)
 
   const jsonLd = {
     "@context": "https://schema.org",
