@@ -10,6 +10,16 @@ type TriggerState =
   | { phase: "done"; title: string; slug: string; pushesSent: number }
   | { phase: "error"; message: string }
 
+// API errors can be multi-KB JSON dumps; show a readable one-liner instead.
+function summarizeError(raw: string): string {
+  const quotaHit = /429|quota|RESOURCE_EXHAUSTED/i.test(raw)
+  if (quotaHit) {
+    return "The AI model hit its rate limit. Wait a minute and try again - if it persists, the free-tier quota for today may be used up."
+  }
+  const firstSentence = raw.split(/[.\n]/, 1)[0]?.trim() || "Failed to generate post."
+  return firstSentence.length > 180 ? `${firstSentence.slice(0, 180)}...` : firstSentence
+}
+
 export function TriggerButton() {
   const router = useRouter()
   const [state, setState] = useState<TriggerState>({ phase: "idle" })
@@ -26,7 +36,7 @@ export function TriggerButton() {
       const data = await res.json()
 
       if (!res.ok) {
-        setState({ phase: "error", message: data.error || "Failed to generate post." })
+        setState({ phase: "error", message: summarizeError(data.error || "Failed to generate post.") })
         return
       }
 

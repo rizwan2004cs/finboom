@@ -315,6 +315,10 @@ export default async function BlogPostPage({
               day: "numeric",
             })}
           </time>
+          <span className="text-[#86868b] dark:text-[#636366]">·</span>
+          <span className="text-xs text-[#86868b] dark:text-[#636366] font-mono">
+            {readingMinutes} min read
+          </span>
         </div>
 
         {/* Title */}
@@ -368,8 +372,42 @@ export default async function BlogPostPage({
           <PortableText value={post.body} components={portableTextComponents} />
         </div>
 
+        {/* Related posts */}
+        {relatedPosts.length > 0 && (
+          <section className="mt-16 pt-8 border-t border-black/[0.06] dark:border-white/[0.06]">
+            <h2 className="text-xl font-bold text-[#1d1d1f] dark:text-white font-serif">
+              Keep Reading
+            </h2>
+            <div className="mt-5 grid gap-4 sm:grid-cols-3">
+              {relatedPosts.map((related) => (
+                <Link
+                  key={related.slug}
+                  href={`/blog/${related.slug}`}
+                  className="group rounded-2xl border border-black/10 dark:border-white/10 p-4 transition-all duration-200 hover:border-black/20 dark:hover:border-white/20 hover:-translate-y-0.5"
+                >
+                  {related.category && (
+                    <span className="text-[10px] font-medium text-accent uppercase tracking-wider font-mono">
+                      {CATEGORY_LABELS[related.category] || related.category}
+                    </span>
+                  )}
+                  <p className="mt-1.5 text-[15px] font-semibold leading-snug text-[#1d1d1f] dark:text-white group-hover:text-accent transition-colors line-clamp-3">
+                    {related.title}
+                  </p>
+                  <time className="mt-2 block text-xs text-[#86868b] dark:text-[#636366] font-mono">
+                    {new Date(related.publishedAt).toLocaleDateString("en-IN", {
+                      month: "short",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                  </time>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
+
         {/* Back to blog */}
-        <div className="mt-16 pt-8 border-t border-black/[0.06] dark:border-white/[0.06]">
+        <div className="mt-12 pt-8 border-t border-black/[0.06] dark:border-white/[0.06]">
           <Link
             href="/blog"
             className="text-sm text-accent hover:opacity-80 transition-opacity font-medium"
