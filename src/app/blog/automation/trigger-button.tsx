@@ -10,8 +10,12 @@ type TriggerState =
   | { phase: "done"; title: string; slug: string; pushesSent: number }
   | { phase: "error"; message: string }
 
-// API errors can be multi-KB JSON dumps; show a readable one-liner instead.
+// API errors can be multi-KB JSON dumps; show a readable summary instead.
 function summarizeError(raw: string): string {
+  // The aggregate provider error carries per-provider reasons - keep them.
+  if (raw.startsWith("All AI providers failed")) {
+    return raw.length > 400 ? `${raw.slice(0, 400)}...` : raw
+  }
   const quotaHit = /429|quota|RESOURCE_EXHAUSTED/i.test(raw)
   if (quotaHit) {
     return "The AI model hit its rate limit. Wait a minute and try again - if it persists, the free-tier quota for today may be used up."
