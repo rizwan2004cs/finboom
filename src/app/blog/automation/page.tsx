@@ -2,6 +2,7 @@ import Link from "next/link"
 import { auth, clerkClient } from "@clerk/nextjs/server"
 import { redirect } from "next/navigation"
 import { getBlogAutomationStatus } from "@/lib/blog/automation-status"
+import { TriggerButton } from "./trigger-button"
 
 export const revalidate = 0
 
@@ -65,6 +66,15 @@ export default async function BlogAutomationPage() {
         </div>
 
         <section className="mt-8 rounded-2xl border border-black/10 dark:border-white/10 p-5">
+          <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-white">Manual Trigger</h2>
+          <p className="mt-1 mb-4 text-sm text-[#6e6e73] dark:text-[#98989d]">
+            Run the daily pipeline immediately: picks the next topic, generates the post, publishes
+            it, and notifies subscribers. Bypasses the 24-hour limit.
+          </p>
+          <TriggerButton />
+        </section>
+
+        <section className="mt-6 rounded-2xl border border-black/10 dark:border-white/10 p-5">
           <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-white">Next Topic</h2>
           {status.nextTopic ? (
             <div className="mt-3 space-y-2">

@@ -4,6 +4,10 @@ import { useEffect, useState } from "react"
 import { useUser as useClerkUser, useAuth as useClerkAuth } from "@clerk/nextjs"
 
 const CACHED_USER_KEY = "finboom-cached-user"
+// If Clerk hasn't loaded after this long (flaky network, captive portal,
+// PWA cold start), fall back to the cached identity instead of showing
+// the user a logged-out state.
+const CLERK_LOAD_GRACE_MS = 4000
 
 type AuthUser = {
   id: string
@@ -23,9 +27,46 @@ function getCachedUser(): AuthUser | null {
   }
 }
 
+function clearCachedUser() {
+  try {
+    localStorage.removeItem(CACHED_USER_KEY)
+  } catch {
+    // storage unavailable - nothing to clear
+  }
+}
+
+// Returns the cached user while Clerk is unable to load (offline or slow
+// network). Clears itself as soon as Clerk loads so a real signed-out
+// state is never masked by a stale cache.
+function useCachedFallback(isClerkLoaded: boolean): AuthUser | null {
+  const [fallback, setFallback] = useState<AuthUser | null>(null)
+
+  useEffect(() => {
+    if (isClerkLoaded) {
+      setFallback(null)
+      return
+    }
+
+    const applyCache = () => setFallback(getCachedUser())
+
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      applyCache()
+    }
+
+    const timer = setTimeout(applyCache, CLERK_LOAD_GRACE_MS)
+    window.addEventListener("offline", applyCache)
+    return () => {
+      clearTimeout(timer)
+      window.removeEventListener("offline", applyCache)
+    }
+  }, [isClerkLoaded])
+
+  return fallback
+}
+
 export function useUser() {
   const { user, isLoaded, isSignedIn } = useClerkUser()
-  const [offlineUser, setOfflineUser] = useState<AuthUser | null>(null)
+  const fallbackUser = useCachedFallback(isLoaded)
 
   const mapped: AuthUser | null = user
     ? {
@@ -37,37 +78,36 @@ export function useUser() {
       }
     : null
 
-  // Cache user to localStorage when online and authenticated
+  // Cache user to localStorage when online and authenticated, so the PWA
+  // can restore the session UI when Clerk is unreachable.
   useEffect(() => {
     if (mapped) {
-      localStorage.setItem(CACHED_USER_KEY, JSON.stringify(mapped))
+      try {
+        localStorage.setItem(CACHED_USER_KEY, JSON.stringify(mapped))
+      } catch {
+        // storage unavailable - skip caching
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mapped?.id])
 
-  // When Clerk can't load (offline), fall back to cached user
-  useEffect(() => {
-    if (!isLoaded && !navigator.onLine) {
-      const cached = getCachedUser()
-      if (cached) setOfflineUser(cached)
-    }
-  }, [isLoaded])
-
-  // If Clerk loaded, use Clerk data. If offline and Clerk can't load, use cached.
-  const effectiveUser = mapped ?? offlineUser
-  const effectiveSignedIn = isSignedIn ?? (offlineUser !== null)
-  const effectiveLoaded = isLoaded || offlineUser !== null
+  const effectiveUser = mapped ?? fallbackUser
+  const effectiveSignedIn = isSignedIn ?? fallbackUser !== null
+  const effectiveLoaded = isLoaded || fallbackUser !== null
 
   return { user: effectiveUser, isLoaded: effectiveLoaded, isSignedIn: effectiveSignedIn }
 }
 
 export function useAuth() {
   const { isSignedIn, isLoaded, signOut } = useClerkAuth()
-  const isOfflineWithCache = !isLoaded && !navigator.onLine && getCachedUser() !== null
+  const fallbackUser = useCachedFallback(isLoaded)
+  const offlineSignedIn = !isLoaded && fallbackUser !== null
+
   return {
-    isSignedIn: (isSignedIn ?? false) || isOfflineWithCache,
-    isLoaded: isLoaded || isOfflineWithCache,
+    isSignedIn: (isSignedIn ?? false) || offlineSignedIn,
+    isLoaded: isLoaded || offlineSignedIn,
     signOut: async () => {
-      localStorage.removeItem(CACHED_USER_KEY)
+      clearCachedUser()
       await signOut()
       window.location.href = "/"
     },
