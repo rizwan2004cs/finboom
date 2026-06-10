@@ -2,6 +2,7 @@ import Link from "next/link"
 import { auth, clerkClient } from "@clerk/nextjs/server"
 import { redirect } from "next/navigation"
 import { getBlogAutomationStatus } from "@/lib/blog/automation-status"
+import { listPendingQueueTopics } from "@/lib/blog/topic-queue"
 import { TriggerButton } from "./trigger-button"
 import { AddTopicForm, SkipTopicButton } from "./queue-actions"
 
@@ -22,6 +23,7 @@ export default async function BlogAutomationPage() {
   }
 
   const status = await getBlogAutomationStatus()
+  const upcomingTopics = await listPendingQueueTopics(10)
 
   return (
     <div className="min-h-screen bg-white dark:bg-black">
@@ -98,6 +100,25 @@ export default async function BlogAutomationPage() {
           </p>
           <AddTopicForm />
         </section>
+
+        {upcomingTopics.length > 1 && (
+          <section className="mt-6 rounded-2xl border border-black/10 dark:border-white/10 p-5">
+            <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-white">Upcoming Topics</h2>
+            <p className="mt-1 text-sm text-[#6e6e73] dark:text-[#98989d]">
+              The next {upcomingTopics.length} topics in queue order.
+            </p>
+            <ol className="mt-4 space-y-2">
+              {upcomingTopics.map((topic, index) => (
+                <li key={topic.id} className="flex items-start gap-3 text-[15px]">
+                  <span className="mt-0.5 w-6 shrink-0 text-right text-sm tabular-nums text-[#86868b]">
+                    {index + 1}.
+                  </span>
+                  <span className="text-[#1d1d1f] dark:text-white">{topic.title}</span>
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
 
         <section className="mt-6 rounded-2xl border border-black/10 dark:border-white/10 p-5">
           <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-white">Last Auto Post</h2>
