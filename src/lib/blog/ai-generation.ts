@@ -182,6 +182,14 @@ const GEMINI_MODELS = [
   "gemini-flash-latest",
 ].filter((model): model is string => Boolean(model))
 
+// Groq is the cross-provider backstop when every Gemini model is
+// rate-limited or down. Its API is OpenAI-compatible.
+const GROQ_MODELS = [
+  process.env.GROQ_MODEL,
+  "llama-3.3-70b-versatile",
+  "llama-3.1-8b-instant",
+].filter((model): model is string => Boolean(model))
+
 function getGeminiClient(modelName: string) {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) {
@@ -191,47 +199,109 @@ function getGeminiClient(modelName: string) {
   return genAI.getGenerativeModel({ model: modelName })
 }
 
+// Transient availability/capacity failures worth retrying on another
+// model or provider. Anything else (bad request, auth) is a real bug
+// and should surface immediately.
 function isModelUnavailableError(err: unknown) {
   const message = err instanceof Error ? err.message : String(err)
-  return /\b(429|404|quota|not found|RESOURCE_EXHAUSTED)\b/i.test(message)
+  return /\b(429|404|500|503|quota|not found|unavailable|overloaded|high demand|RESOURCE_EXHAUSTED|INTERNAL)\b/i.test(
+    message
+  )
 }
 
-type GenerateRequest = Parameters<ReturnType<typeof getGeminiClient>["generateContent"]>[0]
+type GenerateOptions = {
+  temperature: number
+  maxOutputTokens: number
+}
 
-async function generateWithFallback(request: GenerateRequest) {
+async function generateWithGemini(prompt: string, options: GenerateOptions): Promise<string> {
   let lastError: unknown = null
   for (const modelName of GEMINI_MODELS) {
     try {
       const model = getGeminiClient(modelName)
-      return await model.generateContent(request)
+      const result = await model.generateContent({
+        contents: [{ role: "user", parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: options.temperature,
+          maxOutputTokens: options.maxOutputTokens,
+          responseMimeType: "application/json",
+        },
+      })
+      return result.response.text()
     } catch (err) {
       lastError = err
       if (!isModelUnavailableError(err)) throw err
     }
   }
-  throw lastError instanceof Error
-    ? lastError
-    : new Error("All Gemini models failed or are over quota.")
+  throw lastError instanceof Error ? lastError : new Error("All Gemini models are unavailable.")
+}
+
+async function generateWithGroq(prompt: string, options: GenerateOptions): Promise<string> {
+  const apiKey = process.env.GROQ_API_KEY
+  if (!apiKey) {
+    throw new Error("GROQ_API_KEY is not configured.")
+  }
+
+  let lastError: unknown = null
+  for (const modelName of GROQ_MODELS) {
+    try {
+      const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: modelName,
+          messages: [{ role: "user", content: prompt }],
+          temperature: options.temperature,
+          max_tokens: options.maxOutputTokens,
+          response_format: { type: "json_object" },
+        }),
+      })
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.error?.message || `Groq request failed (${response.status})`)
+      }
+      const text = data.choices?.[0]?.message?.content
+      if (!text) {
+        throw new Error("Groq returned an empty response.")
+      }
+      return text
+    } catch (err) {
+      lastError = err
+      if (!isModelUnavailableError(err)) throw err
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error("All Groq models are unavailable.")
+}
+
+// Gemini first (best long-form quality), Groq as the cross-provider
+// backstop so a Gemini outage never kills the daily post.
+async function generateJsonText(prompt: string, options: GenerateOptions): Promise<string> {
+  try {
+    return await generateWithGemini(prompt, options)
+  } catch (geminiErr) {
+    if (!process.env.GROQ_API_KEY) throw geminiErr
+    try {
+      return await generateWithGroq(prompt, options)
+    } catch (groqErr) {
+      const gemini = geminiErr instanceof Error ? geminiErr.message : String(geminiErr)
+      const groq = groqErr instanceof Error ? groqErr.message : String(groqErr)
+      throw new Error(`All providers failed. Gemini: ${gemini} | Groq: ${groq}`)
+    }
+  }
 }
 
 export async function generateBlogFromTopic(topic: string): Promise<GeneratedBlogPost> {
-  const result = await generateWithFallback({
-    contents: [
-      {
-        role: "user",
-        parts: [{ text: `${BLOG_PROMPT}\n\nTOPIC: ${topic.trim()}` }],
-      },
-    ],
-    generationConfig: {
-      temperature: 0.7,
-      // Gemini 2.5 models spend "thinking" tokens from this budget too,
-      // so leave generous headroom above the article length itself.
-      maxOutputTokens: 16384,
-      responseMimeType: "application/json",
-    },
+  // Gemini 2.5 models spend "thinking" tokens from this budget too,
+  // so leave generous headroom above the article length itself.
+  const text = await generateJsonText(`${BLOG_PROMPT}\n\nTOPIC: ${topic.trim()}`, {
+    temperature: 0.7,
+    maxOutputTokens: 16384,
   })
 
-  const parsed = parseJsonSafely<Partial<GeneratedBlogPost>>(result.response.text())
+  const parsed = parseJsonSafely<Partial<GeneratedBlogPost>>(text)
   if (!parsed) {
     throw new Error("Failed to parse AI response.")
   }
@@ -252,25 +322,15 @@ export async function generateBlogFromTopic(topic: string): Promise<GeneratedBlo
 }
 
 export async function generateTopicFallbacks(existingTitles: string[]): Promise<string[]> {
-  const result = await generateWithFallback({
-    contents: [
-      {
-        role: "user",
-        parts: [
-          {
-            text: `${TOPIC_FALLBACK_PROMPT}\n\nExisting titles to avoid:\n${existingTitles.join("\n")}`,
-          },
-        ],
-      },
-    ],
-    generationConfig: {
+  const text = await generateJsonText(
+    `${TOPIC_FALLBACK_PROMPT}\n\nExisting titles to avoid:\n${existingTitles.join("\n")}`,
+    {
       temperature: 0.9,
       maxOutputTokens: 4096,
-      responseMimeType: "application/json",
-    },
-  })
+    }
+  )
 
-  const parsed = parseJsonSafely<{ topics?: unknown }>(result.response.text())
+  const parsed = parseJsonSafely<{ topics?: unknown }>(text)
   if (!parsed || !Array.isArray(parsed.topics)) {
     return []
   }
