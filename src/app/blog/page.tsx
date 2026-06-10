@@ -37,6 +37,44 @@ const CATEGORY_COLORS: Record<string, string> = {
   guides: "bg-accent/10 text-accent",
 }
 
+// Visual stand-in for posts without a hero image (auto-generated posts).
+const CATEGORY_GRADIENTS: Record<string, string> = {
+  guides: "from-sky-500/25 via-indigo-500/15 to-transparent",
+  tips: "from-emerald-500/25 via-teal-500/15 to-transparent",
+  market: "from-amber-500/25 via-orange-500/15 to-transparent",
+  product: "from-fuchsia-500/25 via-purple-500/15 to-transparent",
+}
+
+function CardArtwork({ post, tall = false }: { post: Post; tall?: boolean }) {
+  const height = tall ? "h-full min-h-[220px]" : "h-48"
+  if (post.mainImage) {
+    return (
+      <div className={`relative ${height} overflow-hidden`}>
+        <Image
+          src={urlFor(post.mainImage).width(600).height(400).url()}
+          alt={post.title}
+          fill
+          className="object-cover transition-transform duration-500 group-hover:scale-105"
+        />
+      </div>
+    )
+  }
+  return (
+    <div
+      className={`relative ${height} overflow-hidden bg-gradient-to-br ${
+        CATEGORY_GRADIENTS[post.category] || "from-slate-500/20 via-slate-400/10 to-transparent"
+      }`}
+    >
+      <span
+        aria-hidden
+        className="absolute -bottom-5 left-4 select-none font-serif text-[110px] font-bold leading-none text-black/[0.08] dark:text-white/[0.08] transition-transform duration-500 group-hover:scale-105"
+      >
+        {post.title.charAt(0)}
+      </span>
+    </div>
+  )
+}
+
 async function getPosts(): Promise<Post[]> {
   return sanityClient.fetch(
     `*[_type == "post"] | order(publishedAt desc) {
@@ -62,6 +100,10 @@ export default async function BlogPage({
   const filteredPosts = activeCategory
     ? posts.filter((p) => p.category === activeCategory)
     : posts
+
+  // Feature the newest post with a large card on the unfiltered view.
+  const featuredPost = !activeCategory && filteredPosts.length > 0 ? filteredPosts[0] : null
+  const gridPosts = featuredPost ? filteredPosts.slice(1) : filteredPosts
 
   let isAdmin = false
   const { userId } = await auth()
@@ -140,48 +182,77 @@ export default async function BlogPage({
             </p>
           </div>
         ) : (
-          <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
-            {filteredPosts.map((post) => (
+          <>
+            {featuredPost && (
               <Link
-                key={post._id}
-                href={`/blog/${post.slug.current}`}
-                className="group liquid-glass overflow-hidden"
+                href={`/blog/${featuredPost.slug.current}`}
+                className="group liquid-glass mb-10 grid overflow-hidden md:grid-cols-2"
               >
-                {post.mainImage && (
-                  <div className="relative h-48 overflow-hidden">
-                    <Image
-                      src={urlFor(post.mainImage).width(600).height(400).url()}
-                      alt={post.title}
-                      fill
-                      className="object-cover transition-transform duration-500 group-hover:scale-105"
-                    />
-                  </div>
-                )}
-                <div className="p-5">
-                  {post.category && (
-                    <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium mb-3 ${CATEGORY_COLORS[post.category] || "bg-gray-100 text-gray-600"}`}>
-                      {CATEGORY_LABELS[post.category] || post.category}
+                <CardArtwork post={featuredPost} tall />
+                <div className="flex flex-col justify-center p-6 md:p-8">
+                  <div className="flex items-center gap-2.5">
+                    <span className="inline-block rounded-full bg-accent px-2.5 py-0.5 text-xs font-semibold text-white">
+                      Latest
                     </span>
-                  )}
-                  <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-white group-hover:text-accent transition-colors line-clamp-2">
-                    {post.title}
+                    {featuredPost.category && (
+                      <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${CATEGORY_COLORS[featuredPost.category] || "bg-gray-100 text-gray-600"}`}>
+                        {CATEGORY_LABELS[featuredPost.category] || featuredPost.category}
+                      </span>
+                    )}
+                  </div>
+                  <h2 className="mt-4 font-serif text-2xl md:text-3xl font-bold leading-tight text-[#1d1d1f] dark:text-white group-hover:text-accent transition-colors">
+                    {featuredPost.title}
                   </h2>
-                  {post.excerpt && (
-                    <p className="mt-2 text-sm text-[#6e6e73] dark:text-[#98989d] line-clamp-2">
-                      {post.excerpt}
+                  {featuredPost.excerpt && (
+                    <p className="mt-3 text-[15px] text-[#6e6e73] dark:text-[#98989d] line-clamp-3">
+                      {featuredPost.excerpt}
                     </p>
                   )}
-                  <time className="mt-3 block text-xs text-[#86868b] dark:text-[#636366] font-mono">
-                    {new Date(post.publishedAt).toLocaleDateString("en-IN", {
+                  <time className="mt-4 block text-xs text-[#86868b] dark:text-[#636366] font-mono">
+                    {new Date(featuredPost.publishedAt).toLocaleDateString("en-IN", {
                       year: "numeric",
-                      month: "short",
+                      month: "long",
                       day: "numeric",
                     })}
                   </time>
                 </div>
               </Link>
-            ))}
-          </div>
+            )}
+
+            <div className="grid gap-8 md:grid-cols-2 lg:grid-cols-3">
+              {gridPosts.map((post) => (
+                <Link
+                  key={post._id}
+                  href={`/blog/${post.slug.current}`}
+                  className="group liquid-glass overflow-hidden"
+                >
+                  <CardArtwork post={post} />
+                  <div className="p-5">
+                    {post.category && (
+                      <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium mb-3 ${CATEGORY_COLORS[post.category] || "bg-gray-100 text-gray-600"}`}>
+                        {CATEGORY_LABELS[post.category] || post.category}
+                      </span>
+                    )}
+                    <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-white group-hover:text-accent transition-colors line-clamp-2">
+                      {post.title}
+                    </h2>
+                    {post.excerpt && (
+                      <p className="mt-2 text-sm text-[#6e6e73] dark:text-[#98989d] line-clamp-2">
+                        {post.excerpt}
+                      </p>
+                    )}
+                    <time className="mt-3 block text-xs text-[#86868b] dark:text-[#636366] font-mono">
+                      {new Date(post.publishedAt).toLocaleDateString("en-IN", {
+                        year: "numeric",
+                        month: "short",
+                        day: "numeric",
+                      })}
+                    </time>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </>
         )}
       </main>
     </div>
