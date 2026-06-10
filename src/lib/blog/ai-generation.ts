@@ -158,18 +158,51 @@ Rules:
 - Each topic should be specific and blog-ready
 - Zero emojis`
 
+// LLMs sometimes emit raw newlines/tabs inside JSON string values,
+// which is invalid JSON. Escape control characters that appear inside
+// strings while leaving structural whitespace untouched.
+function escapeControlCharsInStrings(text: string): string {
+  let result = ""
+  let inString = false
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i]
+    if (inString && char === "\\") {
+      result += char + (text[i + 1] ?? "")
+      i += 1
+      continue
+    }
+    if (char === '"') {
+      inString = !inString
+      result += char
+      continue
+    }
+    if (inString && char.charCodeAt(0) < 0x20) {
+      result +=
+        char === "\n" ? "\\n" : char === "\r" ? "\\r" : char === "\t" ? "\\t" : ""
+      continue
+    }
+    result += char
+  }
+  return result
+}
+
 function parseJsonSafely<T>(text: string): T | null {
-  try {
-    return JSON.parse(text) as T
-  } catch {
-    const jsonMatch = text.match(/\{[\s\S]*\}/)
-    if (!jsonMatch) return null
+  const candidates = [text]
+  const jsonMatch = text.match(/\{[\s\S]*\}/)
+  if (jsonMatch) candidates.push(jsonMatch[0])
+
+  for (const candidate of candidates) {
     try {
-      return JSON.parse(jsonMatch[0]) as T
+      return JSON.parse(candidate) as T
     } catch {
-      return null
+      try {
+        return JSON.parse(escapeControlCharsInStrings(candidate)) as T
+      } catch {
+        // try the next candidate
+      }
     }
   }
+  return null
 }
 
 // Models to try in order. Older models get dropped from the free tier
@@ -204,7 +237,7 @@ function getGeminiClient(modelName: string) {
 // and should surface immediately.
 function isModelUnavailableError(err: unknown) {
   const message = err instanceof Error ? err.message : String(err)
-  return /\b(429|404|500|503|quota|not found|unavailable|overloaded|high demand|RESOURCE_EXHAUSTED|INTERNAL)\b/i.test(
+  return /\b(429|404|500|503|quota|not found|unavailable|overloaded|high demand|truncated|RESOURCE_EXHAUSTED|INTERNAL)\b/i.test(
     message
   )
 }
@@ -225,8 +258,16 @@ async function generateWithGemini(prompt: string, options: GenerateOptions): Pro
           temperature: options.temperature,
           maxOutputTokens: options.maxOutputTokens,
           responseMimeType: "application/json",
+          // Gemini 2.5 models bill "thinking" tokens against
+          // maxOutputTokens, which can truncate long JSON mid-stream.
+          // The SDK passes unknown config fields through to the API.
+          ...({ thinkingConfig: { thinkingBudget: 0 } } as Record<string, unknown>),
         },
       })
+      const finishReason = result.response.candidates?.[0]?.finishReason
+      if (finishReason === "MAX_TOKENS") {
+        throw new Error(`Gemini response truncated (MAX_TOKENS) on ${modelName}.`)
+      }
       return result.response.text()
     } catch (err) {
       lastError = err
@@ -242,6 +283,12 @@ async function generateWithGroq(prompt: string, options: GenerateOptions): Promi
     throw new Error("GROQ_API_KEY is not configured.")
   }
 
+  // Per-model completion caps; exceeding them is a 400, not a fallback.
+  const GROQ_MAX_COMPLETION: Record<string, number> = {
+    "llama-3.3-70b-versatile": 32768,
+    "llama-3.1-8b-instant": 8192,
+  }
+
   let lastError: unknown = null
   for (const modelName of GROQ_MODELS) {
     try {
@@ -255,13 +302,16 @@ async function generateWithGroq(prompt: string, options: GenerateOptions): Promi
           model: modelName,
           messages: [{ role: "user", content: prompt }],
           temperature: options.temperature,
-          max_tokens: options.maxOutputTokens,
+          max_tokens: Math.min(options.maxOutputTokens, GROQ_MAX_COMPLETION[modelName] ?? 8192),
           response_format: { type: "json_object" },
         }),
       })
       const data = await response.json()
       if (!response.ok) {
         throw new Error(data.error?.message || `Groq request failed (${response.status})`)
+      }
+      if (data.choices?.[0]?.finish_reason === "length") {
+        throw new Error(`Groq response truncated (length) on ${modelName}.`)
       }
       const text = data.choices?.[0]?.message?.content
       if (!text) {
@@ -303,7 +353,8 @@ export async function generateBlogFromTopic(topic: string): Promise<GeneratedBlo
 
   const parsed = parseJsonSafely<Partial<GeneratedBlogPost>>(text)
   if (!parsed) {
-    throw new Error("Failed to parse AI response.")
+    const tail = text.slice(-160).replace(/\s+/g, " ")
+    throw new Error(`Failed to parse AI response (${text.length} chars, ends with: ...${tail})`)
   }
 
   const category = parsed.category ?? "guides"
