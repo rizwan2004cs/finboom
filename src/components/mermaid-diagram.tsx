@@ -32,6 +32,8 @@ export default function MermaidDiagram({ code, zoomable = false }: { code: strin
 
         mermaid.initialize({
           startOnLoad: false,
+          // Never inject mermaid's own error banner into the page.
+          suppressErrorRendering: true,
           theme: isDark ? "base" : "neutral",
           fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif",
           ...(isDark && {
@@ -97,6 +99,9 @@ export default function MermaidDiagram({ code, zoomable = false }: { code: strin
             },
           }),
         })
+        // Validate before rendering - invalid AI-generated diagrams are
+        // dropped silently rather than shown as errors to readers.
+        await mermaid.parse(code)
         const id = `mermaid-${Math.random().toString(36).slice(2, 9)}`
         const { svg: rendered } = await mermaid.render(id, code)
         if (!cancelled) setSvg(rendered)
@@ -110,11 +115,7 @@ export default function MermaidDiagram({ code, zoomable = false }: { code: strin
   }, [code])
 
   if (error) {
-    return (
-      <pre className="my-6 p-4 rounded-xl bg-[#f5f5f7] dark:bg-[#1c1c1e] text-sm text-[#86868b] overflow-x-auto">
-        {code}
-      </pre>
-    )
+    return null
   }
 
   if (!svg) {

@@ -35,15 +35,15 @@ MARKDOWN RULES (the blog engine ONLY supports these):
 - - bullet lists (dash only, not asterisk)
 - 1. numbered lists
 - ![alt text](image-url) for images - use 3-5 relevant images throughout the post:
-  - Unsplash: https://images.unsplash.com/photo-{id} (use real popular finance/lifestyle photo IDs)
-  - Pexels: https://images.pexels.com/photos/{id}/pexels-photo-{id}.jpeg
+  - ONLY use this exact URL pattern: https://picsum.photos/seed/{one-lowercase-word}/1200/675
+  - Pick a different seed word per image related to the section (e.g. savings, growth, family)
+  - NEVER use Unsplash or Pexels URLs - they break
 - | tables | with | pipes | for comparisons (include header row and separator row)
-- \`\`\`mermaid code blocks - use generously to visualize concepts:
-  - Flowcharts: graph TD / graph LR
-  - Pie charts: pie title "Title"
-  - Bar charts: xychart-beta (x-axis, y-axis, bar, line)
-  - Timelines: timeline
-  - Quadrant charts: quadrantChart
+- \`\`\`mermaid code blocks (1-2 per post) - ONLY these two types, nothing else:
+  - Flowcharts: "graph TD" with simple A[Label] --> B[Label] nodes
+  - Pie charts: pie title Title followed by "Label" : value lines
+  - STRICT: plain ASCII only (--> arrows, straight quotes), no parentheses or special
+    characters inside node labels, no xychart, no timeline, no quadrantChart
 - Blank lines between paragraphs
 
 DO NOT USE: links, ---, ~~strikethrough~~, *italic*, nested lists, HTML, emojis
@@ -64,7 +64,7 @@ REFERENCE STYLE EXAMPLE (match this depth, flow, and formatting):
 ---
 ## What is the FIRE Movement?
 
-![Financial independence and early retirement concept](https://images.unsplash.com/photo-1579621970795-87facc2f976d)
+![Financial independence and early retirement concept](https://picsum.photos/seed/freedom/1200/675)
 
 Imagine waking up one day and realizing:
 

@@ -7,6 +7,7 @@ import type { Metadata } from "next"
 import MermaidDiagram from "@/components/mermaid-diagram"
 import { ShareButton } from "./share-button"
 import { ZoomableImage } from "./zoomable-image"
+import { SafeExternalImage } from "./safe-external-image"
 
 type Post = {
   _id: string
@@ -120,16 +121,7 @@ const portableTextComponents = {
       )
     },
     externalImage: ({ value }: { value: { url: string; alt?: string } }) => (
-      <ZoomableImage src={value.url} alt={value.alt || ""}>
-        <div className="my-8 rounded-xl overflow-hidden">
-          <img
-            src={value.url}
-            alt={value.alt || ""}
-            className="w-full rounded-xl"
-            loading="lazy"
-          />
-        </div>
-      </ZoomableImage>
+      <SafeExternalImage url={value.url} alt={value.alt || ""} />
     ),
     mermaid: ({ value }: { value: { code: string } }) => (
       <MermaidDiagram code={value.code} zoomable />
