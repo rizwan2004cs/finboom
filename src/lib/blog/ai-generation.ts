@@ -172,18 +172,50 @@ function parseJsonSafely<T>(text: string): T | null {
   }
 }
 
-function getGeminiClient() {
+// Models to try in order. Older models get dropped from the free tier
+// (gemini-2.0-flash now has a free-tier limit of 0), so a quota or
+// not-found error on one model falls through to the next.
+const GEMINI_MODELS = [
+  process.env.GEMINI_MODEL,
+  "gemini-2.5-flash",
+  "gemini-2.5-flash-lite",
+  "gemini-flash-latest",
+].filter((model): model is string => Boolean(model))
+
+function getGeminiClient(modelName: string) {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY is not configured.")
   }
   const genAI = new GoogleGenerativeAI(apiKey)
-  return genAI.getGenerativeModel({ model: "gemini-2.0-flash" })
+  return genAI.getGenerativeModel({ model: modelName })
+}
+
+function isModelUnavailableError(err: unknown) {
+  const message = err instanceof Error ? err.message : String(err)
+  return /\b(429|404|quota|not found|RESOURCE_EXHAUSTED)\b/i.test(message)
+}
+
+type GenerateRequest = Parameters<ReturnType<typeof getGeminiClient>["generateContent"]>[0]
+
+async function generateWithFallback(request: GenerateRequest) {
+  let lastError: unknown = null
+  for (const modelName of GEMINI_MODELS) {
+    try {
+      const model = getGeminiClient(modelName)
+      return await model.generateContent(request)
+    } catch (err) {
+      lastError = err
+      if (!isModelUnavailableError(err)) throw err
+    }
+  }
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("All Gemini models failed or are over quota.")
 }
 
 export async function generateBlogFromTopic(topic: string): Promise<GeneratedBlogPost> {
-  const model = getGeminiClient()
-  const result = await model.generateContent({
+  const result = await generateWithFallback({
     contents: [
       {
         role: "user",
@@ -192,7 +224,9 @@ export async function generateBlogFromTopic(topic: string): Promise<GeneratedBlo
     ],
     generationConfig: {
       temperature: 0.7,
-      maxOutputTokens: 8192,
+      // Gemini 2.5 models spend "thinking" tokens from this budget too,
+      // so leave generous headroom above the article length itself.
+      maxOutputTokens: 16384,
       responseMimeType: "application/json",
     },
   })
@@ -218,8 +252,7 @@ export async function generateBlogFromTopic(topic: string): Promise<GeneratedBlo
 }
 
 export async function generateTopicFallbacks(existingTitles: string[]): Promise<string[]> {
-  const model = getGeminiClient()
-  const result = await model.generateContent({
+  const result = await generateWithFallback({
     contents: [
       {
         role: "user",
@@ -232,7 +265,7 @@ export async function generateTopicFallbacks(existingTitles: string[]): Promise<
     ],
     generationConfig: {
       temperature: 0.9,
-      maxOutputTokens: 2048,
+      maxOutputTokens: 4096,
       responseMimeType: "application/json",
     },
   })
