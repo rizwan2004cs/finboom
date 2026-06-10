@@ -3,13 +3,15 @@ import webpush from "web-push"
 import { sanityClient } from "@/lib/sanity"
 import { generateBlogFromTopic, generateTopicFallbacks } from "@/lib/blog/ai-generation"
 import { markdownToPortableText, slugify } from "@/lib/blog/markdown-to-portable-text"
-import { normalizeTopic } from "@/lib/blog/topic-utils"
+import { isTooSimilar, normalizeTopic } from "@/lib/blog/topic-utils"
 import {
   addFallbackTopicsToQueue,
   getNextPendingTopicFromQueue,
   getQueueHealth,
+  listPendingQueueTopics,
   markQueueTopicPosted,
   seedTopicQueueIfNeeded,
+  skipQueueTopic,
   syncQueueWithPublishedTitles,
 } from "@/lib/blog/topic-queue"
 
@@ -91,7 +93,7 @@ async function findAiFallbackTopic(existingTitles: string[]): Promise<SelectedTo
     aiCandidates = []
   }
   for (const topic of aiCandidates) {
-    if (!postedSet.has(normalizeTopic(topic))) {
+    if (!postedSet.has(normalizeTopic(topic)) && !isTooSimilar(topic, existingTitles)) {
       return { title: topic, source: "ai_fallback" }
     }
   }
@@ -103,8 +105,21 @@ async function selectTopic(existingTitles: string[]): Promise<SelectedTopic | nu
   await seedTopicQueueIfNeeded()
   await syncQueueWithPublishedTitles(existingTitles)
 
+  // Walk the queue head, auto-skipping topics too similar to something
+  // already published (prevents near-duplicate posts).
+  const pendingTopics = await listPendingQueueTopics(10)
+  for (const pending of pendingTopics) {
+    if (isTooSimilar(pending.title, existingTitles)) {
+      await skipQueueTopic(pending.id)
+      continue
+    }
+    return { title: pending.title, source: "db_queue", queueId: pending.id }
+  }
+
+  // Fall back to the single-topic fetch in case the queue has more
+  // pending rows beyond the similarity-checked window.
   const queuedTopic = await getNextPendingTopicFromQueue()
-  if (queuedTopic) {
+  if (queuedTopic && !isTooSimilar(queuedTopic.title, existingTitles)) {
     return { title: queuedTopic.title, source: "db_queue", queueId: queuedTopic.id }
   }
 
@@ -115,7 +130,9 @@ async function selectTopic(existingTitles: string[]): Promise<SelectedTopic | nu
     aiCandidates = []
   }
   const postedSet = new Set(existingTitles.map((title) => normalizeTopic(title)))
-  const queueableCandidates = aiCandidates.filter((topic) => !postedSet.has(normalizeTopic(topic)))
+  const queueableCandidates = aiCandidates.filter(
+    (topic) => !postedSet.has(normalizeTopic(topic)) && !isTooSimilar(topic, existingTitles)
+  )
   if (queueableCandidates.length > 0) {
     await addFallbackTopicsToQueue(queueableCandidates)
     const fallbackFromQueue = await getNextPendingTopicFromQueue()

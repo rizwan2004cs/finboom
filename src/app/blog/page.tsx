@@ -11,6 +11,9 @@ export const metadata: Metadata = {
   description: "Financial tips, market updates, and product news from FinBoom.",
   alternates: {
     canonical: "/blog",
+    types: {
+      "application/rss+xml": "/feed.xml",
+    },
   },
 }
 
