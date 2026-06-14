@@ -13,6 +13,14 @@ import { CategoryIcon } from "@/components/category-icon"
 import { useAppDialog } from "@/components/app-dialog"
 import { useCurrency } from "@/hooks/use-currency"
 
+function formatMonthKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
+}
+
+function formatDateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`
+}
+
 export default function BudgetPage() {
   const { formatCompact: formatCurrency } = useCurrency()
   const { user } = useUser()
@@ -20,7 +28,7 @@ export default function BudgetPage() {
   const queryClient = useQueryClient()
   const { showAlert } = useAppDialog()
 
-  const [month, setMonth] = useState(new Date().toISOString().slice(0, 7))
+  const [month, setMonth] = useState(() => formatMonthKey(new Date()))
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editAmount, setEditAmount] = useState("")
   const [showAddCategory, setShowAddCategory] = useState(false)
@@ -42,8 +50,7 @@ export default function BudgetPage() {
 
   // Get transactions for current month to compute spend
   const startDate = `${month}-01`
-  const endDate = new Date(parseInt(month.slice(0, 4)), parseInt(month.slice(5, 7)), 0)
-    .toISOString().slice(0, 10)
+  const endDate = formatDateKey(new Date(parseInt(month.slice(0, 4)), parseInt(month.slice(5, 7)), 0))
 
   const { data: transactions = [] } = useOfflineQuery<Transaction>(
     "transactions", user?.id, {
@@ -59,8 +66,8 @@ export default function BudgetPage() {
 
   // Get transactions for last 3 months (for auto-suggest)
   const threeMonthsAgo = useMemo(() => {
-    const d = new Date(parseInt(month.slice(0, 4)), parseInt(month.slice(5, 7)) - 3, 1)
-    return d.toISOString().slice(0, 10)
+    const d = new Date(parseInt(month.slice(0, 4)), parseInt(month.slice(5, 7)) - 4, 1)
+    return formatDateKey(d)
   }, [month])
 
   const { data: recentTransactions = [] } = useOfflineQuery<Transaction>(
@@ -103,8 +110,9 @@ export default function BudgetPage() {
   )
 
   const now = new Date()
+  const currentMonth = formatMonthKey(now)
   const daysInMonth = new Date(parseInt(month.slice(0, 4)), parseInt(month.slice(5, 7)), 0).getDate()
-  const currentDay = month === now.toISOString().slice(0, 7) ? now.getDate() : daysInMonth
+  const currentDay = month === currentMonth ? now.getDate() : daysInMonth
   const overallPct = totalBudget > 0 ? Math.min((budgetedSpent / totalBudget) * 100, 100) : 0
 
   // Categories already budgeted
@@ -113,7 +121,7 @@ export default function BudgetPage() {
 
   function navigateMonth(dir: -1 | 1) {
     const d = new Date(parseInt(month.slice(0, 4)), parseInt(month.slice(5, 7)) - 1 + dir, 1)
-    setMonth(d.toISOString().slice(0, 7))
+    setMonth(formatMonthKey(d))
     setShowAddCategory(false)
     setEditingId(null)
   }
@@ -152,9 +160,7 @@ export default function BudgetPage() {
     setLoadingAction("copy")
     try {
       const prev = new Date(parseInt(month.slice(0, 4)), parseInt(month.slice(5, 7)) - 2, 1)
-      const prevMonth = prev.toISOString().slice(0, 7).padStart(7, "0")
-      // Manually format to avoid leading zero issues
-      const prevMonthStr = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}`
+      const prevMonthStr = formatMonthKey(prev)
 
       const { fetchTable } = await import("@/lib/offline")
       const prevBudgets = await fetchTable<Budget>("budgets", user!.id, {
