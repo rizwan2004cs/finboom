@@ -2,7 +2,9 @@ import { NextResponse } from "next/server"
 import { requireEditorRole } from "@/lib/blog/admin-auth"
 import { runBlogAutomation } from "@/lib/blog/run-automation"
 
-export const maxDuration = 60
+// Matches the cron route: the multi-step generation pipeline needs more
+// than the default budget across outline, draft, expand, and image steps.
+export const maxDuration = 300
 
 // POST /api/admin/blog-automation/trigger - Manually runs the daily blog
 // pipeline. Admin/editor only. Bypasses the once-per-24h guard.

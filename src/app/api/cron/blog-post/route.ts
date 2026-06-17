@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server"
 import { runBlogAutomation } from "@/lib/blog/run-automation"
 
-export const maxDuration = 60
+// The multi-step pipeline (outline -> draft -> optional expand -> images
+// -> hero upload) makes several model calls, so allow extra headroom.
+export const maxDuration = 300
 
 const CRON_SECRET = process.env.CRON_SECRET
 

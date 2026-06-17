@@ -7,10 +7,13 @@ const topic = process.argv[2] || "How to ladder fixed deposits for steady income
 
 generateBlogFromTopic(topic)
   .then((post) => {
+    const imageCount = (post.content.match(/^!\[.*\]\(.+\)$/gm) ?? []).length
     console.log("SUCCESS")
     console.log("title:   ", post.title)
     console.log("category:", post.category)
     console.log("excerpt: ", post.excerpt)
+    console.log("hero:    ", post.heroImageUrl ?? "(none)")
+    console.log("images:  ", imageCount, "inline")
     console.log("content: ", post.content.length, "chars,", post.content.split(/\s+/).length, "words")
   })
   .catch((err) => {

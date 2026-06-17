@@ -1,147 +1,128 @@
 import { GoogleGenerativeAI } from "@google/generative-ai"
+import { injectInlineImages, resolveHeroImage } from "@/lib/blog/images"
 
 export type GeneratedBlogPost = {
   title: string
   category: "guides" | "tips" | "market" | "product"
   excerpt: string
   content: string
+  heroImageUrl?: string
+  heroImageAlt?: string
 }
 
-const BLOG_PROMPT = `You are a financial content writer for FinBoom, a free net worth tracker for Indian investors.
+type BlogOutline = {
+  title: string
+  category: GeneratedBlogPost["category"]
+  excerpt: string
+  heroImageQuery: string
+  sections: Array<{ heading: string; points: string[] }>
+}
 
-STRICT RULES:
-- ZERO emojis anywhere in output
-- Indian context only: INR amounts, Indian tax laws, Indian instruments (PPF, NPS, EPF, ELSS, FDs, SGBs, etc.)
-- Conversational tone, like a smart friend explaining finance
-- No jargon without explanation
-- Short paragraphs (1-3 sentences max, often just 1 line for dramatic effect)
-- Long-form content: 1500-2500 words minimum
-- Use images from Unsplash/Pexels (direct image URLs)
+// The pipeline runs in stages so weaker fallback models (Groq llama,
+// Gemini flash-lite) still produce long, well-structured posts:
+//   1. Outline agent  -> title, category, excerpt, hero query, sections
+//   2. Writer agent    -> full markdown body from the outline
+//   3. Expand agent    -> only runs if the draft came back too short
+// Images are sourced separately (see images.ts) from {{IMAGE}} tokens, so
+// the model never invents broken photo URLs.
 
-OUTPUT FORMAT:
-Return valid JSON with exactly these fields:
+const TARGET_MIN_WORDS = 1500
+const EXPAND_THRESHOLD_WORDS = 1300
+
+const OUTLINE_PROMPT = `You are the editor for FinBoom, a free net worth tracker for Indian investors.
+
+Plan a long-form blog post on the topic given below. Return ONLY valid JSON:
 {
-  "title": "<title here, under 70 chars>",
+  "title": "<compelling title, under 70 chars, no emojis>",
   "category": "<one of: guides | tips | market | product>",
   "excerpt": "<1-2 sentence summary, under 160 chars>",
-  "content": "<full markdown body here>"
+  "heroImageQuery": "<2-4 word photo search query for the hero image, e.g. 'indian family budgeting'>",
+  "sections": [
+    {
+      "heading": "<section heading, no numbering>",
+      "points": ["<specific point to cover>", "<another concrete point>"]
+    }
+  ]
 }
 
-MARKDOWN RULES (the blog engine ONLY supports these):
+RULES:
+- 7 to 9 sections that flow logically from hook to conclusion
+- First section is an engaging hook; last section ties back to FinBoom
+- Each section needs 3-5 concrete, non-overlapping points
+- Indian context only: INR amounts, Indian tax laws, Indian instruments (PPF, NPS, EPF, ELSS, FDs, SGBs, mutual funds, SIPs)
+- Cover the topic with real depth: definitions, examples with numbers, comparisons, common mistakes, actionable steps
+- Zero emojis`
+
+// Shared formatting contract for both the writer and expand passes.
+const MARKDOWN_RULES = `MARKDOWN RULES (the blog engine ONLY supports these):
 - ## for main sections, ### for sub-sections (NO # H1)
 - **bold text** for key terms and emphasis
-- \`inline code\` for numbers, amounts, percentages, formulas
+- \`inline code\` for ALL numbers, amounts, percentages, formulas: \`INR 6 lakh\`, \`40%\`, \`25x\`, \`60\`
 - > blockquote for key takeaways and memorable quotes
 - - bullet lists (dash only, not asterisk)
 - 1. numbered lists
-- ![alt text](image-url) for images - use 3-5 relevant images throughout the post:
-  - ONLY use this exact URL pattern: https://picsum.photos/seed/{one-lowercase-word}/1200/675
-  - Pick a different seed word per image related to the section (e.g. savings, growth, family)
-  - NEVER use Unsplash or Pexels URLs - they break
-- | tables | with | pipes | for comparisons (include header row and separator row)
-- \`\`\`mermaid code blocks (1-2 per post) - ONLY these two types, nothing else:
-  - Flowcharts: "graph TD" with simple A[Label] --> B[Label] nodes
+- | tables | with | pipes | for comparisons (include a header row and a |---|---| separator row) - at least one table
+- \`\`\`mermaid code blocks - EXACTLY ONE per post - ONLY these two types:
+  - Flowcharts: "graph TD" or "graph LR" with simple A[Label] --> B[Label] nodes
   - Pie charts: pie title Title followed by "Label" : value lines
   - STRICT: plain ASCII only (--> arrows, straight quotes), no parentheses or special
-    characters inside node labels, no xychart, no timeline, no quadrantChart
+    characters inside node labels, no other diagram types
 - Blank lines between paragraphs
 
-DO NOT USE: links, ---, ~~strikethrough~~, *italic*, nested lists, HTML, emojis
+IMAGES: do NOT write any image markdown or URLs. Instead, immediately after 3 to 4 of the
+\`##\` section headings, put an image placeholder on its own line in this exact form:
+{{IMAGE: 2-4 word visual search query}}
+Make each query concrete and visual (e.g. {{IMAGE: indian rupee coins}}, {{IMAGE: stock market chart}}).
 
-CONTENT STYLE (match this exactly):
-- Start with an engaging hook - make the reader feel something or imagine a scenario
-- Use single-line paragraphs for dramatic effect between longer explanations
+DO NOT USE: image URLs, links, ---, ~~strikethrough~~, *italic*, nested lists, HTML, emojis
+
+STYLE:
+- Start with an engaging hook that makes the reader feel something or imagine a scenario
+- Short paragraphs (1-3 sentences), often a single line for dramatic effect
 - Bold key terms when first introduced
-- Use backticks for ALL numbers: \`INR 6 lakh\`, \`40%\`, \`25x\`, \`60\`
-- Include a mermaid diagram to visualize the core concept
-- Include comparison tables where relevant
 - Use blockquotes for memorable takeaways
-- End with a natural FinBoom mention that ties into the topic
-- Each major section should have its own image
-- Mix of ## and ### headings for visual hierarchy
+- Conversational but authoritative, like a smart friend explaining finance
+- End with a natural, non-salesy FinBoom mention that ties into the topic
+- ZERO emojis anywhere`
 
-REFERENCE STYLE EXAMPLE (match this depth, flow, and formatting):
----
-## What is the FIRE Movement?
+function buildWriterPrompt(topic: string, outline: BlogOutline): string {
+  const sectionPlan = outline.sections
+    .map((section, index) => {
+      const points = section.points.map((point) => `   - ${point}`).join("\n")
+      return `${index + 1}. ${section.heading}\n${points}`
+    })
+    .join("\n")
 
-![Financial independence and early retirement concept](https://picsum.photos/seed/freedom/1200/675)
+  return `You are a financial content writer for FinBoom, a free net worth tracker for Indian investors.
 
-Imagine waking up one day and realizing:
+Write the FULL blog post body in markdown for this topic: "${topic}"
 
-You no longer need a salary to pay your bills.
+Follow this section plan in order, using each heading as a \`##\` section and expanding every
+point into rich, specific prose (aim for 250-400 words per section):
 
-You work because you want to, not because you have to.
+${sectionPlan}
 
-That is the core idea behind the **FIRE Movement**.
+Write 1800-2800 words total. Do not skip sections. Add depth with concrete Indian examples and
+real numbers in backticks.
 
-FIRE stands for:
+${MARKDOWN_RULES}
 
-**Financial Independence, Retire Early**
+Return ONLY valid JSON: { "markdown": "<full markdown body>" }`
+}
 
-The movement became popular globally among people who wanted to:
-- Save aggressively
-- Invest consistently
-- Build large portfolios
-- Achieve financial freedom much earlier than traditional retirement
+function buildExpandPrompt(topic: string, draft: string): string {
+  return `You are an editor for FinBoom. The following draft blog post on "${topic}" is too short and
+thin. Rewrite it to be noticeably longer and more valuable: expand each section with more
+explanation, concrete Indian examples, and numbers in backticks. Keep every \`##\` heading, keep
+the {{IMAGE: ...}} placeholders, keep the existing mermaid diagram and tables. Target 2000+ words.
 
-Instead of retiring at \`60\`, FIRE followers often target:
-- \`40\`
-- \`45\`
-- \`50\`
+${MARKDOWN_RULES}
 
-> FIRE is not about never working again. It is about gaining the freedom to choose how you spend your time.
+Return ONLY valid JSON: { "markdown": "<expanded markdown body>" }
 
-## The FIRE Formula Simplified
-
-One common FIRE rule is the **25x Rule**.
-
-This rule suggests:
-
-You need approximately \`25 times\` your annual expenses invested.
-
-### Example
-
-Annual expenses:
-
-\`INR 8 lakh\`
-
-FIRE corpus:
-
-\`INR 8 lakh x 25 = INR 2 crore\`
-
-### Basic FIRE Concept
-
-\`\`\`mermaid
-graph LR
-A[Income] --> B[Savings]
-B --> C[Investments]
-C --> D[Compounding]
-D --> E[Financial Independence]
-\`\`\`
-
-| Portfolio Size | 4% Annual Withdrawal |
-|---|---|
-| \`INR 1 crore\` | \`INR 4 lakh\` |
-| \`INR 2 crore\` | \`INR 8 lakh\` |
-| \`INR 3 crore\` | \`INR 12 lakh\` |
-| \`INR 5 crore\` | \`INR 20 lakh\` |
-
-> The goal is not to escape life by retiring early. The goal is to build a life you do not need to escape from.
-
-FinBoom helps you track your investments, SIPs, EPF, PPF, NPS, assets, liabilities, and overall net worth in one place so you can clearly measure your progress toward financial independence.
----
-
-Write a new blog post on the topic I give you. Match the reference style exactly:
-- Same depth and length (1500-2500 words)
-- Same dramatic single-line paragraphs
-- Same use of \`backticks\` for all numbers and amounts
-- Same mix of ##/### headings, bold key terms, blockquote callouts, bullet lists
-- Same conversational but authoritative tone
-- 3-5 images from Unsplash/Pexels placed throughout
-- At least 1 mermaid diagram
-- At least 1 comparison table
-- End with a natural FinBoom mention (not salesy)
-- ZERO emojis`
+DRAFT TO EXPAND:
+${draft}`
+}
 
 const TOPIC_FALLBACK_PROMPT = `You are helping run an Indian personal-finance blog.
 
@@ -413,29 +394,111 @@ async function generateParsedJson<T>(prompt: string, options: GenerateOptions): 
   throw new Error(`All AI providers failed. ${failures.join(" | ")}`)
 }
 
-export async function generateBlogFromTopic(topic: string): Promise<GeneratedBlogPost> {
-  // Gemini 2.5 models spend "thinking" tokens from this budget too,
-  // so leave generous headroom above the article length itself.
-  const parsed = await generateParsedJson<Partial<GeneratedBlogPost>>(
-    `${BLOG_PROMPT}\n\nTOPIC: ${topic.trim()}`,
-    {
-      temperature: 0.7,
-      maxOutputTokens: 16384,
-    }
+const IMAGE_TOKEN_PLACEHOLDER = /\{\{\s*IMAGE\s*:[^}]*\}\}/gi
+
+function countWords(text: string): number {
+  return text
+    .replace(IMAGE_TOKEN_PLACEHOLDER, " ")
+    .split(/\s+/)
+    .filter(Boolean).length
+}
+
+function normalizeCategory(value: unknown): GeneratedBlogPost["category"] {
+  const category = typeof value === "string" ? value : "guides"
+  return (["guides", "tips", "market", "product"].includes(category) ? category : "guides") as GeneratedBlogPost["category"]
+}
+
+async function generateOutline(topic: string): Promise<BlogOutline> {
+  const parsed = await generateParsedJson<Partial<BlogOutline>>(
+    `${OUTLINE_PROMPT}\n\nTOPIC: ${topic.trim()}`,
+    { temperature: 0.8, maxOutputTokens: 2048 }
   )
 
-  const category = parsed.category ?? "guides"
-  const allowedCategory = ["guides", "tips", "market", "product"].includes(category) ? category : "guides"
+  const sections = Array.isArray(parsed.sections)
+    ? parsed.sections
+        .filter((section): section is { heading: string; points: string[] } =>
+          Boolean(section && typeof section.heading === "string")
+        )
+        .map((section) => ({
+          heading: section.heading.trim(),
+          points: Array.isArray(section.points)
+            ? section.points.filter((p): p is string => typeof p === "string").map((p) => p.trim())
+            : [],
+        }))
+        .filter((section) => section.heading)
+    : []
 
-  if (!parsed.title?.trim() || !parsed.content?.trim()) {
-    throw new Error("AI response was missing title or content.")
+  if (!parsed.title?.trim() || sections.length === 0) {
+    throw new Error("AI outline was missing a title or sections.")
   }
 
   return {
     title: parsed.title.trim(),
-    category: allowedCategory as GeneratedBlogPost["category"],
+    category: normalizeCategory(parsed.category),
     excerpt: parsed.excerpt?.trim() ?? "",
-    content: parsed.content.trim(),
+    heroImageQuery: parsed.heroImageQuery?.trim() || `${topic.trim()} india finance`,
+    sections,
+  }
+}
+
+async function writeArticle(topic: string, outline: BlogOutline): Promise<string> {
+  const parsed = await generateParsedJson<{ markdown?: string }>(
+    buildWriterPrompt(topic, outline),
+    { temperature: 0.7, maxOutputTokens: 16384 }
+  )
+  return parsed.markdown?.trim() ?? ""
+}
+
+async function expandArticle(topic: string, draft: string): Promise<string> {
+  const parsed = await generateParsedJson<{ markdown?: string }>(
+    buildExpandPrompt(topic, draft),
+    { temperature: 0.7, maxOutputTokens: 16384 }
+  )
+  return parsed.markdown?.trim() ?? ""
+}
+
+export async function generateBlogFromTopic(topic: string): Promise<GeneratedBlogPost> {
+  const outline = await generateOutline(topic)
+
+  let content = await writeArticle(topic, outline)
+  if (!content) {
+    throw new Error("AI writer returned empty content.")
+  }
+
+  // Only spend a second round-trip when the first draft is genuinely thin.
+  if (countWords(content) < EXPAND_THRESHOLD_WORDS) {
+    try {
+      const expanded = await expandArticle(topic, content)
+      if (countWords(expanded) > countWords(content)) {
+        content = expanded
+      }
+    } catch {
+      // Keep the original draft if the expand pass fails.
+    }
+  }
+
+  // Resolve {{IMAGE}} tokens into real photo URLs and guarantee a minimum
+  // number of inline images. Never let an image failure kill the post.
+  let hero: { url: string; alt: string } | null = null
+  try {
+    content = await injectInlineImages(content, 3)
+    hero = await resolveHeroImage(outline.heroImageQuery)
+  } catch {
+    content = content.replace(IMAGE_TOKEN_PLACEHOLDER, "").replace(/\n{3,}/g, "\n\n")
+  }
+
+  const wordCount = countWords(content)
+  if (wordCount < TARGET_MIN_WORDS) {
+    console.warn(`Generated post for "${topic}" is short (${wordCount} words).`)
+  }
+
+  return {
+    title: outline.title,
+    category: outline.category,
+    excerpt: outline.excerpt,
+    content: content.trim(),
+    heroImageUrl: hero?.url,
+    heroImageAlt: hero?.alt,
   }
 }
 
