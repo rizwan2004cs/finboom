@@ -1,36 +1,64 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# FinBoom
+
+> **Know your true wealth.** An offline-first personal finance & net worth tracker built for Indian investors, with a liquid-glass UI inspired by iOS 26.
+
+**Live:** https://finboom-cyan.vercel.app
+
+FinBoom helps you track assets, liabilities, transactions, budgets, and goals across multiple family profiles — fully offline-capable as an installable PWA. It also ships a suite of free public financial calculators and an automated, SEO-optimized finance blog.
+
+---
+
+## Features
+
+- **Net worth dashboard** — assets − liabilities in real time, with trend and allocation charts.
+- **Assets** — 22+ Indian asset classes, gain/loss tracking, and **portfolio analytics** (diversification, concentration warnings).
+- **Liabilities** — loan/EMI tracking with **EMI-to-income liquidity** insights.
+- **Transactions & Budget** — income/expense logging, monthly budgets with auto-suggest and copy-from-last-month.
+- **Goals** — inflation-adjusted targets with linked assets.
+- **Wealth Check** — a 0–100 multi-dimensional financial health score with personalized actions.
+- **Parties** — Splitwise-style lend/borrow tracking with due-date reminders.
+- **Profiles** — separate finances for Personal, Spouse, Parent, Child, or Business.
+- **Free calculators** (`/tools`) — SIP, Step-Up SIP, Lumpsum, FD, XIRR, HRA, and Income Tax (old vs new regime), each SEO-optimized.
+- **Blog** — Sanity-backed, AI-generated, visual-first posts (key takeaways, Mermaid diagrams, comparison tables) with an RSS feed.
+- **Offline-first PWA** — IndexedDB cache + mutation queue + service worker; installable with push notifications.
+- **Multi-currency** — store in INR, display in 10 currencies with daily exchange rates.
+
+## Tech Stack
+
+Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4 · Clerk (auth) · Supabase (Postgres + RLS) · TanStack React Query · IndexedDB · Recharts · Mermaid · Sanity.io (CMS) · Gemini/Groq/OpenAI (blog AI) · Web Push · Vercel.
 
 ## Getting Started
 
-First, run the development server:
-
 ```bash
+npm install
+cp .env.local.example .env.local   # then fill in the values (see below)
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open http://localhost:3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Required environment variables
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+See [`DOCUMENTATION.md` → Environment Variables](./DOCUMENTATION.md#15-environment-variables) for the full list (Clerk, Supabase, VAPID, Sanity, AI providers, `CRON_SECRET`, `NEXT_PUBLIC_SITE_URL`).
 
-## Learn More
+## Scripts
 
-To learn more about Next.js, take a look at the following resources:
+| Script | Purpose |
+|--------|---------|
+| `npm run dev` | Start the dev server |
+| `npm run build` | Production build (stamps the service worker, then `next build`) |
+| `npm run start` | Serve the production build |
+| `npm run lint` | ESLint |
+| `npm run blog:new [topic]` | Generate and publish one new blog post |
+| `npm run blog:update [count\|all\|<slugs>]` | Regenerate existing auto-posts into the latest format |
+| `npm run blog:regen` | Update the latest auto-post **and** generate a new one |
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+> The `blog:*` scripts need AI + Sanity write keys in `.env.local` (`GEMINI_API_KEY`/`GROQ_API_KEY`/`OPENAI_API_KEY`, `SANITY_EDITOR_TOKEN`, `NEXT_PUBLIC_SANITY_PROJECT_ID`, `NEXT_PUBLIC_SANITY_DATASET`).
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Deployment
 
-## Deploy on Vercel
+Auto-deploys to **Vercel** on push to `master`. Cron jobs (notifications, exchange rates, monthly snapshot, weekly summary, daily blog post) are defined in `vercel.json`.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Documentation
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Full architecture, data model, offline engine, and feature deep-dives live in **[DOCUMENTATION.md](./DOCUMENTATION.md)**.

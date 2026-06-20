@@ -44,9 +44,10 @@
 | **Diagrams**       | Mermaid 11.x                        | Rendering diagrams in blog posts             |
 | **Icons**          | Lucide React 1.x                   | Consistent icon set across all pages         |
 | **CMS**            | Sanity.io (`next-sanity` 12.x)     | Blog content management (headless CMS)       |
+| **Blog AI**        | Gemini (`@google/generative-ai`) + Groq/OpenAI (REST) | AI blog generation with provider fallback |
 | **Push**           | Web Push API (`web-push` 3.x)      | Server-side push notification delivery       |
 | **Excel Import**   | SheetJS (`xlsx` 0.18.x)            | Parse Zerodha/Groww/CSV Excel exports        |
-| **CSS Utilities**  | `clsx` + `tailwind-merge`          | Conditional & conflict-free class merging    |
+| **CSS Utilities**  | `clsx` + `tailwind-merge` + `class-variance-authority` | Conditional, conflict-free, variant class merging |
 | **Hosting**        | Vercel                             | Deployment, serverless functions, cron jobs  |
 | **Exchange Rates** | fawazahmed0/exchange-api (free)    | Daily currency conversion rates, no API key  |
 
@@ -104,7 +105,13 @@ finboom/
 │   ├── sw.js                        # Service worker
 │   └── icons/                       # PWA icons (SVG, PNG)
 ├── scripts/
-│   ├── create-post.mjs              # CLI to create blog posts in Sanity
+│   ├── create-post.mjs              # CLI to create a blog post in Sanity
+│   ├── regenerate-blog.ts           # CLI: blog:new / blog:update / blog:regen
+│   ├── seed-blog-topics.ts          # Seed the Supabase topic queue
+│   ├── sync-blog-topics-with-sanity.ts # Reconcile queue with published posts
+│   ├── blog-topic-seed-data.ts      # Seed topic list (by category)
+│   ├── debug-blog-gen.ts            # Local probe for the generation pipeline
+│   ├── debug-providers.ts           # Local probe for AI providers
 │   └── stamp-sw.mjs                 # Prebuild: stamps SW version for cache busting
 ├── src/
 │   ├── proxy.ts                     # Clerk middleware (route protection)
@@ -112,61 +119,78 @@ finboom/
 │   │   ├── layout.tsx               # Root layout (fonts, ClerkProvider, PWA popup)
 │   │   ├── page.tsx                 # Landing page (marketing)
 │   │   ├── loading.tsx              # Global loading skeleton
-│   │   ├── globals.css              # Tailwind base + liquid glass custom CSS
-│   │   ├── robots.ts               # SEO: robots.txt generation
-│   │   ├── sitemap.ts              # SEO: sitemap.xml generation
+│   │   ├── globals.css              # Tailwind base + liquid glass + button/tooltip CSS
+│   │   ├── robots.ts                # SEO: robots.txt generation
+│   │   ├── sitemap.ts               # SEO: sitemap.xml (blog posts + /tools)
+│   │   ├── feed.xml/route.ts        # RSS 2.0 feed (latest posts)
 │   │   ├── opengraph-image.tsx      # Dynamic OG image generation
 │   │   ├── apple-icon.tsx           # Dynamic Apple touch icon
 │   │   │
 │   │   ├── api/                     # API Routes (serverless functions)
 │   │   │   ├── cron/
-│   │   │   │   ├── notifications/route.ts   # Daily notification cron
-│   │   │   │   └── exchange-rates/route.ts  # Daily exchange rate fetch
-│   │   │   ├── exchange-rates/
-│   │   │   │   └── refresh/route.ts         # User-triggered rate refresh
-│   │   │   ├── blog/publish/                # Blog publishing webhook
-│   │   │   ├── notifications/check/         # Notification check endpoint
-│   │   │   └── push/subscribe/              # Push subscription registration
+│   │   │   │   ├── notifications/route.ts   # Daily reminders push cron
+│   │   │   │   ├── exchange-rates/route.ts  # Daily exchange rate fetch
+│   │   │   │   ├── monthly-snapshot/route.ts# Monthly net worth snapshot cron
+│   │   │   │   ├── weekly-summary/route.ts  # Weekly net worth push summary
+│   │   │   │   └── blog-post/route.ts       # Daily AI blog auto-publish
+│   │   │   ├── exchange-rates/refresh/route.ts  # User-triggered rate refresh
+│   │   │   ├── blog/
+│   │   │   │   ├── generate/route.ts        # Admin: generate a post on demand
+│   │   │   │   └── publish/route.ts         # Blog publishing webhook
+│   │   │   ├── admin/blog-automation/
+│   │   │   │   ├── status/route.ts          # Queue health / next topic
+│   │   │   │   ├── topics/route.ts          # Add/skip topics in the queue
+│   │   │   │   └── trigger/route.ts         # Manually run the pipeline
+│   │   │   ├── import/parse/route.ts        # Server-side import parsing
+│   │   │   ├── notifications/check/route.ts # Notification check endpoint
+│   │   │   └── push/subscribe/route.ts      # Push subscription registration
 │   │   │
-│   │   ├── auth/
-│   │   │   ├── callback/route.ts    # Supabase auth callback handler
-│   │   │   └── reset-password/page.tsx
-│   │   │
+│   │   ├── auth/                    # Supabase auth callback + reset-password
 │   │   ├── login/page.tsx           # Login page (Clerk)
+│   │   │
+│   │   ├── tools/                   # Public financial calculators (SEO)
+│   │   │   ├── layout.tsx           # Calculators shell
+│   │   │   ├── page.tsx             # Calculators landing grid + JSON-LD
+│   │   │   └── [slug]/page.tsx      # Per-calculator page (metadata, FAQ, JSON-LD)
 │   │   │
 │   │   ├── blog/
 │   │   │   ├── page.tsx             # Blog listing (Sanity CMS)
-│   │   │   ├── [slug]/page.tsx      # Blog post detail page
+│   │   │   ├── [slug]/page.tsx      # Post detail (+ share-button, zoomable-image)
 │   │   │   ├── category-filter.tsx  # Client-side category filter
-│   │   │   └── new/page.tsx         # Blog post creation (admin)
+│   │   │   ├── new/page.tsx         # Blog post creation (admin)
+│   │   │   ├── preview/page.tsx     # Dev-only format preview (noindex)
+│   │   │   └── automation/page.tsx  # Admin: automation queue dashboard
 │   │   │
 │   │   └── dashboard/               # Protected dashboard area
 │   │       ├── layout.tsx           # Dashboard shell (sidebar, nav, providers)
 │   │       ├── page.tsx             # Dashboard overview (net worth summary)
-│   │       ├── assets/page.tsx      # Asset management (22+ classes)
-│   │       ├── liabilities/page.tsx # Loan/debt tracking
+│   │       ├── assets/page.tsx      # Asset management (22+ classes) + analytics
+│   │       ├── liabilities/page.tsx # Loan/debt tracking + EMI liquidity
 │   │       ├── transactions/page.tsx# Income & expense tracking
 │   │       ├── budget/page.tsx      # Monthly budget by category
 │   │       ├── goals/page.tsx       # Financial goal planning
 │   │       ├── snapshots/page.tsx   # Monthly net worth snapshots
-│   │       ├── health/page.tsx      # Financial health check
+│   │       ├── health/page.tsx      # Wealth Check (0–100 score)
 │   │       ├── parties/page.tsx     # Lend/borrow tracking (Splitwise-like)
 │   │       ├── profiles/page.tsx    # Family member profiles
 │   │       ├── settings/page.tsx    # Currency, theme, export, PIN, account
 │   │       └── more/page.tsx        # Mobile "more" menu
 │   │
 │   ├── components/
-│   │   ├── navigation.tsx           # Sidebar + mobile bottom nav
+│   │   ├── navigation.tsx           # Sidebar + mobile bottom nav (with tooltips)
 │   │   ├── top-bar.tsx              # Top bar (profile switcher, sync, notifications)
 │   │   ├── sidebar-context.tsx      # Sidebar collapse state (React Context)
 │   │   ├── query-provider.tsx       # TanStack React Query provider
 │   │   ├── offline-provider.tsx     # Offline sync manager + update detection
-│   │   ├── offline-indicator.tsx    # "You're offline" toast banner
+│   │   ├── offline-indicator.tsx    # "You're offline" banner + SyncButton
+│   │   ├── toast.tsx                # Global toast notification system
+│   │   ├── tooltip.tsx             # Reusable delayed hover/focus tooltip (portal)
 │   │   ├── pin-lock.tsx             # 4-digit PIN lock screen
 │   │   ├── feature-tour.tsx         # First-time user guided tour
 │   │   ├── notification-bell.tsx    # Notification dropdown
+│   │   ├── portfolio-analytics.tsx  # Asset diversification / concentration UI
 │   │   ├── auth-buttons.tsx         # Login/signup CTAs + auth redirect
-│   │   ├── category-icon.tsx        # Dynamic Lucide icon resolver
+│   │   ├── category-icon.tsx        # Dynamic Lucide icon resolver (by name)
 │   │   ├── custom-select.tsx        # Custom dropdown select (no native <select>)
 │   │   ├── app-dialog.tsx           # Global confirm/alert dialog (React Context)
 │   │   ├── pwa-install-banner.tsx   # "Install FinBoom" banner (landing page)
@@ -174,7 +198,12 @@ finboom/
 │   │   ├── mermaid-diagram.tsx      # Mermaid diagram renderer (lazy loaded)
 │   │   ├── charts/
 │   │   │   ├── net-worth-chart.tsx  # Area chart for net worth over time
-│   │   │   └── allocation-chart.tsx # Pie chart for asset allocation
+│   │   │   ├── allocation-chart.tsx # Pie chart for asset allocation
+│   │   │   └── spending-chart.tsx   # Category spending / MoM chart
+│   │   ├── tools/                   # Calculator UI (one component per calculator)
+│   │   │   ├── calculator-island.tsx# Renders the right calculator by slug
+│   │   │   ├── ui.tsx               # Shared inputs/result components
+│   │   │   └── {sip,step-up-sip,lumpsum,fd,xirr,hra,tax-regime}-calculator.tsx
 │   │   └── modals/
 │   │       ├── add-asset-modal.tsx
 │   │       ├── add-transaction-modal.tsx
@@ -189,16 +218,33 @@ finboom/
 │   │   ├── use-currency.tsx         # Currency conversion context + formatting
 │   │   ├── use-offline-query.ts     # React Query ↔ offline-first fetchTable bridge
 │   │   ├── use-offline-mutation.ts  # Mutation hook with optimistic updates
-│   │   └── use-push.ts             # Auto-subscribe to push notifications
+│   │   └── use-push.ts              # Auto-subscribe to push notifications
 │   │
 │   ├── lib/
 │   │   ├── constants.ts             # Asset classes, categories, currencies list
 │   │   ├── types.ts                 # TypeScript interfaces for all entities
 │   │   ├── utils.ts                 # cn() utility for Tailwind class merging
+│   │   ├── site.ts                  # Public base URL + absoluteUrl() helper
+│   │   ├── tools.ts                 # Calculator registry (metadata, SEO, FAQs)
 │   │   ├── sanity.ts                # Sanity CMS client configuration
+│   │   ├── finance/                 # Pure financial logic (no UI, unit-testable)
+│   │   │   ├── calculators.ts       # SIP, step-up, lumpsum, FD, XIRR, HRA, tax
+│   │   │   ├── portfolio.ts         # Asset-class bucketing, HHI, concentration
+│   │   │   ├── wealth-check.ts      # 0–100 multi-dimensional health score
+│   │   │   └── format.ts            # INR/compact number formatting helpers
+│   │   ├── blog/                    # Blog automation pipeline
+│   │   │   ├── ai-generation.ts     # Outline + writer prompts, provider fallback
+│   │   │   ├── run-automation.ts    # Orchestrates generate → publish → notify
+│   │   │   ├── markdown-to-portable-text.ts # MD → Sanity Portable Text
+│   │   │   ├── categories.ts / category-balancer.ts # Category diversification
+│   │   │   ├── topic-queue.ts / topic-utils.ts      # Topic selection + dedup
+│   │   │   ├── trends.ts            # Trending-keyword seeding
+│   │   │   ├── images.ts / sanity-image.ts          # Image resolve + hero upload
+│   │   │   ├── automation-status.ts # Queue health reporting
+│   │   │   └── admin-auth.ts        # requireEditorRole() for admin routes
 │   │   └── offline/                 # Offline-first data engine
 │   │       ├── index.ts             # Re-exports all offline modules
-│   │       ├── db.ts                # IndexedDB CRUD wrapper (9 stores + queue)
+│   │       ├── db.ts                # IndexedDB CRUD wrapper (stores + queue)
 │   │       ├── data.ts              # fetchTable, insertRow, updateRow, deleteRow
 │   │       ├── queue.ts             # Mutation queue (for offline writes)
 │   │       └── sync.ts              # Sync engine (replay queue + delta pull)
@@ -215,12 +261,14 @@ finboom/
 │       ├── 20260508000001_parties.sql
 │       ├── 20260509000000_delta_sync_updated_at.sql
 │       ├── 20260509100000_budgets.sql
-│       └── 20260511000000_exchange_rates.sql
+│       ├── 20260511000000_exchange_rates.sql
+│       ├── 20260608000000_blog_topics_queue.sql
+│       └── 20260620000000_blog_topics_category_keywords.sql
 │
 ├── vercel.json                      # Vercel config (crons, headers)
 ├── next.config.ts                   # Next.js config (images, turbopack)
 ├── tailwind.config / postcss        # CSS toolchain config
-└── package.json                     # Dependencies & scripts
+└── package.json                     # Dependencies & scripts (incl. blog:* CLIs)
 ```
 
 ---
@@ -245,6 +293,7 @@ finboom/
 Additional tables from migrations:
 - `notifications` — Push notification records
 - `push_subscriptions` — Web Push subscription endpoints
+- `blog_topics` — Queue of blog topics for automated publishing (status `pending`/`posted`/`skipped`, `sort_order`, published slug/title; service-role managed, authenticated read)
 
 All data tables have:
 - `updated_at` auto-trigger for delta sync
@@ -266,6 +315,14 @@ All data tables have:
 | **Charting — Net Worth Trend**    | Recharts (`AreaChart`)                  | `components/charts/net-worth-chart.tsx`                   |
 | **Charting — Asset Allocation**   | Recharts (`PieChart`)                   | `components/charts/allocation-chart.tsx`                  |
 | **Charting — Budget Progress**    | Custom CSS (progress bars)              | `dashboard/budget/page.tsx`                              |
+| **Financial Calculators (/tools)** | Pure TS logic + React islands           | `lib/finance/calculators.ts`, `lib/tools.ts`, `components/tools/`, `app/tools/` |
+| **Portfolio Analytics**           | Custom (bucketing + HHI concentration)  | `lib/finance/portfolio.ts`, `components/portfolio-analytics.tsx` |
+| **Wealth Check Score**            | Custom (0–100 multi-dimensional model)  | `lib/finance/wealth-check.ts`, `dashboard/health/page.tsx` |
+| **Toast Notifications**           | Custom (React Context)                  | `components/toast.tsx`                                   |
+| **Tooltips**                      | Custom (portal + hover/focus delay)     | `components/tooltip.tsx`                                 |
+| **Blog AI Generation**            | Gemini/Groq/OpenAI + GROQ queries       | `lib/blog/ai-generation.ts`, `run-automation.ts`, `api/cron/blog-post/` |
+| **Markdown → Portable Text**      | Custom converter (callouts, tables, mermaid) | `lib/blog/markdown-to-portable-text.ts`            |
+| **RSS Feed**                      | Next.js route handler                   | `app/feed.xml/route.ts`                                 |
 | **Icons**                         | Lucide React                            | Every component                                          |
 | **Styling & Design System**       | Tailwind CSS 4 + custom CSS            | `globals.css` (liquid glass classes)                     |
 | **Class Merging**                 | `clsx` + `tailwind-merge`               | `lib/utils.ts` → `cn()` helper                          |
@@ -300,10 +357,12 @@ All data tables have:
 - Add/edit/delete assets with current value, invested value, units
 - Gain/loss percentage per asset
 - **Import from Excel**: Zerodha, Groww, or generic CSV/Excel format (`xlsx` library parses the file client-side)
+- **Portfolio analytics** (`portfolio-analytics.tsx` + `lib/finance/portfolio.ts`): groups holdings into asset-class buckets, computes a diversification/concentration score (Herfindahl–Hirschman Index), and surfaces concentration warnings (e.g. a single holding or class dominating the portfolio)
 
 ### 6.3 Liabilities (`/dashboard/liabilities`)
 - Track: Home Loan, Car Loan, Personal Loan, Education Loan, Credit Card Debt, Gold Loan, Other
 - Fields: outstanding amount, original amount, interest rate, EMI, start/end dates
+- **EMI liquidity insight**: compares total monthly EMIs against income to flag when debt servicing eats too large a share of cash flow
 
 ### 6.4 Transactions (`/dashboard/transactions`)
 - Income & expense tracking with **17 expense** and **9 income** categories
@@ -328,13 +387,20 @@ All data tables have:
 - Historical chart showing wealth growth over time
 - Month-over-month percentage change
 
-### 6.8 Financial Health Check (`/dashboard/health`)
-- Assess 3 pillars: Term Insurance, Health Insurance, Emergency Fund
-- Scoring system (0-100) for each pillar
-- **Term insurance**: checks if cover ≥ 10x annual income
-- **Health insurance**: checks if cover ≥ ₹5L or 50% annual income
-- **Emergency fund**: checks if savings ≥ 6 months of expenses
-- Personalized recommendations
+### 6.8 Wealth Check (`/dashboard/health`)
+A single **0–100 wealth score** computed deterministically from the user's own data (`lib/finance/wealth-check.ts`) — nothing is invented. The score is a weighted average across **7 dimensions**, each rated `strong` (≥75) / `fair` (≥45) / `weak` (<45) with a one-line detail and a concrete action when below par:
+
+| Dimension | Weight | What it measures |
+|-----------|:------:|------------------|
+| Asset allocation | 1.2 | Equity/debt split + diversification (HHI) from `portfolio.ts` |
+| Emergency fund | 1.2 | Months of expenses saved vs. 6-month target |
+| Insurance cover | 1.0 | Term (~10× income) + health cover adequacy |
+| Tax efficiency (80C) | 0.8 | 80C headroom used via ELSS/PPF/EPF/NPS (of ₹1.5L) |
+| Debt load | 1.0 | EMI-to-income ratio (or debt-to-assets fallback) |
+| Savings rate | 1.0 | Savings as % of income over the last 6 months |
+| Goal progress | 0.8 | Average funded % across goals (linked assets aware) |
+
+The overall score maps to a grade — **Excellent** (≥80), **Good** (≥65), **Fair** (≥45), **Needs work** (<45) — and each weak dimension renders a personalized recommendation.
 
 ### 6.9 Parties / Lend & Borrow (`/dashboard/parties`)
 - Track money lent to or borrowed from people (Splitwise-like)
@@ -354,18 +420,38 @@ All data tables have:
 - **Theme**: Light / Dark / System
 - **PIN lock**: 4-digit app lock with brute-force protection (5 attempts, 1-min lockout)
 - **Export data**: Download all financial data as JSON or CSV
-- **Delete account**: Complete account deletion with confirmation
+- **Delete account**: Complete account deletion with confirmation, styled with the destructive (red) button variant (`.liquid-glass-btn-destructive`)
 
 ### 6.12 Blog (`/blog`)
 - Headless CMS powered by Sanity.io
 - Blog listing with category filters (Tips, Market, Product, Guides)
+- **Visual-first AI posts** — auto-generated posts lead with a "Key takeaways" callout, then use Mermaid diagrams and comparison tables so readers get the gist fast, with the full text available below for those who want depth
 - Full blog post pages with:
-  - Markdown rendering via Sanity's Portable Text
+  - Portable Text rendering, including custom `callout`, `table`, and `mermaid` blocks
   - Code blocks with syntax highlighting
   - Mermaid diagrams (lazy-loaded `mermaid.js`)
-  - Zoomable images with pinch-to-zoom
+  - Zoomable images with pinch-to-zoom (`zoomable-image`)
   - Share button (Web Share API)
-- Admin can create new posts from `/blog/new`
+- **RSS feed** at `/feed.xml`
+- Admin can create posts from `/blog/new` and manage the automation queue at `/blog/automation`
+- See [§11 Blog / CMS](#11-blog--cms) for the full AI automation pipeline
+
+### 6.13 Financial Calculators (`/tools`)
+- A suite of **free, public, SEO-optimized calculators** (no login required), each with its own metadata, FAQ, and JSON-LD:
+  - **SIP** and **Step-Up SIP** — future value of monthly investments (with annual top-up)
+  - **Lumpsum** — compounded growth of a one-time investment
+  - **FD** — fixed deposit maturity with compounding frequency
+  - **XIRR** — annualized return across irregular cashflows
+  - **HRA** — house rent allowance exemption
+  - **Income Tax** — old vs new regime comparison
+- Pure calculation logic lives in `lib/finance/calculators.ts` (UI-free, easy to test); the registry/metadata lives in `lib/tools.ts`; each calculator is a small client "island" in `components/tools/` mounted by `calculator-island.tsx`
+- Professional Lucide icons (no emojis) via `category-icon.tsx`
+
+### 6.14 Shared UI Primitives
+- **Toasts** (`components/toast.tsx`): global, context-driven success/error/info notifications
+- **Tooltips** (`components/tooltip.tsx`): accessible, portal-rendered tooltips shown on delayed hover/focus; attached to icon-only controls (nav, top bar, notification bell, budget actions) via `cloneElement` so no extra interactive wrapper is needed
+- **Destructive button** (`.liquid-glass-btn-destructive` in `globals.css`): red liquid-glass variant for irreversible actions
+- **Category icon** (`components/category-icon.tsx`): resolves a Lucide icon component by name string, used across calculators, categories, and nav
 
 ---
 
@@ -484,10 +570,26 @@ INR (₹), USD ($), EUR (€), GBP (£), SGD (S$), AED (د.إ), AUD (A$), CAD (C
 - **`@portabletext/react`** for rendering Sanity's Portable Text (rich content)
 - Blog post features:
   - Categories with filter
+  - Custom `callout`, `table`, and `mermaid` Portable Text blocks
   - Mermaid diagrams (rendered client-side, lazy-loaded)
   - Zoomable images (pinch-to-zoom on mobile)
   - Share via Web Share API
   - Author info from Clerk user data
+
+### AI Automation Pipeline
+Posts can be authored manually or generated automatically. The pipeline lives in `lib/blog/` and is orchestrated by `run-automation.ts`:
+
+1. **Topic selection** — pulls the next `pending` topic from the `blog_topics` queue, balanced across categories (`category-balancer.ts`, `topic-queue.ts`) and seeded with trending keywords (`trends.ts`) so posts rank in search.
+2. **AI writing** (`ai-generation.ts`) — generates an outline then the full **markdown** body with a multi-provider fallback chain (**Gemini → Groq → OpenAI**). Prompts enforce a visual-first structure: a "Key takeaways" callout, Mermaid diagrams, and well-formed comparison tables.
+3. **Markdown → Portable Text** (`markdown-to-portable-text.ts`) — converts the markdown into Sanity blocks, including robust table parsing (tolerates AI output that omits trailing pipes) and `callout`/`mermaid`/`code` blocks.
+4. **Images** (`images.ts`, `sanity-image.ts`) — resolves closely-related imagery and uploads a hero image to Sanity.
+5. **Publish & notify** — writes the document to Sanity, marks the topic `posted` (with published slug/title), and fires a push notification.
+
+**Entry points:**
+- **Cron**: `/api/cron/blog-post` (daily, 08:00 UTC) auto-publishes one post.
+- **Admin API**: `/api/blog/generate` (on-demand) and `/api/admin/blog-automation/{status,topics,trigger}` (queue health, add/skip topics, manual run), gated by `requireEditorRole()` (`admin-auth.ts`).
+- **Admin UI**: `/blog/automation` dashboard.
+- **CLI**: `npm run blog:new` (one new post), `npm run blog:update` (regenerate existing auto-posts into the latest format), `npm run blog:regen` (update latest + generate new). Topics are seeded with `scripts/seed-blog-topics.ts` and reconciled with `scripts/sync-blog-topics-with-sanity.ts`.
 
 ---
 
@@ -526,9 +628,12 @@ INR (₹), USD ($), EUR (€), GBP (£), SGD (S$), AED (د.إ), AUD (A$), CAD (C
 | OG image             | Dynamic generation (`opengraph-image.tsx`) |
 | Apple touch icon     | Dynamic generation (`apple-icon.tsx`)    |
 | `robots.txt`         | `app/robots.ts` (allows /, blocks /dashboard/ and /api/) |
-| `sitemap.xml`        | `app/sitemap.ts`                        |
-| Structured data      | JSON-LD WebApplication schema on landing page |
-| Keywords             | Comprehensive Indian finance keywords    |
+| `sitemap.xml`        | `app/sitemap.ts` (static pages + all `/tools/*` + published blog posts) |
+| RSS feed             | `app/feed.xml/route.ts` (RSS 2.0 of latest posts) |
+| Structured data      | JSON-LD: `WebApplication` on landing, `SoftwareApplication`/`FAQPage` on calculator pages |
+| Per-tool metadata    | Each `/tools/[slug]` page has its own title, description, OG tags, and FAQ |
+| Canonical base URL   | `lib/site.ts` (`NEXT_PUBLIC_SITE_URL`) + `absoluteUrl()` |
+| Keywords             | Comprehensive Indian finance keywords (incl. trending terms in blog posts) |
 
 ---
 
@@ -537,8 +642,12 @@ INR (₹), USD ($), EUR (€), GBP (£), SGD (S$), AED (د.إ), AUD (A$), CAD (C
 - **Platform**: Vercel (auto-deploys on `git push` to `master`)
 - **Serverless Functions**: All `route.ts` files in `src/app/api/` become Vercel Serverless Functions
 - **Cron Jobs** (defined in `vercel.json`):
-  - `/api/cron/notifications` — daily at 9:00 AM UTC
-  - `/api/cron/exchange-rates` — daily at 6:00 AM UTC
+  - `/api/cron/exchange-rates` — daily at 6:00 AM UTC (refresh currency rates)
+  - `/api/cron/blog-post` — daily at 8:00 AM UTC (AI auto-publish one post)
+  - `/api/cron/notifications` — daily at 9:00 AM UTC (reminders push)
+  - `/api/cron/weekly-summary` — Mondays at 3:00 AM UTC (net worth push summary)
+  - `/api/cron/monthly-snapshot` — 1st of month at 12:00 AM UTC (capture net worth snapshot)
+  - All cron endpoints are protected by the `CRON_SECRET` bearer token
 - **Build**: `npm run build` (runs `stamp-sw.mjs` prebuild → `next build`)
 - **Domain**: `finboom-cyan.vercel.app`
 
@@ -558,12 +667,19 @@ INR (₹), USD ($), EUR (€), GBP (£), SGD (S$), AED (د.إ), AUD (A$), CAD (C
 | `CRON_SECRET`                      | Server  | Auth token for Vercel cron endpoints |
 | `NEXT_PUBLIC_SANITY_PROJECT_ID`    | Client  | Sanity CMS project ID               |
 | `NEXT_PUBLIC_SANITY_DATASET`       | Client  | Sanity dataset (production)          |
+| `SANITY_EDITOR_TOKEN`              | Server  | Sanity write token (publish posts)   |
+| `GEMINI_API_KEY`                   | Server  | Primary blog AI provider (Gemini)    |
+| `GROQ_API_KEY`                     | Server  | Blog AI fallback provider (optional) |
+| `OPENAI_API_KEY`                   | Server  | Blog AI fallback provider (optional) |
+| `NEXT_PUBLIC_SITE_URL`             | Client  | Canonical base URL for SEO/sitemap/RSS |
+
+> Blog automation (cron + `blog:*` CLIs) requires at least one AI provider key plus `SANITY_EDITOR_TOKEN`. If a provider key is missing, the generator falls back to the next available provider.
 
 ---
 
 ## 16. Commit History & Changelog
 
-45 commits total, in chronological order:
+The table below documents the **first 45 commits** in chronological order (foundation of the app). The major feature waves added since are summarized in [Recent major additions](#recent-major-additions-commits-4671) below.
 
 | # | Commit    | Type     | Description                                                  |
 |---|-----------|----------|--------------------------------------------------------------|
@@ -625,3 +741,18 @@ INR (₹), USD ($), EUR (€), GBP (£), SGD (S$), AED (د.إ), AUD (A$), CAD (C
 - Commits 21-24: Iterative mermaid dark mode fixes — 4 attempts to get chart colors right
 - Commits 35 & 37: Status bar color matching — 2 iterations
 - Each commit addresses a single, focused concern ✓
+
+### Recent major additions (commits 46–71)
+
+Beyond the foundation above, the project grew into a finance platform (currently **71 commits**). The notable waves:
+
+| Theme | What was added |
+|-------|----------------|
+| **Currency & offline polish** | Fallback currency rates, better online/offline detection, refresh disabled when offline, snapshot/chart time-range filtering with smart date formatting |
+| **Blog automation platform** | DB-backed topic queue + daily auto-generation cron, admin manual trigger + upcoming-topics dashboard, multi-provider AI fallback (Gemini 2.5-flash → Groq → OpenAI), resilient JSON/parse handling, topic similarity guard, graceful handling of broken Mermaid/images |
+| **Blog reading experience & SEO** | Reading time + related posts, featured latest post with gradient artwork, blog search, canonicals + sitemap + JSON-LD, RSS feed (`/feed.xml`) |
+| **UX feature roadmap** | Public financial calculators suite (`/tools`), Wealth Check 0–100 score, portfolio analytics (diversification/concentration), EMI liquidity insight, smart asset importer, global toast system |
+| **Visual-first content** | Auto-posts restructured around key takeaways + Mermaid + tables, plus `blog:new`/`blog:update`/`blog:regen` regeneration tooling |
+| **Production-grade UI polish** | Lucide icons replacing emojis on calculators, red destructive "Delete account" button, accessible hover/focus tooltips on icon-only controls |
+
+> For the exact commit-by-commit history, run `git log --oneline`.
