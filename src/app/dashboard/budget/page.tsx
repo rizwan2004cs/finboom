@@ -12,6 +12,7 @@ import { EXPENSE_CATEGORIES } from "@/lib/constants"
 import { CategoryIcon } from "@/components/category-icon"
 import { useAppDialog } from "@/components/app-dialog"
 import { useCurrency } from "@/hooks/use-currency"
+import { Tooltip } from "@/components/tooltip"
 
 function formatMonthKey(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`
@@ -483,18 +484,24 @@ export default function BudgetPage() {
                     </div>
                   ) : (
                     <>
-                      <button
-                        onClick={() => { setEditingId(budget.id); setEditAmount(String(budget.amount)) }}
-                        className="p-1.5 rounded-lg hover:bg-[#f5f5f7] dark:hover:bg-[#2c2c2e] transition-all"
-                      >
-                        <Pencil className="w-3.5 h-3.5 text-[#86868b]" />
-                      </button>
-                      <button
-                        onClick={() => removeBudget(budget.id)}
-                        className="p-1.5 rounded-lg hover:bg-[#f5f5f7] dark:hover:bg-[#2c2c2e] transition-all"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 text-[#86868b]" />
-                      </button>
+                      <Tooltip label="Edit budget" side="top">
+                        <button
+                          onClick={() => { setEditingId(budget.id); setEditAmount(String(budget.amount)) }}
+                          aria-label="Edit budget"
+                          className="p-1.5 rounded-lg hover:bg-[#f5f5f7] dark:hover:bg-[#2c2c2e] transition-all"
+                        >
+                          <Pencil className="w-3.5 h-3.5 text-[#86868b]" />
+                        </button>
+                      </Tooltip>
+                      <Tooltip label="Delete budget" side="top">
+                        <button
+                          onClick={() => removeBudget(budget.id)}
+                          aria-label="Delete budget"
+                          className="p-1.5 rounded-lg hover:bg-[#f5f5f7] dark:hover:bg-[#2c2c2e] transition-all"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-[#86868b]" />
+                        </button>
+                      </Tooltip>
                     </>
                   )}
                 </div>

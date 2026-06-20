@@ -310,8 +310,9 @@ export default function SettingsPage() {
         </p>
         <button
           onClick={deleteAccount}
-          className="liquid-glass-btn-primary"
+          className="liquid-glass-btn-destructive"
         >
+          <Trash2 className="w-4 h-4" />
           Delete Account
         </button>
       </div>

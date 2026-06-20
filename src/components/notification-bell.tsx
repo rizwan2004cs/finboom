@@ -4,6 +4,7 @@ import { useEffect, useState, useRef } from "react"
 import { Bell, Check, Trash2, HandCoins, Target, AlertTriangle, ArrowUpRight } from "lucide-react"
 import { createClient } from "@/utils/supabase/client"
 import { useUser } from "@/hooks/use-auth"
+import { Tooltip } from "@/components/tooltip"
 import type { AppNotification } from "@/lib/types"
 
 const TYPE_ICONS: Record<string, typeof Bell> = {
@@ -89,17 +90,20 @@ export function NotificationBell() {
 
   return (
     <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen(!open)}
-        className="relative p-2 rounded-full hover:bg-white/60 dark:hover:bg-white/[0.08] transition-all duration-200"
-      >
-        <Bell className="w-[18px] h-[18px] text-[#86868b]" strokeWidth={1.5} />
-        {unreadCount > 0 && (
-          <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
-            {unreadCount > 9 ? "9+" : unreadCount}
-          </span>
-        )}
-      </button>
+      <Tooltip label={unreadCount > 0 ? `${unreadCount} unread notification${unreadCount > 1 ? "s" : ""}` : "Notifications"} side="bottom">
+        <button
+          onClick={() => setOpen(!open)}
+          aria-label="Notifications"
+          className="relative p-2 rounded-full hover:bg-white/60 dark:hover:bg-white/[0.08] transition-all duration-200"
+        >
+          <Bell className="w-[18px] h-[18px] text-[#86868b]" strokeWidth={1.5} />
+          {unreadCount > 0 && (
+            <span className="absolute top-1 right-1 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+              {unreadCount > 9 ? "9+" : unreadCount}
+            </span>
+          )}
+        </button>
+      </Tooltip>
 
       {open && (
         <div className="absolute right-0 top-full mt-2 w-72 sm:w-72 max-h-[360px] rounded-2xl bg-white/95 dark:bg-[#1c1c1e]/95 backdrop-blur-xl shadow-2xl shadow-black/[0.12] border border-black/[0.06] dark:border-white/[0.08] overflow-hidden z-50">

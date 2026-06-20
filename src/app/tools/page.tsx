@@ -2,6 +2,7 @@ import Link from "next/link"
 import type { Metadata } from "next"
 import { TOOLS } from "@/lib/tools"
 import { SITE_NAME, absoluteUrl } from "@/lib/site"
+import { CategoryIcon } from "@/components/category-icon"
 
 export const metadata: Metadata = {
   title: "Free Financial Calculators",
@@ -60,12 +61,10 @@ export default function ToolsLandingPage() {
             className="group liquid-glass overflow-hidden"
           >
             <div className={`relative h-28 overflow-hidden bg-gradient-to-br ${tool.gradient}`}>
-              <span
-                aria-hidden
-                className="absolute bottom-2 right-4 select-none text-6xl leading-none transition-transform duration-500 group-hover:scale-110"
-              >
-                {tool.icon}
-              </span>
+              <CategoryIcon
+                name={tool.icon}
+                className="absolute bottom-3 right-4 h-11 w-11 text-[#1d1d1f]/65 dark:text-white/75 transition-transform duration-500 group-hover:scale-110"
+              />
             </div>
             <div className="p-5">
               <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-white group-hover:text-accent transition-colors">

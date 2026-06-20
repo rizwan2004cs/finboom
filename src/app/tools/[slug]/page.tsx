@@ -4,6 +4,7 @@ import type { Metadata } from "next"
 import { TOOLS, TOOL_SLUGS, getTool } from "@/lib/tools"
 import { absoluteUrl, SITE_NAME } from "@/lib/site"
 import { CalculatorIsland } from "@/components/tools/calculator-island"
+import { CategoryIcon } from "@/components/category-icon"
 
 export const dynamicParams = false
 
@@ -119,7 +120,7 @@ export default async function ToolPage({ params }: Readonly<{ params: Promise<{ 
         <div className="mt-5 grid gap-5 sm:grid-cols-3">
           {related.map((t) => (
             <Link key={t.slug} href={`/tools/${t.slug}`} className="group liquid-glass p-5">
-              <span className="text-3xl">{t.icon}</span>
+              <CategoryIcon name={t.icon} className="h-7 w-7 text-[#1d1d1f]/65 dark:text-white/75" />
               <h3 className="mt-2 font-semibold text-[#1d1d1f] dark:text-white group-hover:text-accent transition-colors">
                 {t.title}
               </h3>

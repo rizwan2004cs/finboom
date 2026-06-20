@@ -8,6 +8,7 @@ import { useProfile } from "@/hooks/use-profile"
 import { NotificationBell } from "@/components/notification-bell"
 import { SyncButton } from "@/components/offline-indicator"
 import { useAppUpdate } from "@/components/offline-provider"
+import { Tooltip } from "@/components/tooltip"
 import Link from "next/link"
 
 export function TopBar() {
@@ -44,16 +45,19 @@ export function TopBar() {
           </p>
           <p className="text-[11px] text-[#86868b] leading-tight">FinBoom</p>
         </div>
-        <button
-          onClick={toggle}
-          className="hidden lg:flex p-2 rounded-xl hover:bg-white/60 transition-all duration-200"
-        >
-          {collapsed ? (
-            <PanelLeftOpen className="w-[18px] h-[18px] text-[#86868b]" strokeWidth={1.5} />
-          ) : (
-            <PanelLeftClose className="w-[18px] h-[18px] text-[#86868b]" strokeWidth={1.5} />
-          )}
-        </button>
+        <Tooltip label={collapsed ? "Expand sidebar" : "Collapse sidebar"} side="bottom">
+          <button
+            onClick={toggle}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className="hidden lg:flex p-2 rounded-xl hover:bg-white/60 transition-all duration-200"
+          >
+            {collapsed ? (
+              <PanelLeftOpen className="w-[18px] h-[18px] text-[#86868b]" strokeWidth={1.5} />
+            ) : (
+              <PanelLeftClose className="w-[18px] h-[18px] text-[#86868b]" strokeWidth={1.5} />
+            )}
+          </button>
+        </Tooltip>
       </div>
       
       <div className="flex items-center gap-2">

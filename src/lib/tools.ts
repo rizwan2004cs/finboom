@@ -13,6 +13,7 @@ export interface ToolDef {
   description: string
   keywords: string[]
   gradient: string
+  /** lucide-react icon name, rendered via <CategoryIcon /> */
   icon: string
   intro: string
   faqs: ToolFaq[]
@@ -27,7 +28,7 @@ export const TOOLS: readonly ToolDef[] = [
       "Free SIP calculator for mutual funds. Estimate the future value, total invested, and wealth gained from a monthly SIP at any expected return and tenure.",
     keywords: ["sip calculator", "mutual fund sip", "sip returns", "monthly investment calculator"],
     gradient: "from-emerald-500/25 via-teal-400/10 to-transparent",
-    icon: "📈",
+    icon: "TrendingUp",
     intro:
       "A Systematic Investment Plan (SIP) lets you invest a fixed amount every month. Compounding does the heavy lifting — small, regular investments can grow into a large corpus over time. Enter your monthly amount, expected return, and how long you'll invest.",
     faqs: [
@@ -49,7 +50,7 @@ export const TOOLS: readonly ToolDef[] = [
       "Step-up SIP calculator: see how raising your monthly SIP by a fixed percentage each year dramatically increases your final corpus versus a flat SIP.",
     keywords: ["step up sip calculator", "top up sip", "annual increase sip", "sip growth calculator"],
     gradient: "from-sky-500/25 via-indigo-400/10 to-transparent",
-    icon: "🚀",
+    icon: "ArrowUpRight",
     intro:
       "A step-up (or top-up) SIP raises your monthly contribution by a set percentage every year — usually in line with your salary growth. Even a 10% annual step-up can grow your final corpus far beyond a flat SIP.",
     faqs: [
@@ -71,7 +72,7 @@ export const TOOLS: readonly ToolDef[] = [
       "Lumpsum investment calculator. Find the future value of a one-time investment compounded annually at your expected rate of return.",
     keywords: ["lumpsum calculator", "one time investment", "compound interest calculator", "future value"],
     gradient: "from-violet-500/25 via-purple-400/10 to-transparent",
-    icon: "💰",
+    icon: "Banknote",
     intro:
       "A lumpsum investment puts a single amount to work today. Thanks to compounding, the longer you stay invested, the more your money grows. Enter the amount, expected return, and tenure.",
     faqs: [
@@ -93,7 +94,7 @@ export const TOOLS: readonly ToolDef[] = [
       "Fixed deposit (FD) calculator. Compute maturity amount and interest earned for any principal, rate, tenure, and compounding frequency.",
     keywords: ["fd calculator", "fixed deposit calculator", "fd maturity", "fd interest calculator"],
     gradient: "from-amber-500/25 via-orange-400/10 to-transparent",
-    icon: "🏦",
+    icon: "Landmark",
     intro:
       "A fixed deposit pays a guaranteed interest rate for a chosen tenure. Indian banks usually compound interest quarterly. Enter your deposit, rate, tenure, and compounding frequency to see the maturity amount.",
     faqs: [
@@ -115,7 +116,7 @@ export const TOOLS: readonly ToolDef[] = [
       "XIRR calculator for investments with multiple dated cash flows. Get the true annualised return across SIPs, lumpsums, and redemptions.",
     keywords: ["xirr calculator", "xirr returns", "mutual fund xirr", "annualised return calculator"],
     gradient: "from-rose-500/25 via-pink-400/10 to-transparent",
-    icon: "🧮",
+    icon: "Calculator",
     intro:
       "XIRR is the annualised return when money goes in and out on different dates — the right metric for SIPs, lumpsums, and partial redemptions. Add each cash flow (investments negative, redemptions and current value positive) to compute it.",
     faqs: [
@@ -137,7 +138,7 @@ export const TOOLS: readonly ToolDef[] = [
       "HRA exemption calculator (Section 10(13A)). Find the tax-free portion of your House Rent Allowance based on salary, rent paid, and city.",
     keywords: ["hra calculator", "hra exemption", "house rent allowance", "section 10 13a"],
     gradient: "from-cyan-500/25 via-blue-400/10 to-transparent",
-    icon: "🏠",
+    icon: "Home",
     intro:
       "If you receive House Rent Allowance and pay rent, part of it is tax-exempt under Section 10(13A). The exemption is the least of three values. Enter annual figures to see how much is tax-free.",
     faqs: [
@@ -159,7 +160,7 @@ export const TOOLS: readonly ToolDef[] = [
       "Income tax calculator for FY 2025-26 (AY 2026-27). Compare the old and new tax regimes and see which one saves you more, including the latest slabs and rebate.",
     keywords: ["income tax calculator", "old vs new regime", "fy 2025-26 tax", "tax slabs india"],
     gradient: "from-fuchsia-500/25 via-purple-400/10 to-transparent",
-    icon: "🧾",
+    icon: "Receipt",
     intro:
       "The new tax regime is the default, but the old regime can still win if you claim large deductions (80C, 80D, HRA, home loan interest). Enter your income and deductions to compare both for FY 2025-26.",
     faqs: [

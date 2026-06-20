@@ -5,6 +5,7 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
 import { useSidebar } from "@/components/sidebar-context"
+import { Tooltip } from "@/components/tooltip"
 import {
   LayoutDashboard,
   Wallet,
@@ -103,12 +104,10 @@ export function Sidebar({ onStartTour }: { onStartTour?: () => void }) {
         {navItems.map((item) => {
           const isActive = pathname === item.href || 
             (item.href !== "/dashboard" && pathname.startsWith(item.href))
-          return (
+          const link = (
             <Link
-              key={item.href}
               href={item.href}
               data-tour={item.label.toLowerCase()}
-              title={collapsed ? item.label : undefined}
               className={cn(
                 "flex items-center gap-3 rounded-xl text-[14px] font-medium transition-all duration-200",
                 collapsed ? "justify-center px-2 py-2.5" : "px-3 py-2",
@@ -121,43 +120,54 @@ export function Sidebar({ onStartTour }: { onStartTour?: () => void }) {
               {!collapsed && <span>{item.label}</span>}
             </Link>
           )
+          return collapsed ? (
+            <Tooltip key={item.href} label={item.label} side="right">
+              {link}
+            </Tooltip>
+          ) : (
+            <div key={item.href}>{link}</div>
+          )
         })}
 
         {/* Tour button */}
         {onStartTour && (
-          <button
-            onClick={onStartTour}
-            title={collapsed ? tourItem.label : undefined}
-            className={cn(
-              "flex items-center gap-3 w-full rounded-xl text-[14px] font-medium transition-all duration-200",
-              collapsed ? "justify-center px-2 py-2.5" : "px-3 py-2",
-              "text-[#6e6e73] hover:bg-white/50 hover:text-[#1d1d1f]"
-            )}
-          >
-            <tourItem.icon className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={1.5} />
-            {!collapsed && <span>{tourItem.label}</span>}
-          </button>
+          <Tooltip label={collapsed ? tourItem.label : ""} side="right">
+            <button
+              onClick={onStartTour}
+              className={cn(
+                "flex items-center gap-3 w-full rounded-xl text-[14px] font-medium transition-all duration-200",
+                collapsed ? "justify-center px-2 py-2.5" : "px-3 py-2",
+                "text-[#6e6e73] hover:bg-white/50 hover:text-[#1d1d1f]"
+              )}
+            >
+              <tourItem.icon className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={1.5} />
+              {!collapsed && <span>{tourItem.label}</span>}
+            </button>
+          </Tooltip>
         )}
       </nav>
 
       {/* Collapse toggle */}
       <div className={cn("py-3 border-t border-white/20", collapsed ? "px-2" : "px-3")}>
-        <button
-          onClick={toggle}
-          className={cn(
-            "flex items-center gap-3 w-full rounded-xl text-[14px] font-medium text-[#86868b] hover:text-[#1d1d1f] hover:bg-white/50 transition-all duration-200",
-            collapsed ? "justify-center px-2 py-2.5" : "px-3 py-2"
-          )}
-        >
-          {collapsed ? (
-            <PanelLeftOpen className="w-[18px] h-[18px]" strokeWidth={1.5} />
-          ) : (
-            <>
-              <PanelLeftClose className="w-[18px] h-[18px]" strokeWidth={1.5} />
-              <span>Collapse</span>
-            </>
-          )}
-        </button>
+        <Tooltip label={collapsed ? "Expand sidebar" : ""} side="right">
+          <button
+            onClick={toggle}
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            className={cn(
+              "flex items-center gap-3 w-full rounded-xl text-[14px] font-medium text-[#86868b] hover:text-[#1d1d1f] hover:bg-white/50 transition-all duration-200",
+              collapsed ? "justify-center px-2 py-2.5" : "px-3 py-2"
+            )}
+          >
+            {collapsed ? (
+              <PanelLeftOpen className="w-[18px] h-[18px]" strokeWidth={1.5} />
+            ) : (
+              <>
+                <PanelLeftClose className="w-[18px] h-[18px]" strokeWidth={1.5} />
+                <span>Collapse</span>
+              </>
+            )}
+          </button>
+        </Tooltip>
       </div>
     </aside>
   )
