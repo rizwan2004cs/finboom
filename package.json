@@ -2,15 +2,28 @@
   "name": "finboom",
   "version": "0.1.0",
   "private": true,
+  "description": "Offline-first personal finance & net worth tracker for Indian investors — assets, budgets, goals, a Wealth Check score, free calculators and a finance blog.",
+  "license": "MIT",
+  "author": "Rizwan (rizwan2004cs)",
+  "homepage": "https://finboom-cyan.vercel.app",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/rizwan2004cs/finboom.git"
+  },
+  "bugs": {
+    "url": "https://github.com/rizwan2004cs/finboom/issues"
+  },
   "scripts": {
     "dev": "next dev",
     "prebuild": "node scripts/stamp-sw.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
     "blog:regen": "tsx scripts/regenerate-blog.ts",
     "blog:new": "tsx scripts/regenerate-blog.ts new",
-    "blog:update": "tsx scripts/regenerate-blog.ts update"
+    "blog:update": "tsx scripts/regenerate-blog.ts update",
+    "blog:delete": "tsx scripts/regenerate-blog.ts delete"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.3.2",

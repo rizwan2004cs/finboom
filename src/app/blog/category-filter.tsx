@@ -14,7 +14,7 @@ export function BlogCategoryFilter({
   if (categories.length === 0) return null
 
   return (
-    <div className="mt-6 flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-2">
       <Link
         href="/blog"
         className={`px-3.5 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${

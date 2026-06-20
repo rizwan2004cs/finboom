@@ -98,6 +98,7 @@ export async function pullAllData(userId: string): Promise<void> {
     { table: "parties", store: "parties" },
     { table: "party_transactions", store: "party_transactions" },
     { table: "profiles", store: "profiles" },
+    { table: "health_checks", store: "health_checks" },
   ]
 
   const syncStart = new Date().toISOString()

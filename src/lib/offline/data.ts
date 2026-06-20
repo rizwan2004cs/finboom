@@ -18,6 +18,7 @@ const TABLE_TO_STORE: Record<string, StoreName> = {
   parties: "parties",
   party_transactions: "party_transactions",
   profiles: "profiles",
+  health_checks: "health_checks",
 }
 
 function isOnline(): boolean {

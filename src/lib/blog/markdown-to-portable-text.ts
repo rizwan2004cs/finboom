@@ -97,20 +97,37 @@ export function markdownToPortableText(markdown: string) {
     }
 
     // A ```keypoints fenced block becomes the brief "Key takeaways" callout.
+    // Guard against an UNTERMINATED fence: the LLM sometimes forgets the closing
+    // ``` and keeps writing the article. Without a guard the loop would swallow
+    // the entire post (headings, images, tables) into the callout. So we stop at
+    // the closing fence OR at the first line that clearly isn't a takeaway, and
+    // resume parsing there so the rest renders as real blocks.
     if (/^```\s*keypoints\s*$/i.test(line.trim())) {
       flushList()
       const items: string[] = []
       let j = i + 1
-      while (j < lines.length && lines[j].trim() !== "```") {
-        const raw = lines[j].trim().replace(/^[-*]\s+/, "")
-        const clean = stripMarks(raw)
+      let closed = false
+      while (j < lines.length) {
+        const t = lines[j].trim()
+        if (t === "```") {
+          closed = true
+          break
+        }
+        // These can't be takeaways → the fence was left open; bail out.
+        if (/^#{1,6}\s/.test(t) || /^!\[/.test(t) || t.startsWith("|") || t.startsWith("```")) {
+          break
+        }
+        const clean = stripMarks(t.replace(/^[-*]\s+/, ""))
         if (clean) items.push(clean)
         j++
+        if (items.length >= 8) break // safety cap; takeaways are only 3-5 lines
       }
       if (items.length > 0) {
         blocks.push({ _type: "callout", _key: nextKey(), style: "keypoints", items })
       }
-      i = j
+      // Skip the closing fence when present; otherwise resume AT the line that
+      // stopped us so headings/images/tables become proper blocks.
+      i = closed ? j : j - 1
       continue
     }
 

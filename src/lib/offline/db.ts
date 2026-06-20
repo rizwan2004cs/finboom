@@ -4,7 +4,7 @@
  */
 
 const DB_NAME = "finboom-offline"
-const DB_VERSION = 3
+const DB_VERSION = 4
 
 const STORES = [
   "assets",
@@ -16,6 +16,7 @@ const STORES = [
   "parties",
   "party_transactions",
   "profiles",
+  "health_checks",
   "_queue", // mutation queue for offline writes
   "_meta",  // metadata (last sync timestamps, etc.)
 ] as const
@@ -62,6 +63,14 @@ function openDB(): Promise<IDBDatabase> {
       if (oldVersion < 3) {
         if (!db.objectStoreNames.contains("budgets")) {
           const store = db.createObjectStore("budgets", { keyPath: "id" })
+          store.createIndex("updated_at", "updated_at")
+        }
+      }
+
+      // V3 → V4: add health_checks store
+      if (oldVersion < 4) {
+        if (!db.objectStoreNames.contains("health_checks")) {
+          const store = db.createObjectStore("health_checks", { keyPath: "id" })
           store.createIndex("updated_at", "updated_at")
         }
       }

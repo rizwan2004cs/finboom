@@ -106,19 +106,30 @@ function markdownToPortableText(markdown: string) {
     }
 
     // Key-takeaways brief: ```keypoints ... ```
+    // Guard an unterminated fence so it can't swallow the rest of the post.
     if (/^```\s*keypoints\s*$/i.test(line.trim())) {
       flushList()
       const items: string[] = []
       let j = i + 1
-      while (j < lines.length && lines[j].trim() !== "```") {
-        const clean = stripMarks(lines[j].trim().replace(/^[-*]\s+/, ""))
+      let closed = false
+      while (j < lines.length) {
+        const t = lines[j].trim()
+        if (t === "```") {
+          closed = true
+          break
+        }
+        if (/^#{1,6}\s/.test(t) || /^!\[/.test(t) || t.startsWith("|") || t.startsWith("```")) {
+          break
+        }
+        const clean = stripMarks(t.replace(/^[-*]\s+/, ""))
         if (clean) items.push(clean)
         j++
+        if (items.length >= 8) break
       }
       if (items.length > 0) {
         blocks.push({ _type: "callout", _key: nextKey(), style: "keypoints", items })
       }
-      i = j
+      i = closed ? j : j - 1
       continue
     }
 

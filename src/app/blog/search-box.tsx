@@ -34,7 +34,7 @@ export function BlogSearchBox({ initialQuery }: { initialQuery?: string }) {
   }
 
   return (
-    <div className="relative mt-6 max-w-md">
+    <div className="relative w-full shrink-0 sm:ml-auto sm:w-72">
       <Search
         className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-[#86868b]"
         strokeWidth={2}

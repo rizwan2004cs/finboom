@@ -1,5 +1,10 @@
 # FinBoom
 
+[![CI](https://github.com/rizwan2004cs/finboom/actions/workflows/ci.yml/badge.svg)](https://github.com/rizwan2004cs/finboom/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](./CONTRIBUTING.md)
+[![Made with Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org)
+
 > **Know your true wealth.** An offline-first personal finance & net worth tracker built for Indian investors, with a liquid-glass UI inspired by iOS 26.
 
 **Live:** https://finboom-cyan.vercel.app
@@ -31,7 +36,7 @@ Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4 · Clerk (au
 
 ```bash
 npm install
-cp .env.local.example .env.local   # then fill in the values (see below)
+cp .env.example .env.local   # then fill in the values (see below)
 npm run dev
 ```
 
@@ -61,4 +66,20 @@ Auto-deploys to **Vercel** on push to `master`. Cron jobs (notifications, exchan
 
 ## Documentation
 
-Full architecture, data model, offline engine, and feature deep-dives live in **[DOCUMENTATION.md](./DOCUMENTATION.md)**.
+- **[PRODUCT.md](./PRODUCT.md)** — the product & user journey (with visuals): personas, the end-to-end flow, and what each stage delivers.
+- **[DOCUMENTATION.md](./DOCUMENTATION.md)** — architecture, data model, offline engine, and feature deep-dives.
+- **[ROADMAP.md](./ROADMAP.md)** — planned features and known pain points.
+
+## Contributing
+
+Contributions are welcome and appreciated! 🙌 Whether it's code, docs, design, or bug reports — start with the **[Contributing Guide](./CONTRIBUTING.md)**.
+
+- Good first issues: clearing the new React Compiler lint findings (`npm run lint`) and the "Quick Wins" in the [Roadmap](./ROADMAP.md).
+- Be kind — we follow a [Code of Conduct](./CODE_OF_CONDUCT.md).
+- Found a security issue? See the [Security Policy](./SECURITY.md).
+
+If FinBoom is useful to you, please consider **starring the repo** ⭐ — it genuinely helps others discover it.
+
+## License
+
+[MIT](./LICENSE) © Rizwan and FinBoom contributors.

@@ -165,12 +165,14 @@ export default async function BlogPage({
           <p className="mt-3 text-lg text-[#6e6e73] dark:text-[#98989d]">
             Financial tips, market insights, and product updates.
           </p>
-          <BlogCategoryFilter
-            categories={categories}
-            labels={BLOG_CATEGORY_LABELS}
-            active={activeCategory}
-          />
-          <BlogSearchBox initialQuery={q} />
+          <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <BlogCategoryFilter
+              categories={categories}
+              labels={BLOG_CATEGORY_LABELS}
+              active={activeCategory}
+            />
+            <BlogSearchBox initialQuery={q} />
+          </div>
           {query && filteredPosts.length > 0 && (
             <p className="mt-4 text-sm text-[#6e6e73] dark:text-[#98989d]">
               {filteredPosts.length} {filteredPosts.length === 1 ? "post" : "posts"} matching

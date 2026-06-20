@@ -17,6 +17,7 @@
  *   tsx scripts/regenerate-blog.ts update 3       # regenerate 3 newest auto posts
  *   tsx scripts/regenerate-blog.ts update all     # regenerate every auto post
  *   tsx scripts/regenerate-blog.ts update <slug-a> <slug-b>
+ *   tsx scripts/regenerate-blog.ts delete <slug>  # delete post(s) by slug
  *   tsx scripts/regenerate-blog.ts                # default: update 1 + new 1
  */
 import process from "node:process"
@@ -191,14 +192,49 @@ async function updateExisting(slugs: string[], count: number) {
   }
 }
 
+function requireToken() {
+  if (!TOKEN) {
+    console.error("Missing required env: SANITY_EDITOR_TOKEN.")
+    console.error("Add it to .env.local (e.g. `vercel env pull`) or export it, then re-run.")
+    process.exit(1)
+  }
+}
+
+async function deletePosts(slugs: string[]) {
+  if (slugs.length === 0) {
+    console.log("Usage: tsx scripts/regenerate-blog.ts delete <slug> [<slug> ...]")
+    return
+  }
+  const posts = await sanityClient.fetch<AutoPost[]>(
+    `*[_type == "post" && slug.current in $slugs]{ _id, title, "slug": slug.current }`,
+    { slugs }
+  )
+  if (posts.length === 0) {
+    console.log(`No posts found for: ${slugs.join(", ")}`)
+    return
+  }
+  for (const post of posts) {
+    await sanityMutate([{ delete: { id: post._id } }])
+    console.log(`Deleted: "${post.title}" (/blog/${post.slug})`)
+  }
+}
+
 function parseArgs() {
   const [, , mode, ...rest] = process.argv
   return { mode, rest }
 }
 
 async function main() {
-  assertEnv()
   const { mode, rest } = parseArgs()
+
+  // Delete only needs the Sanity write token, not an AI key.
+  if (mode === "delete") {
+    requireToken()
+    await deletePosts(rest)
+    return
+  }
+
+  assertEnv()
 
   if (mode === "new") {
     await generateNew(rest.join(" "))
@@ -221,7 +257,7 @@ async function main() {
   }
 
   if (mode && mode !== "default") {
-    console.log("Usage: tsx scripts/regenerate-blog.ts [new <topic> | update <count|all|slugs...>]")
+    console.log("Usage: tsx scripts/regenerate-blog.ts [new <topic> | update <count|all|slugs...> | delete <slugs...>]")
     return
   }
 

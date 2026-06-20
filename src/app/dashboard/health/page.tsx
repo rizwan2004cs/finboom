@@ -3,9 +3,8 @@
 import { useEffect, useMemo, useState } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
-import { createClient } from "@/utils/supabase/client"
 import { useOfflineQuery } from "@/hooks/use-offline-query"
-import { useQuery, useQueryClient } from "@tanstack/react-query"
+import { useInsertMutation, useUpdateMutation } from "@/hooks/use-offline-mutation"
 import { Shield, Heart, AlertTriangle, CheckCircle, Info } from "lucide-react"
 import type { HealthCheck, Asset, Liability, Goal, Transaction } from "@/lib/types"
 import { computeWealthCheck, type WealthDimension } from "@/lib/finance/wealth-check"
@@ -14,8 +13,7 @@ import { useCurrency } from "@/hooks/use-currency"
 export default function HealthPage() {
   const { user } = useUser()
   const { formatCompact, symbol: currencySymbol } = useCurrency()
-  const queryClient = useQueryClient()
-  const [health, setHealth] = useState<HealthCheck>({
+  const [health, setHealth] = useState<HealthCheck & { id?: string }>({
     has_term_insurance: false,
     term_insurance_cover: 0,
     has_health_insurance: false,
@@ -23,7 +21,6 @@ export default function HealthPage() {
     emergency_fund_months: 0,
     monthly_expenses: 0,
   })
-  const [saving, setSaving] = useState(false)
   const [monthlyIncome, setMonthlyIncome] = useState(0)
 
   const { activeProfile } = useProfile()
@@ -33,18 +30,24 @@ export default function HealthPage() {
   const { data: liabilities = [] } = useOfflineQuery<Liability>("liabilities", user?.id, { filters: pf })
   const { data: goals = [] } = useOfflineQuery<Goal>("goals", user?.id, { filters: pf })
 
-  const { isLoading: loading } = useQuery({
-    queryKey: ["health_checks", user?.id],
-    queryFn: async () => {
-      const supabase = createClient()
-      const { data } = await supabase.from("health_checks").select("*").eq("user_id", user!.id).single()
-      return data as HealthCheck | null
-    },
-    enabled: !!user,
+  // Persist through the same offline-first layer as the rest of the app
+  // (Supabase + IndexedDB + sync queue) so saves survive reloads and offline
+  // use, with the error/success surfaced via toast instead of failing silently.
+  const { data: healthRows = [], isLoading: loading } =
+    useOfflineQuery<HealthCheck & { id: string }>("health_checks", user?.id)
+  const healthData = healthRows[0]
+
+  const insertHealth = useInsertMutation<HealthCheck & { id: string }>("health_checks", {
+    successMessage: "Health check saved",
+    errorMessage: "Couldn't save your health check. Please try again.",
   })
+  const updateHealth = useUpdateMutation<HealthCheck & { id: string }>("health_checks", {
+    successMessage: "Health check saved",
+    errorMessage: "Couldn't save your health check. Please try again.",
+  })
+  const saving = insertHealth.isPending || updateHealth.isPending
 
   // Sync fetched data into local state for editing
-  const healthData = queryClient.getQueryData<HealthCheck | null>(["health_checks", user?.id])
   useEffect(() => {
     if (healthData) setHealth(healthData)
   }, [healthData])
@@ -59,29 +62,23 @@ export default function HealthPage() {
 
   async function saveHealth() {
     if (!user) return
-    setSaving(true)
-    const supabase = createClient()
-
-    const data = {
+    const payload: Record<string, unknown> = {
       user_id: user.id,
-      ...health,
+      has_term_insurance: health.has_term_insurance,
+      term_insurance_cover: health.term_insurance_cover,
+      has_health_insurance: health.has_health_insurance,
+      health_insurance_cover: health.health_insurance_cover,
+      emergency_fund_months: health.emergency_fund_months,
+      monthly_expenses: health.monthly_expenses,
       updated_at: new Date().toISOString(),
     }
 
-    const { data: existing } = await supabase
-      .from("health_checks")
-      .select("id")
-      .eq("user_id", user.id)
-      .single()
-
-    if (existing) {
-      await supabase.from("health_checks").update(data).eq("id", existing.id)
+    if (health.id) {
+      await updateHealth.mutateAsync({ id: health.id, data: payload })
     } else {
-      await supabase.from("health_checks").insert(data)
+      const res = await insertHealth.mutateAsync(payload)
+      if (res?.data?.id) setHealth(prev => ({ ...prev, id: res.data!.id }))
     }
-
-    queryClient.invalidateQueries({ queryKey: ["health_checks", user.id] })
-    setSaving(false)
   }
 
   // Calculate scores
