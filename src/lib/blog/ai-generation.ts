@@ -125,7 +125,11 @@ MERMAID RULES (invalid diagrams are silently dropped, so follow EXACTLY):
   - Pie charts: pie title Title  then  "Label" : value  lines
 - STRICT: plain ASCII only (--> arrows, straight quotes), no parentheses, colons, commas or special characters inside node labels, no other diagram types
 
-TABLE RULES: include a header row and a |---|---| separator row; keep cells short and plain-text (no backticks or bold inside cells).
+TABLE RULES: every row MUST start AND end with a pipe "|", including the header and a |---|---| separator row directly beneath the header. Keep cells short and plain-text (no backticks or bold inside cells). Exactly like:
+| Option | Lock-in | Returns |
+|---|---|---|
+| ELSS | 3 years | Market-linked |
+| PPF | 15 years | ~7.1% fixed |
 
 IMAGES: do NOT write any image markdown or URLs. Instead, immediately after 3 to 4 of the
 \`##\` section headings, put an image placeholder on its own line in this exact form:

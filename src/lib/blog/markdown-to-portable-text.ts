@@ -8,6 +8,21 @@ function stripMarks(text: string): string {
     .trim()
 }
 
+// A markdown table delimiter row, e.g. |---|---| or | :--- | ---: |.
+function isTableSeparator(line: string): boolean {
+  const t = line.trim()
+  return t.includes("|") && t.includes("-") && /^[-:|\s]+$/.test(t)
+}
+
+// Split one table row into clean cell text, tolerating optional/missing
+// outer pipes (LLMs often omit the trailing pipe, e.g. "| a | b").
+function splitTableRow(line: string): string[] {
+  let t = line.trim()
+  if (t.startsWith("|")) t = t.slice(1)
+  if (t.endsWith("|")) t = t.slice(0, -1)
+  return t.split("|").map((cell) => stripMarks(cell))
+}
+
 export function markdownToPortableText(markdown: string) {
   const lines = markdown.split("\n")
   const blocks: Array<Record<string, unknown>> = []
@@ -99,14 +114,16 @@ export function markdownToPortableText(markdown: string) {
       continue
     }
 
-    if (line.trim().startsWith("|") && line.trim().endsWith("|")) {
+    // Table: a run of rows that each start with "|" (the trailing "|" is
+    // optional - LLMs frequently drop it). The |---|---| separator row, if
+    // present, is dropped; the first remaining row becomes the header.
+    if (line.trim().startsWith("|")) {
       flushList()
       const tableRows: string[][] = []
       let j = i
-      while (j < lines.length && lines[j].trim().startsWith("|") && lines[j].trim().endsWith("|")) {
-        const row = lines[j].trim().slice(1, -1).split("|").map((cell) => cell.trim())
-        if (!row.every((cell) => /^[-:]+$/.test(cell))) {
-          tableRows.push(row)
+      while (j < lines.length && lines[j].trim().startsWith("|")) {
+        if (!isTableSeparator(lines[j])) {
+          tableRows.push(splitTableRow(lines[j]))
         }
         j++
       }
@@ -121,7 +138,7 @@ export function markdownToPortableText(markdown: string) {
             cells: cells.map((cell) => ({
               _type: "tableCell",
               _key: nextKey(),
-              text: stripMarks(cell),
+              text: cell,
             })),
           })),
         })
