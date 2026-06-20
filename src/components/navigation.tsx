@@ -23,6 +23,7 @@ import {
   BookOpen,
   PiggyBank,
   Map,
+  Calculator,
 } from "lucide-react"
 
 const navItems = [
@@ -35,6 +36,7 @@ const navItems = [
   { href: "/dashboard/goals", label: "Goals", icon: Target },
   { href: "/dashboard/snapshots", label: "Snapshots", icon: Camera },
   { href: "/dashboard/health", label: "Health", icon: Heart },
+  { href: "/tools", label: "Calculators", icon: Calculator },
   { href: "/blog", label: "Blog", icon: BookOpen },
   { href: "/dashboard/profiles", label: "Profiles", icon: Users },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
@@ -57,6 +59,7 @@ const moreSubPages = [
   "/dashboard/profiles",
   "/dashboard/settings",
   "/blog",
+  "/tools",
 ]
 
 const moreSheetItems = [
@@ -65,6 +68,7 @@ const moreSheetItems = [
   { href: "/dashboard/goals", label: "Goals", icon: Target },
   { href: "/dashboard/snapshots", label: "Snapshots", icon: Camera },
   { href: "/dashboard/health", label: "Health", icon: Heart },
+  { href: "/tools", label: "Calculators", icon: Calculator },
   { href: "/blog", label: "Blog", icon: BookOpen },
   { href: "/dashboard/profiles", label: "Profiles", icon: Users },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },

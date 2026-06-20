@@ -7,7 +7,10 @@
     "prebuild": "node scripts/stamp-sw.mjs",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "blog:regen": "tsx scripts/regenerate-blog.ts",
+    "blog:new": "tsx scripts/regenerate-blog.ts new",
+    "blog:update": "tsx scripts/regenerate-blog.ts update"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.3.2",
@@ -39,6 +42,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.6",
     "tailwindcss": "^4",
+    "tsx": "^4.22.4",
     "typescript": "^5"
   }
 }

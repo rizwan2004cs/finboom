@@ -1,20 +1,43 @@
 import { GoogleGenerativeAI } from "@google/generative-ai"
-import { injectInlineImages, resolveHeroImage } from "@/lib/blog/images"
+import { injectInlineImages, resolveHeroImage, createImageResolver } from "@/lib/blog/images"
+import {
+  BLOG_CATEGORY_IDS,
+  normalizeBlogCategory,
+  type BlogCategory,
+} from "@/lib/blog/categories"
 
 export type GeneratedBlogPost = {
   title: string
-  category: "guides" | "tips" | "market" | "product"
+  category: BlogCategory
   excerpt: string
   content: string
+  metaTitle?: string
+  metaDescription?: string
+  primaryKeyword?: string
+  keywords: string[]
   heroImageUrl?: string
   heroImageAlt?: string
 }
 
+export type BlogGenerationOptions = {
+  // When set, the post MUST use this category (set by the balancer).
+  targetCategory?: BlogCategory
+  // Trending/seasonal keywords to weave in for SEO.
+  keywords?: string[]
+  // Human-readable seasonal context, e.g. "March (timely: tax saving...)".
+  seasonContext?: string
+}
+
 type BlogOutline = {
   title: string
-  category: GeneratedBlogPost["category"]
+  category: BlogCategory
   excerpt: string
   heroImageQuery: string
+  metaTitle: string
+  metaDescription: string
+  primaryKeyword: string
+  secondaryKeywords: string[]
+  keyTakeaways: string[]
   sections: Array<{ heading: string; points: string[] }>
 }
 
@@ -29,14 +52,30 @@ type BlogOutline = {
 const TARGET_MIN_WORDS = 1500
 const EXPAND_THRESHOLD_WORDS = 1300
 
-const OUTLINE_PROMPT = `You are the editor for FinBoom, a free net worth tracker for Indian investors.
+function buildOutlinePrompt(topic: string, opts: BlogGenerationOptions): string {
+  const categoryRule = opts.targetCategory
+    ? `- Prefer the category "${opts.targetCategory}" IF the topic genuinely fits it; otherwise pick the single most accurate category from: ${BLOG_CATEGORY_IDS.join(" | ")}`
+    : `- Choose the best "category" from: ${BLOG_CATEGORY_IDS.join(" | ")}`
+  const keywordBlock = opts.keywords?.length
+    ? `\n\nTARGET SEARCH KEYWORDS (weave the most relevant ones in naturally; never stuff):\n${opts.keywords.join(", ")}`
+    : ""
+  const seasonBlock = opts.seasonContext
+    ? `\n\nSEASONAL CONTEXT (use only if naturally relevant to the topic): ${opts.seasonContext}`
+    : ""
 
-Plan a long-form blog post on the topic given below. Return ONLY valid JSON:
+  return `You are the editor for FinBoom, a free net worth tracker for Indian investors.
+
+Plan a long-form, SEO-optimized blog post on the topic given below. Return ONLY valid JSON:
 {
-  "title": "<compelling title, under 70 chars, no emojis>",
-  "category": "<one of: guides | tips | market | product>",
+  "title": "<compelling, keyword-rich title, under 65 chars, no emojis>",
+  "category": "<one of: ${BLOG_CATEGORY_IDS.join(" | ")}>",
   "excerpt": "<1-2 sentence summary, under 160 chars>",
-  "heroImageQuery": "<2-4 word photo search query for the hero image, e.g. 'indian family budgeting'>",
+  "metaTitle": "<SEO title tag, max 60 chars, primary keyword near the front>",
+  "metaDescription": "<SEO meta description, max 155 chars, compelling and keyword-rich>",
+  "primaryKeyword": "<the main search phrase this post should rank for>",
+  "secondaryKeywords": ["<related long-tail keyword>", "<another related keyword>"],
+  "heroImageQuery": "<2-4 word CONCRETE, photographable visual query, e.g. 'indian family budgeting'>",
+  "keyTakeaways": ["<one-line takeaway a reader gets without reading the body>", "<another>", "<3 to 5 total>"],
   "sections": [
     {
       "heading": "<section heading, no numbering>",
@@ -46,28 +85,47 @@ Plan a long-form blog post on the topic given below. Return ONLY valid JSON:
 }
 
 RULES:
+${categoryRule}
 - 7 to 9 sections that flow logically from hook to conclusion
 - First section is an engaging hook; last section ties back to FinBoom
 - Each section needs 3-5 concrete, non-overlapping points
+- keyTakeaways: 3-5 punchy, standalone one-liners that summarise the whole post (the "brief" a skimmer reads first); include a concrete number where natural
 - Indian context only: INR amounts, Indian tax laws, Indian instruments (PPF, NPS, EPF, ELSS, FDs, SGBs, mutual funds, SIPs)
 - Cover the topic with real depth: definitions, examples with numbers, comparisons, common mistakes, actionable steps
-- Zero emojis`
+- heroImageQuery must be a concrete, photographable subject (never an abstract concept)
+- Zero emojis${keywordBlock}${seasonBlock}`
+}
 
 // Shared formatting contract for both the writer and expand passes.
 const MARKDOWN_RULES = `MARKDOWN RULES (the blog engine ONLY supports these):
 - ## for main sections, ### for sub-sections (NO # H1)
 - **bold text** for key terms and emphasis
-- \`inline code\` for ALL numbers, amounts, percentages, formulas: \`INR 6 lakh\`, \`40%\`, \`25x\`, \`60\`
-- > blockquote for key takeaways and memorable quotes
+- \`inline code\` for numbers, amounts, percentages, formulas in PROSE: \`INR 6 lakh\`, \`40%\`, \`25x\` (do NOT use backticks inside tables, diagrams, or the keypoints block)
+- > blockquote for a single memorable quote or rule of thumb
 - - bullet lists (dash only, not asterisk)
 - 1. numbered lists
-- | tables | with | pipes | for comparisons (include a header row and a |---|---| separator row) - at least one table
-- \`\`\`mermaid code blocks - EXACTLY ONE per post - ONLY these two types:
-  - Flowcharts: "graph TD" or "graph LR" with simple A[Label] --> B[Label] nodes
-  - Pie charts: pie title Title followed by "Label" : value lines
-  - STRICT: plain ASCII only (--> arrows, straight quotes), no parentheses or special
-    characters inside node labels, no other diagram types
 - Blank lines between paragraphs
+
+VISUAL-FIRST STRUCTURE (this is the most important rule — readers should grasp the post by skimming visuals, then read prose only if they want depth):
+1. Begin the body with a key-takeaways brief, BEFORE the first \`##\` heading, in EXACTLY this fenced form:
+\`\`\`keypoints
+First takeaway as a complete, standalone sentence
+Second takeaway
+Third takeaway
+\`\`\`
+   (3-5 lines, one takeaway per line, no bullets/numbers/backticks inside.)
+2. Every \`##\` section must OPEN with a one-line **bold** summary sentence (the gist), then the supporting prose. A skimmer reading only the bold openers should understand the whole post.
+3. Use plenty of visuals so most sections carry one:
+   - 2 to 4 \`\`\`mermaid diagrams total — at least one near the top as a visual overview/decision flow.
+   - At least 2 markdown | tables | for comparisons, steps, or numbers.
+
+MERMAID RULES (invalid diagrams are silently dropped, so follow EXACTLY):
+- ONLY these two types:
+  - Flowcharts: "graph TD" or "graph LR" with simple A[Label] --> B[Label] nodes
+  - Pie charts: pie title Title  then  "Label" : value  lines
+- STRICT: plain ASCII only (--> arrows, straight quotes), no parentheses, colons, commas or special characters inside node labels, no other diagram types
+
+TABLE RULES: include a header row and a |---|---| separator row; keep cells short and plain-text (no backticks or bold inside cells).
 
 IMAGES: do NOT write any image markdown or URLs. Instead, immediately after 3 to 4 of the
 \`##\` section headings, put an image placeholder on its own line in this exact form:
@@ -77,10 +135,9 @@ Make each query concrete and visual (e.g. {{IMAGE: indian rupee coins}}, {{IMAGE
 DO NOT USE: image URLs, links, ---, ~~strikethrough~~, *italic*, nested lists, HTML, emojis
 
 STYLE:
-- Start with an engaging hook that makes the reader feel something or imagine a scenario
+- After the keypoints brief, start the prose with an engaging hook that makes the reader imagine a scenario
 - Short paragraphs (1-3 sentences), often a single line for dramatic effect
 - Bold key terms when first introduced
-- Use blockquotes for memorable takeaways
 - Conversational but authoritative, like a smart friend explaining finance
 - End with a natural, non-salesy FinBoom mention that ties into the topic
 - ZERO emojis anywhere`
@@ -93,28 +150,47 @@ function buildWriterPrompt(topic: string, outline: BlogOutline): string {
     })
     .join("\n")
 
+  const takeawaysSeed = outline.keyTakeaways.length
+    ? `\n\nOpen the post with this key-takeaways brief (refine the wording, keep 3-5 lines):\n\`\`\`keypoints\n${outline.keyTakeaways.join("\n")}\n\`\`\``
+    : ""
+
   return `You are a financial content writer for FinBoom, a free net worth tracker for Indian investors.
 
 Write the FULL blog post body in markdown for this topic: "${topic}"
 
-Follow this section plan in order, using each heading as a \`##\` section and expanding every
-point into rich, specific prose (aim for 250-400 words per section):
+Make it scannable: a reader should get the whole point from the key-takeaways brief, the bold
+section openers, the tables and the diagrams — and only read the prose for depth.${takeawaysSeed}
+
+Follow this section plan in order, using each heading as a \`##\` section. Open each section with a
+one-line **bold** summary, then expand every point into rich, specific prose (aim for 250-400 words
+per section):
 
 ${sectionPlan}
 
 Write 1800-2800 words total. Do not skip sections. Add depth with concrete Indian examples and
-real numbers in backticks.
+real numbers. Include the key-takeaways brief at the very top, 2-4 mermaid diagrams (one near the
+top), and at least 2 comparison tables.
+${buildSeoLine(outline)}
 
 ${MARKDOWN_RULES}
 
 Return ONLY valid JSON: { "markdown": "<full markdown body>" }`
 }
 
+function buildSeoLine(outline: BlogOutline): string {
+  if (!outline.primaryKeyword) return ""
+  const secondary = outline.secondaryKeywords.length
+    ? ` Also use these related terms where they fit naturally: ${outline.secondaryKeywords.join(", ")}.`
+    : ""
+  return `\nSEO: Weave the primary keyword "${outline.primaryKeyword}" naturally into the first 100 words, at least two ## headings, and the conclusion.${secondary} Never keyword-stuff; the prose must read naturally.`
+}
+
 function buildExpandPrompt(topic: string, draft: string): string {
   return `You are an editor for FinBoom. The following draft blog post on "${topic}" is too short and
 thin. Rewrite it to be noticeably longer and more valuable: expand each section with more
-explanation, concrete Indian examples, and numbers in backticks. Keep every \`##\` heading, keep
-the {{IMAGE: ...}} placeholders, keep the existing mermaid diagram and tables. Target 2000+ words.
+explanation, concrete Indian examples, and numbers. Keep every \`##\` heading and its one-line
+**bold** opener, keep the {{IMAGE: ...}} placeholders, keep the \`\`\`keypoints brief at the top,
+and keep (or add up to 2-4) mermaid diagrams and at least 2 tables. Target 2000+ words.
 
 ${MARKDOWN_RULES}
 
@@ -133,7 +209,7 @@ Generate a JSON object with this exact shape:
 
 Rules:
 - Give 15 topic ideas
-- Topics must fit FinBoom: Indian investing, wealth building, budgeting, taxation, retirement, insurance
+- Topics must fit FinBoom and SPAN these categories (roughly 3-4 each): guides/how-tos, investing (stocks/mutual funds/SIP), taxes (income tax/80C/capital gains), retirement (NPS/PPF/EPF/FIRE), and market/news explainers
 - Prefer currently relevant/trending angles for Indian users
 - Avoid duplicates or near-duplicates
 - Each topic should be specific and blog-ready
@@ -223,7 +299,7 @@ function isModelUnavailableError(err: unknown) {
   )
 }
 
-type GenerateOptions = {
+export type GenerateOptions = {
   temperature: number
   maxOutputTokens: number
 }
@@ -357,7 +433,7 @@ function getOpenAiProvider(): OpenAICompatibleProvider | null {
 // then OpenAI - whichever providers have keys configured. A provider
 // outage OR a malformed/unparseable response moves on to the next
 // provider instead of killing the daily post.
-async function generateParsedJson<T>(prompt: string, options: GenerateOptions): Promise<T> {
+export async function generateParsedJson<T>(prompt: string, options: GenerateOptions): Promise<T> {
   const failures: string[] = []
   const message = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
@@ -403,14 +479,9 @@ function countWords(text: string): number {
     .filter(Boolean).length
 }
 
-function normalizeCategory(value: unknown): GeneratedBlogPost["category"] {
-  const category = typeof value === "string" ? value : "guides"
-  return (["guides", "tips", "market", "product"].includes(category) ? category : "guides") as GeneratedBlogPost["category"]
-}
-
-async function generateOutline(topic: string): Promise<BlogOutline> {
+async function generateOutline(topic: string, opts: BlogGenerationOptions): Promise<BlogOutline> {
   const parsed = await generateParsedJson<Partial<BlogOutline>>(
-    `${OUTLINE_PROMPT}\n\nTOPIC: ${topic.trim()}`,
+    `${buildOutlinePrompt(topic, opts)}\n\nTOPIC: ${topic.trim()}`,
     { temperature: 0.8, maxOutputTokens: 2048 }
   )
 
@@ -434,9 +505,25 @@ async function generateOutline(topic: string): Promise<BlogOutline> {
 
   return {
     title: parsed.title.trim(),
-    category: normalizeCategory(parsed.category),
+    category: normalizeBlogCategory(parsed.category, opts.targetCategory),
     excerpt: parsed.excerpt?.trim() ?? "",
     heroImageQuery: parsed.heroImageQuery?.trim() || `${topic.trim()} india finance`,
+    metaTitle: parsed.metaTitle?.trim() || parsed.title.trim(),
+    metaDescription: parsed.metaDescription?.trim() || parsed.excerpt?.trim() || "",
+    primaryKeyword: parsed.primaryKeyword?.trim() || "",
+    secondaryKeywords: Array.isArray(parsed.secondaryKeywords)
+      ? parsed.secondaryKeywords
+          .filter((k): k is string => typeof k === "string")
+          .map((k) => k.trim())
+          .filter(Boolean)
+      : [],
+    keyTakeaways: Array.isArray(parsed.keyTakeaways)
+      ? parsed.keyTakeaways
+          .filter((k): k is string => typeof k === "string")
+          .map((k) => k.trim())
+          .filter(Boolean)
+          .slice(0, 5)
+      : [],
     sections,
   }
 }
@@ -457,8 +544,11 @@ async function expandArticle(topic: string, draft: string): Promise<string> {
   return parsed.markdown?.trim() ?? ""
 }
 
-export async function generateBlogFromTopic(topic: string): Promise<GeneratedBlogPost> {
-  const outline = await generateOutline(topic)
+export async function generateBlogFromTopic(
+  topic: string,
+  opts: BlogGenerationOptions = {}
+): Promise<GeneratedBlogPost> {
+  const outline = await generateOutline(topic, opts)
 
   let content = await writeArticle(topic, outline)
   if (!content) {
@@ -478,11 +568,13 @@ export async function generateBlogFromTopic(topic: string): Promise<GeneratedBlo
   }
 
   // Resolve {{IMAGE}} tokens into real photo URLs and guarantee a minimum
-  // number of inline images. Never let an image failure kill the post.
+  // number of inline images. Share ONE resolver so the hero and inline
+  // images stay distinct and on-topic. Never let an image failure kill the post.
   let hero: { url: string; alt: string } | null = null
   try {
-    content = await injectInlineImages(content, 3)
-    hero = await resolveHeroImage(outline.heroImageQuery)
+    const resolver = createImageResolver()
+    hero = await resolveHeroImage(outline.heroImageQuery, resolver)
+    content = await injectInlineImages(content, 3, resolver, topic)
   } catch {
     content = content.replace(IMAGE_TOKEN_PLACEHOLDER, "").replace(/\n{3,}/g, "\n\n")
   }
@@ -492,11 +584,20 @@ export async function generateBlogFromTopic(topic: string): Promise<GeneratedBlo
     console.warn(`Generated post for "${topic}" is short (${wordCount} words).`)
   }
 
+  // The post-level keyword list = primary + secondary (deduped, non-empty).
+  const keywords = Array.from(
+    new Set([outline.primaryKeyword, ...outline.secondaryKeywords].map((k) => k.trim()).filter(Boolean))
+  )
+
   return {
     title: outline.title,
     category: outline.category,
     excerpt: outline.excerpt,
     content: content.trim(),
+    metaTitle: outline.metaTitle,
+    metaDescription: outline.metaDescription,
+    primaryKeyword: outline.primaryKeyword || undefined,
+    keywords,
     heroImageUrl: hero?.url,
     heroImageAlt: hero?.alt,
   }

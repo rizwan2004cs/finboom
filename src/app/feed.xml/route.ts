@@ -1,8 +1,9 @@
 import { sanityClient } from "@/lib/sanity"
+import { SITE_URL } from "@/lib/site"
 
 export const revalidate = 3600
 
-const BASE_URL = "https://finboom-cyan.vercel.app"
+const BASE_URL = SITE_URL
 
 type FeedPost = {
   title: string

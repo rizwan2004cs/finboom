@@ -16,6 +16,7 @@ import { useAppDialog } from "@/components/app-dialog"
 import { AddAssetModal } from "@/components/modals/add-asset-modal"
 import { ImportModal } from "@/components/modals/import-modal"
 import { CustomSelect } from "@/components/custom-select"
+import { PortfolioAnalytics } from "@/components/portfolio-analytics"
 import { useCurrency } from "@/hooks/use-currency"
 
 export default function AssetsPageWrapper() {
@@ -155,6 +156,9 @@ function AssetsPage() {
           </p>
         </div>
       </div>
+
+      {/* Portfolio analysis */}
+      {assets.length >= 2 && <PortfolioAnalytics assets={assets} />}
 
       {/* Search & Filter */}
       <div className="flex gap-2">

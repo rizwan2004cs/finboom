@@ -5,6 +5,7 @@ import Image from "next/image"
 import type { Metadata } from "next"
 import { BlogCategoryFilter } from "./category-filter"
 import { BlogSearchBox } from "./search-box"
+import { BLOG_CATEGORY_LABELS, BLOG_CATEGORY_GRADIENTS } from "@/lib/blog/categories"
 
 export const metadata: Metadata = {
   title: "Blog",
@@ -27,27 +28,7 @@ type Post = {
   publishedAt: string
 }
 
-const CATEGORY_LABELS: Record<string, string> = {
-  tips: "Financial Tips",
-  market: "Market Updates",
-  product: "Product Updates",
-  guides: "Guides",
-}
-
-const CATEGORY_COLORS: Record<string, string> = {
-  tips: "bg-accent/10 text-accent",
-  market: "bg-accent/10 text-accent",
-  product: "bg-accent/10 text-accent",
-  guides: "bg-accent/10 text-accent",
-}
-
-// Visual stand-in for posts without a hero image (auto-generated posts).
-const CATEGORY_GRADIENTS: Record<string, string> = {
-  guides: "from-sky-500/25 via-indigo-500/15 to-transparent",
-  tips: "from-emerald-500/25 via-teal-500/15 to-transparent",
-  market: "from-amber-500/25 via-orange-500/15 to-transparent",
-  product: "from-fuchsia-500/25 via-purple-500/15 to-transparent",
-}
+const CATEGORY_BADGE_CLASS = "bg-accent/10 text-accent"
 
 function CardArtwork({ post, tall = false }: { post: Post; tall?: boolean }) {
   const height = tall ? "h-full min-h-[220px]" : "h-48"
@@ -66,7 +47,7 @@ function CardArtwork({ post, tall = false }: { post: Post; tall?: boolean }) {
   return (
     <div
       className={`relative ${height} overflow-hidden bg-gradient-to-br ${
-        CATEGORY_GRADIENTS[post.category] || "from-slate-500/20 via-slate-400/10 to-transparent"
+        BLOG_CATEGORY_GRADIENTS[post.category] || "from-slate-500/20 via-slate-400/10 to-transparent"
       }`}
     >
       <span
@@ -162,6 +143,9 @@ export default async function BlogPage({
                   </Link>
                 </>
               )}
+              <Link href="/tools" className="hidden sm:block text-[15px] font-medium text-[#1d1d1f] dark:text-white px-3 py-1.5 rounded-xl hover:bg-black/[0.05] dark:hover:bg-white/[0.08] active:scale-95 transition-all duration-200">
+                Calculators
+              </Link>
               <Link href="/" className="hidden sm:block text-[15px] font-medium text-[#1d1d1f] dark:text-white px-3 py-1.5 rounded-xl hover:bg-black/[0.05] dark:hover:bg-white/[0.08] active:scale-95 transition-all duration-200">
                 Home
               </Link>
@@ -183,7 +167,7 @@ export default async function BlogPage({
           </p>
           <BlogCategoryFilter
             categories={categories}
-            labels={CATEGORY_LABELS}
+            labels={BLOG_CATEGORY_LABELS}
             active={activeCategory}
           />
           <BlogSearchBox initialQuery={q} />
@@ -219,8 +203,8 @@ export default async function BlogPage({
                       Latest
                     </span>
                     {featuredPost.category && (
-                      <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${CATEGORY_COLORS[featuredPost.category] || "bg-gray-100 text-gray-600"}`}>
-                        {CATEGORY_LABELS[featuredPost.category] || featuredPost.category}
+                      <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium ${CATEGORY_BADGE_CLASS}`}>
+                        {BLOG_CATEGORY_LABELS[featuredPost.category] || featuredPost.category}
                       </span>
                     )}
                   </div>
@@ -253,8 +237,8 @@ export default async function BlogPage({
                   <CardArtwork post={post} />
                   <div className="p-5">
                     {post.category && (
-                      <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium mb-3 ${CATEGORY_COLORS[post.category] || "bg-gray-100 text-gray-600"}`}>
-                        {CATEGORY_LABELS[post.category] || post.category}
+                      <span className={`inline-block px-2.5 py-0.5 rounded-full text-xs font-medium mb-3 ${CATEGORY_BADGE_CLASS}`}>
+                        {BLOG_CATEGORY_LABELS[post.category] || post.category}
                       </span>
                     )}
                     <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-white group-hover:text-accent transition-colors line-clamp-2">

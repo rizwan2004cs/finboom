@@ -1,221 +1,304 @@
 "use client"
 
-import { useState, useCallback } from "react"
+import { useState, useCallback, useMemo } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
-import { insertRow } from "@/lib/offline"
-import { X, Upload, CheckCircle } from "lucide-react"
-import * as XLSX from "xlsx"
-import { ASSET_CLASSES } from "@/lib/constants"
 import { useCurrency } from "@/hooks/use-currency"
+import { useQueryClient } from "@tanstack/react-query"
+import { insertRow } from "@/lib/offline"
+import { X, Upload, CheckCircle, Sparkles, AlertTriangle, Loader2 } from "lucide-react"
+import { ASSET_CLASSES, type AssetClassId } from "@/lib/constants"
+import type { Asset } from "@/lib/types"
+import { readWorkbookTables, pickHoldingTables, type RawTable } from "@/lib/import/parse-workbook"
+import {
+  buildColumnMapping,
+  headerForField,
+  IMPORT_FIELD_LABELS,
+  type ColumnMapping,
+  type ImportField,
+} from "@/lib/import/column-mapper"
+import { parseAmount } from "@/lib/import/parse-amount"
+import { inferAssetClass } from "@/lib/import/asset-class-infer"
 
 interface Props {
   onClose: () => void
   onImport: () => void
 }
 
-interface ParsedRow {
+type PreviewRow = {
+  index: number
   name: string
-  asset_class: string
+  isin?: string
+  asset_class: AssetClassId
+  units?: number
   current_value: number
   invested_value: number
-  units?: number
+  currency: string
+  skipReason?: string
+}
+
+const CURRENCIES = ["INR", "USD", "EUR", "GBP", "AED", "SGD"]
+const FIELD_OPTIONS = Object.keys(IMPORT_FIELD_LABELS) as ImportField[]
+const TOTAL_ROW_REGEX = /^(total|grand total|sub ?total|portfolio total|net total)\b/
+
+function signatureOf(t: RawTable) {
+  return t.headers.join("|")
+}
+
+// Pick the best holdings table; merge sibling sheets that share the same
+// header layout (e.g. a stocks + MF split with identical columns). Sheets
+// with a different layout are reported, never silently dropped.
+function chooseTable(tables: RawTable[]): {
+  table: RawTable | null
+  skippedSheets: string[]
+} {
+  const holdings = pickHoldingTables(tables)
+    .slice()
+    .sort((a, b) => b.rows.length - a.rows.length)
+  if (holdings.length === 0) return { table: null, skippedSheets: [] }
+
+  const primary = holdings[0]
+  const sig = signatureOf(primary)
+  const merged: RawTable = {
+    sheet: primary.sheet,
+    headers: primary.headers,
+    rows: [...primary.rows],
+  }
+  const skippedSheets: string[] = []
+  for (const t of holdings.slice(1)) {
+    if (signatureOf(t) === sig) merged.rows.push(...t.rows)
+    else skippedSheets.push(t.sheet)
+  }
+  return { table: merged, skippedSheets }
 }
 
 export function ImportModal({ onClose, onImport }: Props) {
   const { formatCompact } = useCurrency()
   const { user } = useUser()
   const { activeProfile } = useProfile()
-  const [step, setStep] = useState<"upload" | "preview" | "done">("upload")
-  const [rows, setRows] = useState<ParsedRow[]>([])
-  const [importing, setImporting] = useState(false)
-  const [format, setFormat] = useState<"generic" | "groww" | "zerodha">("generic")
+  const queryClient = useQueryClient()
 
-  // Flexible column finder: matches partial patterns case-insensitively
-  const findCol = useCallback((row: Record<string, unknown>, patterns: string[]) => {
-    for (const key of Object.keys(row)) {
-      const lower = key.toLowerCase().trim()
-      if (patterns.some(p => lower.includes(p))) return row[key]
+  const [step, setStep] = useState<"upload" | "mapping" | "preview" | "done">("upload")
+  const [fileName, setFileName] = useState("")
+  const [error, setError] = useState("")
+  const [table, setTable] = useState<RawTable | null>(null)
+  const [mapping, setMapping] = useState<ColumnMapping>({})
+  const [confidence, setConfidence] = useState(1)
+  const [extraSheets, setExtraSheets] = useState<string[]>([])
+  const [currency, setCurrency] = useState("INR")
+  const [rowClass, setRowClass] = useState<Record<number, AssetClassId>>({})
+  const [excluded, setExcluded] = useState<Set<number>>(new Set())
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiUsed, setAiUsed] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [importedCount, setImportedCount] = useState(0)
+
+  const tryAiMapping = useCallback(async (t: RawTable) => {
+    setAiLoading(true)
+    try {
+      const res = await fetch("/api/import/parse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ headers: t.headers, sampleRows: t.rows.slice(0, 5) }),
+      })
+      const data = await res.json()
+      if (res.ok && data.mapping) {
+        setMapping(data.mapping)
+        setAiUsed(true)
+      }
+    } catch {
+      // Heuristic mapping stays in place on any failure.
+    } finally {
+      setAiLoading(false)
     }
-    return undefined
   }, [])
 
-  function guessAssetClass(input: string): string {
-    const lower = input.toLowerCase()
-    const match = ASSET_CLASSES.find(cls => 
-      cls.label.toLowerCase().includes(lower) || cls.id === lower
-    )
-    return match?.id || "stocks"
+  const handleFile = useCallback(
+    (file: File) => {
+      setError("")
+      setFileName(file.name)
+      setAiUsed(false)
+      const reader = new FileReader()
+      reader.onload = (e) => {
+        try {
+          const buf = e.target?.result as ArrayBuffer
+          const tables = readWorkbookTables(buf)
+          const { table: chosen, skippedSheets } = chooseTable(tables)
+          if (!chosen || chosen.rows.length === 0) {
+            setError(
+              "Couldn't find any holdings here. Make sure the file has a header row with names and values."
+            )
+            return
+          }
+
+          const { mapping: guessed, confidence: conf } = buildColumnMapping(
+            chosen.headers,
+            chosen.rows
+          )
+          setTable(chosen)
+          setMapping(guessed)
+          setConfidence(conf)
+          setExtraSheets(skippedSheets)
+          setRowClass({})
+          setExcluded(new Set())
+
+          // Seed currency from a detected currency column if present.
+          const ccyHeader = headerForField(guessed, "currency")
+          if (ccyHeader) {
+            const firstVal = chosen.rows
+              .map((r) => String(r[ccyHeader] ?? "").toUpperCase().trim())
+              .find(Boolean)
+            const code = firstVal && CURRENCIES.find((c) => firstVal.includes(c))
+            if (code) setCurrency(code)
+          }
+
+          setStep("mapping")
+          if (conf < 0.5) void tryAiMapping(chosen)
+        } catch {
+          setError("Failed to read the file. Please upload a valid .csv or .xlsx export.")
+        }
+      }
+      reader.readAsArrayBuffer(file)
+    },
+    [tryAiMapping]
+  )
+
+  const setFieldForHeader = useCallback((header: string, field: ImportField) => {
+    setMapping((prev) => {
+      const next = { ...prev }
+      if (field !== "none") {
+        for (const h of Object.keys(next)) {
+          if (next[h] === field) next[h] = "none"
+        }
+      }
+      next[header] = field
+      return next
+    })
+  }, [])
+
+  // Names already in the portfolio (any active profile query) for de-duplication.
+  const existingNames = useMemo(() => {
+    const names = new Set<string>()
+    const cached = queryClient.getQueriesData({ queryKey: ["assets"] }) as Array<
+      [unknown, Asset[] | undefined]
+    >
+    for (const [, data] of cached) {
+      if (Array.isArray(data)) {
+        for (const a of data) {
+          if (a?.name) names.add(a.name.toLowerCase().trim())
+        }
+      }
+    }
+    return names
+  }, [queryClient])
+
+  const previewRows = useMemo<PreviewRow[]>(() => {
+    if (!table) return []
+    const h = (f: ImportField) => headerForField(mapping, f)
+    const nameH = h("name")
+    const isinH = h("isin")
+    const unitsH = h("units")
+    const priceH = h("price_nav")
+    const avgH = h("avg_price")
+    const invH = h("invested_value")
+    const curH = h("current_value")
+    const classH = h("asset_class")
+    const folioH = h("folio")
+
+    return table.rows.map((row, index) => {
+      const name = nameH ? String(row[nameH] ?? "").trim() : ""
+      const isin = isinH ? String(row[isinH] ?? "").trim() : ""
+      const units = unitsH ? parseAmount(row[unitsH]) : 0
+      const price = priceH ? parseAmount(row[priceH]) : 0
+      const avg = avgH ? parseAmount(row[avgH]) : 0
+      let invested = invH ? parseAmount(row[invH]) : 0
+      let current = curH ? parseAmount(row[curH]) : 0
+      if (!current && units && price) current = units * price
+      if (!invested && units && avg) invested = units * avg
+
+      const classText = classH ? String(row[classH] ?? "") : ""
+      const hasFolio = folioH ? String(row[folioH] ?? "").trim() !== "" : false
+      const hasNav = !!priceH && /nav/i.test(priceH)
+      const asset_class =
+        rowClass[index] ?? inferAssetClass({ name, isin, classText, hasFolio, hasNav })
+
+      const lname = name.toLowerCase()
+      let skipReason: string | undefined
+      if (!name) skipReason = "No name"
+      else if (TOTAL_ROW_REGEX.test(lname)) skipReason = "Total row"
+      else if (current <= 0 && invested <= 0 && units <= 0) skipReason = "No value"
+      else if (existingNames.has(lname)) skipReason = "Already in portfolio"
+
+      return {
+        index,
+        name,
+        isin: isin || undefined,
+        asset_class,
+        units: units || undefined,
+        current_value: Math.max(0, current),
+        invested_value: Math.max(0, invested),
+        currency,
+        skipReason,
+      }
+    })
+  }, [table, mapping, rowClass, currency, existingNames])
+
+  const importableRows = useMemo(
+    () => previewRows.filter((r) => !r.skipReason && !excluded.has(r.index)),
+    [previewRows, excluded]
+  )
+  const skippedRows = useMemo(() => previewRows.filter((r) => r.skipReason), [previewRows])
+
+  function toggleExcluded(index: number) {
+    setExcluded((prev) => {
+      const next = new Set(prev)
+      if (next.has(index)) next.delete(index)
+      else next.add(index)
+      return next
+    })
   }
 
-  const detectFormat = useCallback((json: Record<string, unknown>[]): "zerodha" | "groww" | "generic" => {
-    if (json.length === 0) return "generic"
-    const keys = Object.keys(json[0]).map(k => k.toLowerCase().trim())
-    // Zerodha: "Instrument", "Qty.", "Avg. cost", "LTP", "Cur. val"
-    if (keys.some(k => k.includes("instrument")) && keys.some(k => k.includes("avg") && k.includes("cost"))) {
-      return "zerodha"
-    }
-    // Groww: "Stock Name", "ISIN", "Quantity", "Average buy price", "Closing value"
-    if (
-      keys.some(k => k.includes("stock name") || k.includes("scheme name") || k.includes("company") || k.includes("symbol")) &&
-      keys.some(k => k.includes("quantity") || k.includes("qty") || k.includes("units")) &&
-      keys.some(k => k.includes("closing value") || k.includes("buy value") || k.includes("average buy price") || k.includes("value") || k.includes("price") || k.includes("ltp") || k.includes("nav"))
-    ) {
-      return "groww"
-    }
-    return "generic"
-  }, [])
-
-  // Some financial exports have metadata rows before the actual table.
-  // Try parsing from different starting rows to find the real header.
-  const isDataHeader = useCallback((keys: string[]) => {
-    // Must have a name-like column AND a numeric/financial column
-    const hasName = keys.some(k =>
-      k.includes("stock name") || k.includes("instrument") || k.includes("scheme name") ||
-      k.includes("company") || k.includes("symbol") || k.includes("scrip")
-    )
-    const hasNumeric = keys.some(k =>
-      k.includes("quantity") || k.includes("qty") || k.includes("units") ||
-      k.includes("value") || k.includes("price") || k.includes("ltp") ||
-      k.includes("nav") || k.includes("avg") || k.includes("cost")
-    )
-    return hasName && hasNumeric
-  }, [])
-
-  const parseSheetWithHeaderScan = useCallback((sheet: XLSX.WorkSheet): Record<string, unknown>[] => {
-    // First try default (row 1 is header)
-    const defaultJson = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet)
-    if (defaultJson.length > 0) {
-      const keys = Object.keys(defaultJson[0]).map(k => k.toLowerCase())
-      if (isDataHeader(keys)) {
-        return defaultJson
-      }
-    }
-
-    // Scan rows 1-15 looking for the real header row
-    const range = XLSX.utils.decode_range(sheet["!ref"] || "A1")
-    for (let headerRow = 1; headerRow <= Math.min(15, range.e.r); headerRow++) {
-      const json = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { range: headerRow })
-      if (json.length > 0) {
-        const keys = Object.keys(json[0]).map(k => k.toLowerCase())
-        if (isDataHeader(keys)) {
-          return json
-        }
-      }
-    }
-
-    return defaultJson
-  }, [isDataHeader])
-
-  const handleFile = useCallback((file: File) => {
-    const reader = new FileReader()
-    reader.onload = (e) => {
-      const data = new Uint8Array(e.target?.result as ArrayBuffer)
-      const workbook = XLSX.read(data, { type: "array" })
-      const sheet = workbook.Sheets[workbook.SheetNames[0]]
-      const json = parseSheetWithHeaderScan(sheet)
-
-      // Auto-detect format (also check filename)
-      let detected = detectFormat(json)
-      const fileName = file.name.toLowerCase()
-      if (detected === "generic") {
-        if (fileName.includes("groww") || fileName.includes("holdings_statement")) {
-          detected = "groww"
-        } else if (fileName.includes("zerodha") || fileName.includes("kite")) {
-          detected = "zerodha"
-        }
-      }
-      setFormat(detected)
-
-      let parsed: ParsedRow[] = []
-
-      if (detected === "zerodha") {
-        parsed = json.map((row) => {
-          const qty = Number(findCol(row, ["qty"]) || 0)
-          const avgCost = Number(findCol(row, ["avg"]) || 0)
-          const curVal = Number(findCol(row, ["cur. val", "cur val", "current val", "market val"]) || 0)
-          const investedVal = qty * avgCost
-
-          return {
-            name: String(findCol(row, ["instrument", "stock", "symbol"]) || "").trim(),
-            asset_class: "stocks" as const,
-            current_value: curVal,
-            invested_value: investedVal,
-            units: qty || undefined,
-          }
-        })
-      } else if (detected === "groww") {
-        parsed = json.map((row) => {
-          const name = String(
-            findCol(row, ["stock name", "scheme name", "company", "symbol", "name", "scrip"]) || ""
-          ).trim()
-          const isMF = !!findCol(row, ["scheme name", "nav", "folio"])
-          const qty = Number(findCol(row, ["quantity", "qty", "units"]) || 0)
-          const avgPrice = Number(findCol(row, ["average buy price", "avg", "average", "buy price", "buy avg", "purchase price"]) || 0)
-          const curVal = Number(findCol(row, ["closing value", "current val", "market val", "present val", "cur. val"]) || 0)
-          const investedRaw = Number(findCol(row, ["buy value", "invested", "investment", "buy val", "cost", "total cost"]) || 0)
-          const investedVal = investedRaw || (qty * avgPrice)
-          const ltp = Number(findCol(row, ["closing price", "ltp", "last price"]) || 0)
-          const currentValue = curVal || (qty * ltp)
-
-          return {
-            name,
-            asset_class: isMF ? "mutual_funds" : "stocks",
-            current_value: currentValue,
-            invested_value: investedVal,
-            units: qty || undefined,
-          }
-        })
-      } else {
-        // Generic CSV: expects name, asset_class, current_value, invested_value, units
-        parsed = json.map((row) => ({
-          name: String(row["name"] || row["Name"] || row["Asset"] || ""),
-          asset_class: guessAssetClass(String(row["asset_class"] || row["type"] || row["Type"] || row["Category"] || "")),
-          current_value: Number(row["current_value"] || row["Current Value"] || row["value"] || row["Value"] || 0),
-          invested_value: Number(row["invested_value"] || row["Invested"] || row["cost"] || row["Cost"] || 0),
-          units: Number(row["units"] || row["Units"] || row["Quantity"] || 0) || undefined,
-        }))
-      }
-
-      setRows(parsed.filter(r => r.name && r.current_value > 0))
-      setStep("preview")
-    }
-    reader.readAsArrayBuffer(file)
-  }, [detectFormat, findCol, parseSheetWithHeaderScan])
-
   async function handleImport() {
-    if (!user) return
+    if (!user || !activeProfile) return
     setImporting(true)
-
-    for (const row of rows) {
+    let count = 0
+    for (const r of importableRows) {
       await insertRow("assets", {
         user_id: user.id,
-        profile_id: activeProfile!.id,
-        name: row.name,
-        asset_class: row.asset_class,
-        current_value: row.current_value,
-        invested_value: row.invested_value,
-        units: row.units || null,
-        currency: "INR",
+        profile_id: activeProfile.id,
+        name: r.name,
+        asset_class: r.asset_class,
+        current_value: r.current_value,
+        invested_value: r.invested_value,
+        units: r.units ?? null,
+        currency: r.currency,
+        ...(r.isin ? { notes: `ISIN: ${r.isin}` } : {}),
       })
+      count += 1
     }
-
+    setImportedCount(count)
     setImporting(false)
     setStep("done")
     setTimeout(onImport, 1500)
   }
 
+  function sampleValue(header: string): string {
+    if (!table) return ""
+    const v = table.rows.map((r) => String(r[header] ?? "").trim()).find(Boolean)
+    return v ?? ""
+  }
+
   return (
     <div className="fixed inset-0 z-60 flex items-end sm:items-center justify-center">
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
-      <div className="relative w-full sm:max-w-lg glass-elevated rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[85vh] overflow-y-auto">
+      <button aria-label="Close" className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative w-full sm:max-w-lg glass-elevated rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[88vh] overflow-y-auto">
         <div className="sm:hidden flex justify-center pt-3">
           <div className="w-10 h-1 rounded-full bg-black/[0.08] dark:bg-white/20" />
         </div>
 
         <div className="flex items-center justify-between p-5 border-b border-black/[0.04] dark:border-white/[0.06]">
           <h2 className="text-lg font-bold text-[#1d1d1f] dark:text-white">Import Portfolio</h2>
-          <button onClick={onClose} className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-all">
+          <button onClick={onClose} aria-label="Close" className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-all">
             <X className="w-5 h-5 text-[#515154] dark:text-[#98989d]" />
           </button>
         </div>
@@ -223,36 +306,15 @@ export function ImportModal({ onClose, onImport }: Props) {
         <div className="p-5 pb-8 sm:pb-5">
           {step === "upload" && (
             <div className="space-y-4">
-              {/* Format selector */}
-              <div>
-                <label className="text-sm font-medium text-[#1d1d1f] dark:text-white">Import Format</label>
-                <p className="text-xs text-[#86868b] mt-0.5">Auto-detected when you upload a file</p>
-                <div className="grid grid-cols-3 gap-2 mt-2">
-                  {([
-                    { id: "generic", label: "CSV/Excel" },
-                    { id: "zerodha", label: "Zerodha" },
-                    { id: "groww", label: "Groww" },
-                  ] as const).map(f => (
-                    <button
-                      key={f.id}
-                      onClick={() => setFormat(f.id)}
-                      className={`py-2.5 px-3 rounded-xl text-sm font-medium transition-all ${
-                        format === f.id
-                          ? "bg-[#1d1d1f] text-white"
-                          : "bg-[#f5f5f7] text-[#1d1d1f]"
-                      }`}
-                    >
-                      {f.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              <p className="text-sm text-[#86868b]">
+                Upload any broker or mutual-fund statement (.csv or .xlsx). FinBoom auto-detects the
+                columns - stocks, mutual funds, or a mixed export - and lets you review before importing.
+              </p>
 
-              {/* Drop zone */}
-              <label className="flex flex-col items-center justify-center h-40 border-2 border-dashed border-black/[0.08] rounded-2xl cursor-pointer hover:border-[#1d1d1f]/30 transition-all">
+              <label className="flex flex-col items-center justify-center h-40 border-2 border-dashed border-black/[0.08] dark:border-white/[0.12] rounded-2xl cursor-pointer hover:border-[#1d1d1f]/30 dark:hover:border-white/30 transition-all">
                 <Upload className="w-8 h-8 text-[#86868b] mb-2" />
-                <p className="text-sm font-medium text-[#1d1d1f]">Drop file or tap to upload</p>
-                <p className="text-xs text-[#86868b] mt-1">.csv, .xlsx supported</p>
+                <p className="text-sm font-medium text-[#1d1d1f] dark:text-white">Drop file or tap to upload</p>
+                <p className="text-xs text-[#86868b] mt-1">.csv, .xlsx, .xls supported</p>
                 <input
                   type="file"
                   accept=".csv,.xlsx,.xls"
@@ -264,48 +326,190 @@ export function ImportModal({ onClose, onImport }: Props) {
                 />
               </label>
 
-              {format === "groww" && (
-                <p className="text-xs text-[#86868b]">
-                  Export from Groww → Stocks → Holdings → Download Statement (.xlsx)
-                </p>
+              {error && (
+                <div className="flex items-start gap-2 p-3 rounded-xl bg-red-500/10 text-red-700 dark:text-red-400 text-sm">
+                  <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+                  <span>{error}</span>
+                </div>
               )}
-              {format === "zerodha" && (
-                <p className="text-xs text-[#86868b]">
-                  Export from Zerodha Console → Holdings → Download (.xlsx)
+
+              <p className="text-xs text-[#86868b]">
+                Groww: Stocks/MF → Holdings → Download statement. Zerodha: Console → Holdings → Download.
+              </p>
+            </div>
+          )}
+
+          {step === "mapping" && table && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <p className="text-sm text-[#86868b]">
+                  Review how columns from <span className="font-medium text-[#1d1d1f] dark:text-white">{fileName}</span> map to fields.
                 </p>
+                <span
+                  className={`text-xs font-medium px-2 py-0.5 rounded-full shrink-0 ${
+                    confidence >= 0.5
+                      ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                      : "bg-amber-500/10 text-amber-700 dark:text-amber-400"
+                  }`}
+                >
+                  {Math.round(confidence * 100)}% match
+                </span>
+              </div>
+
+              {confidence < 0.5 && (
+                <div className="flex items-center justify-between gap-3 p-3 rounded-xl bg-amber-500/10">
+                  <p className="text-xs text-amber-800 dark:text-amber-300">
+                    Low confidence. Try AI mapping (sends only column names + 5 sample rows).
+                  </p>
+                  <button
+                    onClick={() => table && tryAiMapping(table)}
+                    disabled={aiLoading}
+                    className="inline-flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg bg-[#1d1d1f] dark:bg-white text-white dark:text-[#1d1d1f] disabled:opacity-50 shrink-0"
+                  >
+                    {aiLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+                    {aiUsed ? "Re-run AI" : "Use AI"}
+                  </button>
+                </div>
+              )}
+              {aiUsed && confidence >= 0.5 && (
+                <p className="text-xs text-accent">AI mapping applied. Adjust anything below if needed.</p>
+              )}
+
+              <div className="max-h-72 overflow-y-auto space-y-2">
+                {table.headers.map((header) => (
+                  <div key={header} className="flex items-center gap-3 p-2.5 bg-[#f5f5f7] dark:bg-white/[0.04] rounded-xl">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-[#1d1d1f] dark:text-white truncate">{header}</p>
+                      <p className="text-xs text-[#86868b] truncate">e.g. {sampleValue(header) || "—"}</p>
+                    </div>
+                    <select
+                      aria-label={`Map column ${header}`}
+                      value={mapping[header] ?? "none"}
+                      onChange={(e) => setFieldForHeader(header, e.target.value as ImportField)}
+                      className="shrink-0 text-sm px-2.5 py-1.5 rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 text-[#1d1d1f] dark:text-white"
+                    >
+                      {FIELD_OPTIONS.map((f) => (
+                        <option key={f} value={f}>
+                          {IMPORT_FIELD_LABELS[f]}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex gap-3">
+                <button
+                  onClick={() => { setStep("upload"); setTable(null) }}
+                  className="flex-1 py-3 rounded-xl bg-[#f5f5f7] dark:bg-white/10 text-[#1d1d1f] dark:text-white font-medium hover:bg-[#e8e8ed] dark:hover:bg-white/15 transition-all"
+                >
+                  Back
+                </button>
+                <button
+                  onClick={() => setStep("preview")}
+                  disabled={!headerForField(mapping, "name")}
+                  className="flex-1 py-3 rounded-xl bg-[#1d1d1f] dark:bg-white text-white dark:text-[#1d1d1f] font-medium hover:opacity-90 transition-all disabled:opacity-50"
+                >
+                  Preview
+                </button>
+              </div>
+              {!headerForField(mapping, "name") && (
+                <p className="text-xs text-amber-700 dark:text-amber-400">Map a column to “Name” to continue.</p>
               )}
             </div>
           )}
 
           {step === "preview" && (
             <div className="space-y-4">
-              <p className="text-sm text-[#86868b]">
-                Found <span className="font-medium text-[#1d1d1f]">{rows.length}</span> assets to import
-              </p>
-              <div className="max-h-60 overflow-y-auto space-y-2">
-                {rows.map((row, i) => (
-                  <div key={i} className="flex items-center justify-between p-3 bg-[#f5f5f7] rounded-xl">
-                    <div>
-                      <p className="text-sm font-medium text-[#1d1d1f]">{row.name}</p>
-                      <p className="text-xs text-[#86868b]">{row.asset_class} {row.units ? `· ${row.units} units` : ""}</p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm text-[#86868b]">
+                  <span className="font-medium text-[#1d1d1f] dark:text-white">{importableRows.length}</span> ready
+                  {skippedRows.length > 0 && <> · {skippedRows.length} skipped</>}
+                </p>
+                <div className="flex items-center gap-1.5">
+                  <label htmlFor="import-currency" className="text-xs text-[#86868b]">Currency</label>
+                  <select
+                    id="import-currency"
+                    value={currency}
+                    onChange={(e) => setCurrency(e.target.value)}
+                    className="text-sm px-2.5 py-1.5 rounded-lg border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 text-[#1d1d1f] dark:text-white"
+                  >
+                    {CURRENCIES.map((c) => (
+                      <option key={c} value={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {extraSheets.length > 0 && (
+                <p className="text-xs text-amber-700 dark:text-amber-400">
+                  {extraSheets.length} other sheet(s) had a different layout and weren&apos;t imported: {extraSheets.join(", ")}. Re-upload them separately.
+                </p>
+              )}
+
+              <div className="max-h-64 overflow-y-auto space-y-2">
+                {importableRows.map((row) => (
+                  <div key={row.index} className="flex items-center gap-2 p-3 bg-[#f5f5f7] dark:bg-white/[0.04] rounded-xl">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium text-[#1d1d1f] dark:text-white truncate">{row.name}</p>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <select
+                          aria-label={`Asset class for ${row.name}`}
+                          value={row.asset_class}
+                          onChange={(e) =>
+                            setRowClass((prev) => ({ ...prev, [row.index]: e.target.value as AssetClassId }))
+                          }
+                          className="text-xs px-2 py-1 rounded-md border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 text-[#515154] dark:text-[#98989d] max-w-[150px]"
+                        >
+                          {ASSET_CLASSES.map((c) => (
+                            <option key={c.id} value={c.id}>{c.label}</option>
+                          ))}
+                        </select>
+                        {row.units ? <span className="text-xs text-[#86868b]">· {row.units} u</span> : null}
+                      </div>
                     </div>
-                    <p className="text-sm font-semibold text-[#1d1d1f]">{formatCompact(row.current_value)}</p>
+                    <p className="text-sm font-semibold text-[#1d1d1f] dark:text-white shrink-0">{formatCompact(row.current_value)}</p>
+                    <button
+                      onClick={() => toggleExcluded(row.index)}
+                      aria-label={`Exclude ${row.name}`}
+                      className="p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 shrink-0"
+                    >
+                      <X className="w-4 h-4 text-[#86868b]" />
+                    </button>
                   </div>
                 ))}
+                {importableRows.length === 0 && (
+                  <p className="text-sm text-[#86868b] text-center py-4">No rows to import. Check the column mapping.</p>
+                )}
               </div>
+
+              {skippedRows.length > 0 && (
+                <details className="text-xs text-[#86868b]">
+                  <summary className="cursor-pointer select-none">{skippedRows.length} skipped row(s)</summary>
+                  <div className="mt-2 space-y-1 max-h-32 overflow-y-auto">
+                    {skippedRows.map((row) => (
+                      <div key={row.index} className="flex items-center justify-between gap-2">
+                        <span className="truncate">{row.name || "(unnamed)"}</span>
+                        <span className="shrink-0 text-[#a1a1a6]">{row.skipReason}</span>
+                      </div>
+                    ))}
+                  </div>
+                </details>
+              )}
+
               <div className="flex gap-3">
                 <button
-                  onClick={() => { setStep("upload"); setRows([]) }}
-                  className="flex-1 py-3 rounded-xl bg-[#f5f5f7] text-[#1d1d1f] font-medium hover:bg-[#e8e8ed] transition-all"
+                  onClick={() => setStep("mapping")}
+                  className="flex-1 py-3 rounded-xl bg-[#f5f5f7] dark:bg-white/10 text-[#1d1d1f] dark:text-white font-medium hover:bg-[#e8e8ed] dark:hover:bg-white/15 transition-all"
                 >
                   Back
                 </button>
                 <button
                   onClick={handleImport}
-                  disabled={importing}
-                  className="flex-1 py-3 rounded-xl bg-[#1d1d1f] text-white font-medium hover:opacity-90 transition-all disabled:opacity-50"
+                  disabled={importing || importableRows.length === 0}
+                  className="flex-1 py-3 rounded-xl bg-[#1d1d1f] dark:bg-white text-white dark:text-[#1d1d1f] font-medium hover:opacity-90 transition-all disabled:opacity-50"
                 >
-                  {importing ? "Importing..." : `Import ${rows.length} Assets`}
+                  {importing ? "Importing..." : `Import ${importableRows.length}`}
                 </button>
               </div>
             </div>
@@ -313,9 +517,9 @@ export function ImportModal({ onClose, onImport }: Props) {
 
           {step === "done" && (
             <div className="text-center py-8">
-              <CheckCircle className="w-16 h-16 text-[#1d1d1f] mx-auto mb-3" />
-              <p className="text-lg font-bold text-[#1d1d1f]">Import Complete!</p>
-              <p className="text-sm text-[#86868b] mt-1">{rows.length} assets added successfully</p>
+              <CheckCircle className="w-16 h-16 text-emerald-500 mx-auto mb-3" />
+              <p className="text-lg font-bold text-[#1d1d1f] dark:text-white">Import Complete!</p>
+              <p className="text-sm text-[#86868b] mt-1">{importedCount} assets added successfully</p>
             </div>
           )}
         </div>

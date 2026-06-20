@@ -1,3 +1,13 @@
+// Strip inline markdown markers so they don't render literally inside
+// plain-text contexts like table cells and the key-takeaways callout.
+function stripMarks(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/__(.+?)__/g, "$1")
+    .replace(/`(.+?)`/g, "$1")
+    .trim()
+}
+
 export function markdownToPortableText(markdown: string) {
   const lines = markdown.split("\n")
   const blocks: Array<Record<string, unknown>> = []
@@ -71,6 +81,24 @@ export function markdownToPortableText(markdown: string) {
       continue
     }
 
+    // A ```keypoints fenced block becomes the brief "Key takeaways" callout.
+    if (/^```\s*keypoints\s*$/i.test(line.trim())) {
+      flushList()
+      const items: string[] = []
+      let j = i + 1
+      while (j < lines.length && lines[j].trim() !== "```") {
+        const raw = lines[j].trim().replace(/^[-*]\s+/, "")
+        const clean = stripMarks(raw)
+        if (clean) items.push(clean)
+        j++
+      }
+      if (items.length > 0) {
+        blocks.push({ _type: "callout", _key: nextKey(), style: "keypoints", items })
+      }
+      i = j
+      continue
+    }
+
     if (line.trim().startsWith("|") && line.trim().endsWith("|")) {
       flushList()
       const tableRows: string[][] = []
@@ -93,7 +121,7 @@ export function markdownToPortableText(markdown: string) {
             cells: cells.map((cell) => ({
               _type: "tableCell",
               _key: nextKey(),
-              text: cell,
+              text: stripMarks(cell),
             })),
           })),
         })

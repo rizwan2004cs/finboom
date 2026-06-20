@@ -11,6 +11,7 @@ import { Plus, Target, Trash2, Edit2, TrendingUp, Calendar } from "lucide-react"
 import type { Goal, Asset } from "@/lib/types"
 import { useAppDialog } from "@/components/app-dialog"
 import { useCurrency } from "@/hooks/use-currency"
+import { useToast } from "@/components/toast"
 
 function calculateInflationAdjusted(target: number, years: number, rate: number) {
   return target * Math.pow(1 + rate / 100, years)
@@ -204,6 +205,7 @@ function GoalFormModal({ goal, assets, onClose, onSave }: {
 }) {
   const { user } = useUser()
   const { activeProfile } = useProfile()
+  const toast = useToast()
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
     name: goal?.name || "",
@@ -218,13 +220,22 @@ function GoalFormModal({ goal, assets, onClose, onSave }: {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!user) return
+
+    // A goal with a zero/blank target is meaningless (progress maths divides by
+    // it). Require a positive target before saving.
+    const targetAmount = Number.parseFloat(form.target_amount)
+    if (!Number.isFinite(targetAmount) || targetAmount <= 0) {
+      toast.error("Enter a target amount greater than 0.")
+      return
+    }
+
     setSaving(true)
 
     const data = {
       user_id: user.id,
       profile_id: activeProfile!.id,
       name: form.name,
-      target_amount: parseFloat(form.target_amount) || 0,
+      target_amount: targetAmount,
       current_amount: parseFloat(form.current_amount) || 0,
       target_date: form.target_date,
       inflation_rate: parseFloat(form.inflation_rate) || 6,
@@ -280,6 +291,8 @@ function GoalFormModal({ goal, assets, onClose, onSave }: {
               <input
                 type="number"
                 required
+                min="1"
+                step="any"
                 value={form.target_amount}
                 onChange={(e) => setForm(prev => ({ ...prev, target_amount: e.target.value }))}
                 placeholder="₹0"

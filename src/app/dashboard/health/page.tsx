@@ -1,12 +1,14 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useUser } from "@/hooks/use-auth"
+import { useProfile } from "@/hooks/use-profile"
 import { createClient } from "@/utils/supabase/client"
 import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { useQuery, useQueryClient } from "@tanstack/react-query"
 import { Shield, Heart, AlertTriangle, CheckCircle, Info } from "lucide-react"
-import type { HealthCheck } from "@/lib/types"
+import type { HealthCheck, Asset, Liability, Goal, Transaction } from "@/lib/types"
+import { computeWealthCheck, type WealthDimension } from "@/lib/finance/wealth-check"
 import { useCurrency } from "@/hooks/use-currency"
 
 export default function HealthPage() {
@@ -24,7 +26,12 @@ export default function HealthPage() {
   const [saving, setSaving] = useState(false)
   const [monthlyIncome, setMonthlyIncome] = useState(0)
 
-  const { data: txData = [] } = useOfflineQuery<{ amount: number; type: string }>("transactions", user?.id)
+  const { activeProfile } = useProfile()
+  const pf = activeProfile ? [{ column: "profile_id", op: "eq" as const, value: activeProfile.id }] : undefined
+  const { data: txData = [] } = useOfflineQuery<Transaction>("transactions", user?.id, { filters: pf })
+  const { data: assets = [] } = useOfflineQuery<Asset>("assets", user?.id, { filters: pf })
+  const { data: liabilities = [] } = useOfflineQuery<Liability>("liabilities", user?.id, { filters: pf })
+  const { data: goals = [] } = useOfflineQuery<Goal>("goals", user?.id, { filters: pf })
 
   const { isLoading: loading } = useQuery({
     queryKey: ["health_checks", user?.id],
@@ -92,11 +99,18 @@ export default function HealthPage() {
   const emergencyScore = Math.min(100, (health.emergency_fund_months / idealEmergencyMonths) * 100)
   const overallScore = Math.round((termScore + healthScore + emergencyScore) / 3)
 
-  function getScoreColor(score: number) {
-    if (score >= 80) return "text-[#1d1d1f]"
-    if (score >= 50) return "text-[#6e6e73]"
-    return "text-[#86868b]"
-  }
+  const wealthCheck = useMemo(
+    () => computeWealthCheck({ assets, liabilities, transactions: txData, goals, health, monthlyIncome }),
+    [assets, liabilities, txData, goals, health, monthlyIncome]
+  )
+  const wealthCheckActions = useMemo(
+    () =>
+      wealthCheck.dimensions
+        .filter((d) => d.action)
+        .sort((a, b) => a.score - b.score)
+        .slice(0, 3),
+    [wealthCheck]
+  )
 
   function getScoreBg(score: number) {
     if (score >= 80) return "bg-[#1d1d1f]"
@@ -142,29 +156,39 @@ export default function HealthPage() {
         <p className="text-sm text-[#86868b]">Are you financially protected?</p>
       </div>
 
-      {/* Overall Score */}
-      <div className="liquid-glass rounded-2xl p-6 text-center">
-        <div className="relative w-24 h-24 mx-auto mb-3">
-          <svg className="w-24 h-24 transform -rotate-90" viewBox="0 0 100 100">
-            <circle cx="50" cy="50" r="40" fill="none" stroke="#f5f5f7" strokeWidth="8" />
-            <circle
-              cx="50" cy="50" r="40" fill="none"
-              stroke={overallScore >= 80 ? "#1d1d1f" : overallScore >= 50 ? "#6e6e73" : "#86868b"}
-              strokeWidth="8"
-              strokeDasharray={`${overallScore * 2.51} 251`}
-              strokeLinecap="round"
-            />
-          </svg>
-          <div className="absolute inset-0 flex items-center justify-center">
-            <span className={`text-2xl font-bold ${getScoreColor(overallScore)}`}>{overallScore}</span>
+      {/* Wealth Check Score */}
+      <div className="liquid-glass rounded-2xl p-6">
+        <div className="flex items-center gap-5">
+          <div className="relative w-24 h-24 shrink-0">
+            <svg className="w-24 h-24 transform -rotate-90" viewBox="0 0 100 100">
+              <circle cx="50" cy="50" r="40" fill="none" stroke="#f5f5f7" strokeWidth="8" />
+              <circle
+                cx="50" cy="50" r="40" fill="none"
+                stroke={scoreHex(wealthCheck.score)}
+                strokeWidth="8"
+                strokeDasharray={`${wealthCheck.score * 2.51} 251`}
+                strokeLinecap="round"
+              />
+            </svg>
+            <div className="absolute inset-0 flex flex-col items-center justify-center">
+              <span className="text-2xl font-bold" style={{ color: scoreHex(wealthCheck.score) }}>
+                {wealthCheck.score}
+              </span>
+              <span className="text-[10px] text-[#86868b] -mt-0.5">/ 100</span>
+            </div>
+          </div>
+          <div className="min-w-0">
+            <p className="text-[11px] uppercase tracking-wide text-[#86868b] font-semibold">Wealth Check</p>
+            <p className="text-xl font-bold text-[#1d1d1f] dark:text-white">{wealthCheck.grade}</p>
+            <p className="text-xs text-[#86868b] mt-0.5">Allocation, protection, tax, debt, savings &amp; goals</p>
           </div>
         </div>
-        <p className="font-semibold text-[#1d1d1f]">
-          {overallScore >= 80 ? "Great! You're well protected" :
-           overallScore >= 50 ? "Decent, but room for improvement" :
-           "Needs attention"}
-        </p>
-        <p className="text-xs text-[#86868b] mt-1">Based on your financial essentials</p>
+
+        <div className="mt-5 space-y-3">
+          {wealthCheck.dimensions.map((d) => (
+            <WealthDimensionRow key={d.key} dim={d} />
+          ))}
+        </div>
       </div>
 
       {/* Essentials Cards */}
@@ -321,6 +345,21 @@ export default function HealthPage() {
         {saving ? "Saving..." : "Save Health Check"}
       </button>
 
+      {/* Wealth Check actions */}
+      {wealthCheckActions.length > 0 && (
+        <div className="liquid-glass rounded-2xl p-5">
+          <h3 className="font-semibold text-[#1d1d1f] dark:text-white mb-3">Top actions to raise your score</h3>
+          <ul className="space-y-2.5">
+            {wealthCheckActions.map((a) => (
+              <li key={a.key} className="flex items-start gap-2 text-sm text-[#6e6e73] dark:text-[#98989d]">
+                <span className="text-[#86868b] mt-0.5">•</span>
+                <span><span className="font-medium text-[#1d1d1f] dark:text-white">{a.label}:</span> {a.action}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {/* Recommendations */}
       <div className="liquid-glass rounded-2xl p-5">
         <h3 className="font-semibold text-[#1d1d1f] mb-3 flex items-center gap-2">
@@ -359,6 +398,39 @@ export default function HealthPage() {
           )}
         </ul>
       </div>
+    </div>
+  )
+}
+
+function scoreHex(score: number): string {
+  if (score >= 80) return "#10b981"
+  if (score >= 45) return "#f59e0b"
+  return "#f43f5e"
+}
+
+const STATUS_BAR: Record<WealthDimension["status"], string> = {
+  strong: "bg-emerald-500",
+  fair: "bg-amber-500",
+  weak: "bg-rose-500",
+}
+
+const STATUS_TEXT: Record<WealthDimension["status"], string> = {
+  strong: "text-emerald-600 dark:text-emerald-400",
+  fair: "text-amber-600 dark:text-amber-400",
+  weak: "text-rose-600 dark:text-rose-400",
+}
+
+function WealthDimensionRow({ dim }: Readonly<{ dim: WealthDimension }>) {
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3">
+        <span className="text-sm font-medium text-[#1d1d1f] dark:text-white">{dim.label}</span>
+        <span className={`text-xs font-semibold tabular-nums ${STATUS_TEXT[dim.status]}`}>{dim.score}</span>
+      </div>
+      <div className="mt-1.5 h-1.5 bg-[#f5f5f7] dark:bg-white/[0.08] rounded-full overflow-hidden">
+        <div className={`h-full rounded-full ${STATUS_BAR[dim.status]}`} style={{ width: `${dim.score}%` }} />
+      </div>
+      <p className="mt-1 text-xs text-[#86868b]">{dim.detail}</p>
     </div>
   )
 }

@@ -7,8 +7,8 @@ import { insertRow, updateRow } from "@/lib/offline"
 import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { useDeleteMutation } from "@/hooks/use-offline-mutation"
 import { useQueryClient } from "@tanstack/react-query"
-import { Plus, Trash2, Edit2, CreditCard } from "lucide-react"
-import type { Liability } from "@/lib/types"
+import { Plus, Trash2, Edit2, CreditCard, TrendingDown } from "lucide-react"
+import type { Liability, Transaction } from "@/lib/types"
 import { LIABILITY_TYPES } from "@/lib/constants"
 import { CategoryIcon } from "@/components/category-icon"
 import { useAppDialog } from "@/components/app-dialog"
@@ -29,6 +29,9 @@ export default function LiabilitiesPage() {
       filters: pf,
       enabled: !!activeProfile,
     }
+  )
+  const { data: transactions = [] } = useOfflineQuery<Transaction>(
+    "transactions", user?.id, { filters: pf, enabled: !!activeProfile }
   )
   const deleteMut = useDeleteMutation("liabilities")
 
@@ -104,6 +107,15 @@ export default function LiabilitiesPage() {
           )}
         </div>
       </div>
+
+      {liabilities.length > 0 && (
+        <LoanInsights
+          liabilities={liabilities}
+          totalEmi={totalEmi}
+          transactions={transactions}
+          formatCurrency={formatCurrency}
+        />
+      )}
 
       {/* Liability List */}
       {liabilities.length === 0 ? (
@@ -185,6 +197,92 @@ export default function LiabilitiesPage() {
           onClose={() => { setShowAddModal(false); setEditLiability(null) }}
           onSave={() => { setShowAddModal(false); setEditLiability(null); queryClient.invalidateQueries({ queryKey: ["liabilities"] }) }}
         />
+      )}
+    </div>
+  )
+}
+
+function emiRatioStatus(ratio: number) {
+  if (ratio > 40) return { label: "Stretched", cls: "text-rose-600 dark:text-rose-400", bar: "bg-rose-500" }
+  if (ratio > 30) return { label: "Manageable", cls: "text-amber-600 dark:text-amber-400", bar: "bg-amber-500" }
+  return { label: "Comfortable", cls: "text-emerald-600 dark:text-emerald-400", bar: "bg-emerald-500" }
+}
+
+function LoanInsights({
+  liabilities,
+  totalEmi,
+  transactions,
+  formatCurrency,
+}: Readonly<{
+  liabilities: Liability[]
+  totalEmi: number
+  transactions: Transaction[]
+  formatCurrency: (amount: number) => string
+}>) {
+  // Average monthly income across the months with income data in the last 6 months.
+  const now = new Date()
+  const windowStart = new Date(now.getFullYear(), now.getMonth() - 5, 1)
+  const incomeTx = transactions.filter(
+    (t) => t.type === "income" && new Date(t.date) >= windowStart
+  )
+  const incomeMonths = new Set(incomeTx.map((t) => t.date.slice(0, 7)))
+  const totalIncome = incomeTx.reduce((s, t) => s + Number(t.amount), 0)
+  const avgMonthlyIncome = incomeMonths.size > 0 ? totalIncome / incomeMonths.size : 0
+  const emiRatio = avgMonthlyIncome > 0 ? (totalEmi / avgMonthlyIncome) * 100 : null
+
+  const payoffOrder = [...liabilities]
+    .filter((l) => Number(l.outstanding_amount) > 0 && Number(l.interest_rate) > 0)
+    .sort((a, b) => Number(b.interest_rate) - Number(a.interest_rate))
+
+  if (emiRatio === null && payoffOrder.length < 2) return null
+  const status = emiRatio === null ? null : emiRatioStatus(emiRatio)
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+      {emiRatio !== null && status && (
+        <div className="liquid-glass rounded-2xl p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-[#86868b] font-medium">EMI-to-income</p>
+            <span className={`text-xs font-semibold ${status.cls}`}>{status.label}</span>
+          </div>
+          <p className="text-2xl font-bold text-[#1d1d1f] dark:text-white mt-1">{emiRatio.toFixed(0)}%</p>
+          <p className="text-xs text-[#86868b] mt-0.5">
+            {formatCurrency(totalEmi)}/mo of ~{formatCurrency(avgMonthlyIncome)} income
+          </p>
+          <div className="mt-2 h-1.5 bg-white/50 dark:bg-white/[0.08] rounded-full overflow-hidden">
+            <div className={`h-full ${status.bar} rounded-full transition-all`} style={{ width: `${Math.min(emiRatio, 100)}%` }} />
+          </div>
+          <p className="text-[11px] text-[#86868b] mt-2 leading-relaxed">
+            Lenders generally prefer total EMIs under 40% of income.{" "}
+            {emiRatio > 40
+              ? "Consider prepaying or refinancing to free up cash flow."
+              : "You have room for new goals or investments."}
+          </p>
+        </div>
+      )}
+
+      {payoffOrder.length >= 2 && (
+        <div className="liquid-glass rounded-2xl p-4">
+          <div className="flex items-center gap-2">
+            <TrendingDown className="w-4 h-4 text-[#1d1d1f] dark:text-white" />
+            <p className="text-xs text-[#86868b] font-medium">Smart payoff order</p>
+          </div>
+          <p className="text-[11px] text-[#86868b] mt-1 leading-relaxed">
+            Clear the highest interest rate first (avalanche) to save the most on interest.
+          </p>
+          <ol className="mt-2 space-y-1.5">
+            {payoffOrder.slice(0, 4).map((l, i) => (
+              <li key={l.id} className="flex items-center gap-2.5">
+                <span className={`flex items-center justify-center w-5 h-5 rounded-md text-[11px] font-bold ${i === 0 ? "bg-[#1d1d1f] text-white dark:bg-white dark:text-[#1d1d1f]" : "bg-white/60 dark:bg-white/[0.08] text-[#86868b]"}`}>
+                  {i + 1}
+                </span>
+                <span className="flex-1 min-w-0 truncate text-sm text-[#1d1d1f] dark:text-white">{l.name}</span>
+                <span className="text-xs font-semibold text-[#1d1d1f] dark:text-white">{Number(l.interest_rate)}%</span>
+                {i === 0 && <span className="text-[10px] font-semibold text-accent">Pay first</span>}
+              </li>
+            ))}
+          </ol>
+        </div>
       )}
     </div>
   )

@@ -9,6 +9,7 @@ import { CurrencyProvider } from "@/hooks/use-currency"
 import { QueryProvider } from "@/components/query-provider"
 import { usePushSubscription } from "@/hooks/use-push"
 import { AppDialogProvider } from "@/components/app-dialog"
+import { ToastProvider } from "@/components/toast"
 import { FeatureTour, useFeatureTour } from "@/components/feature-tour"
 import { PinLockGate } from "@/components/pin-lock"
 import { cn } from "@/lib/utils"
@@ -43,19 +44,21 @@ export default function DashboardLayout({
 }) {
   return (
     <QueryProvider>
-      <AppDialogProvider>
-        <SidebarProvider>
-          <OfflineProvider>
-            <ProfileProvider>
-              <CurrencyProvider>
-                <PinLockGate>
-                  <DashboardShell>{children}</DashboardShell>
-                </PinLockGate>
-              </CurrencyProvider>
-            </ProfileProvider>
-          </OfflineProvider>
-        </SidebarProvider>
-      </AppDialogProvider>
+      <ToastProvider>
+        <AppDialogProvider>
+          <SidebarProvider>
+            <OfflineProvider>
+              <ProfileProvider>
+                <CurrencyProvider>
+                  <PinLockGate>
+                    <DashboardShell>{children}</DashboardShell>
+                  </PinLockGate>
+                </CurrencyProvider>
+              </ProfileProvider>
+            </OfflineProvider>
+          </SidebarProvider>
+        </AppDialogProvider>
+      </ToastProvider>
     </QueryProvider>
   )
 }

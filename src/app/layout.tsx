@@ -3,6 +3,7 @@ import { Inter, Source_Serif_4, JetBrains_Mono, Playfair_Display } from "next/fo
 import Script from "next/script";
 import { ClerkProvider } from "@clerk/nextjs";
 import { PwaInstallPopup } from "@/components/pwa-install-popup";
+import { SITE_URL } from "@/lib/site";
 import "./globals.css";
 
 const inter = Inter({
@@ -26,7 +27,7 @@ const playfair = Playfair_Display({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://finboom-cyan.vercel.app"),
+  metadataBase: new URL(SITE_URL),
   title: {
     default: "FinBoom - Know Your True Wealth | Net Worth Tracker for India",
     template: "%s | FinBoom",
@@ -55,7 +56,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "FinBoom - Know Your True Wealth | Free Net Worth Tracker",
     description: "Track stocks, mutual funds, real estate, gold, and 22+ asset classes. Free forever. Built for Indian investors.",
-    url: "https://finboom-cyan.vercel.app",
+    url: SITE_URL,
     siteName: "FinBoom",
     locale: "en_IN",
     type: "website",

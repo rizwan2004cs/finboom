@@ -8,6 +8,8 @@ import MermaidDiagram from "@/components/mermaid-diagram"
 import { ShareButton } from "./share-button"
 import { ZoomableImage } from "./zoomable-image"
 import { SafeExternalImage } from "./safe-external-image"
+import { BLOG_CATEGORY_LABELS } from "@/lib/blog/categories"
+import { SITE_URL, SITE_NAME, absoluteUrl } from "@/lib/site"
 
 type Post = {
   _id: string
@@ -15,22 +17,22 @@ type Post = {
   slug: { current: string }
   category: string
   excerpt: string
+  metaTitle?: string
+  metaDescription?: string
+  keywords?: string[]
   mainImage?: { asset: { _ref: string } }
   body: Array<Record<string, unknown>>
   publishedAt: string
+  updatedAt?: string
 }
 
-const CATEGORY_LABELS: Record<string, string> = {
-  tips: "Financial Tips",
-  market: "Market Updates",
-  product: "Product Updates",
-  guides: "Guides",
-}
+const CATEGORY_LABELS = BLOG_CATEGORY_LABELS
 
 async function getPost(slug: string): Promise<Post | null> {
   return sanityClient.fetch(
     `*[_type == "post" && slug.current == $slug][0] {
-      _id, title, slug, category, excerpt, mainImage, body, publishedAt
+      _id, title, slug, category, excerpt, metaTitle, metaDescription, keywords,
+      mainImage, body, publishedAt, "updatedAt": _updatedAt
     }`,
     { slug }
   )
@@ -55,8 +57,7 @@ async function getRelatedPosts(slug: string, category: string | undefined): Prom
   )
 }
 
-// Average adult reading speed ~200 wpm.
-function estimateReadingMinutes(body: Array<Record<string, unknown>>): number {
+function countBodyWords(body: Array<Record<string, unknown>>): number {
   let words = 0
   for (const block of body) {
     if (block._type !== "block" || !Array.isArray(block.children)) continue
@@ -64,7 +65,12 @@ function estimateReadingMinutes(body: Array<Record<string, unknown>>): number {
       if (child.text) words += child.text.split(/\s+/).filter(Boolean).length
     }
   }
-  return Math.max(1, Math.round(words / 200))
+  return words
+}
+
+// Average adult reading speed ~200 wpm.
+function estimateReadingMinutes(body: Array<Record<string, unknown>>): number {
+  return Math.max(1, Math.round(countBodyWords(body) / 200))
 }
 
 export async function generateStaticParams() {
@@ -83,26 +89,39 @@ export async function generateMetadata({
   const post = await getPost(slug)
   if (!post) return { title: "Post Not Found" }
 
+  const seoTitle = post.metaTitle?.trim() || post.title
+  const seoDescription =
+    post.metaDescription?.trim() || post.excerpt || `Read "${post.title}" on FinBoom Blog`
+  const ogImage = post.mainImage
+    ? [urlFor(post.mainImage).width(1200).height(630).url()]
+    : undefined
+
   return {
-    title: post.title,
-    description: post.excerpt || `Read "${post.title}" on FinBoom Blog`,
+    title: seoTitle,
+    description: seoDescription,
+    ...(post.keywords?.length ? { keywords: post.keywords } : {}),
     alternates: {
       canonical: `/blog/${post.slug.current}`,
     },
     openGraph: {
-      title: post.title,
-      description: post.excerpt,
+      title: seoTitle,
+      description: seoDescription,
       type: "article",
       publishedTime: post.publishedAt,
+      ...(post.updatedAt ? { modifiedTime: post.updatedAt } : {}),
       url: `/blog/${post.slug.current}`,
-      ...(post.mainImage && {
-        images: [urlFor(post.mainImage).width(1200).height(630).url()],
-      }),
+      ...(ogImage ? { images: ogImage } : {}),
+    },
+    twitter: {
+      card: ogImage ? "summary_large_image" : "summary",
+      title: seoTitle,
+      description: seoDescription,
+      ...(ogImage ? { images: ogImage } : {}),
     },
   }
 }
 
-const portableTextComponents = {
+export const portableTextComponents = {
   types: {
     image: ({ value }: { value: { alt?: string } }) => {
       const src = urlFor(value).width(1200).url()
@@ -126,6 +145,27 @@ const portableTextComponents = {
     mermaid: ({ value }: { value: { code: string } }) => (
       <MermaidDiagram code={value.code} zoomable />
     ),
+    callout: ({ value }: { value: { items?: string[] } }) => {
+      const items = value.items ?? []
+      if (items.length === 0) return null
+      return (
+        <aside className="my-8 rounded-2xl border border-accent/20 bg-accent/[0.05] p-5 md:p-6">
+          <p className="text-xs font-semibold uppercase tracking-wider text-accent mb-3">
+            Key takeaways
+          </p>
+          <ul className="space-y-2.5">
+            {items.map((item) => (
+              <li key={item} className="flex items-start gap-2.5 text-[15px] leading-relaxed text-[#1d1d1f] dark:text-white">
+                <svg className="w-5 h-5 mt-0.5 shrink-0 text-accent" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </aside>
+      )
+    },
     table: ({ value }: { value: { rows: Array<{ isHeader: boolean; cells: Array<{ text: string }> }> } }) => (
       <div className="my-6 overflow-x-auto rounded-xl border border-black/[0.08] dark:border-white/[0.08]">
         <table className="w-full text-sm">
@@ -244,28 +284,35 @@ export default async function BlogPostPage({
   if (!post) notFound()
 
   const relatedPosts = await getRelatedPosts(slug, post.category)
-  const readingMinutes = estimateReadingMinutes(post.body)
+  const wordCount = countBodyWords(post.body)
+  const readingMinutes = Math.max(1, Math.round(wordCount / 200))
+  const postUrl = absoluteUrl(`/blog/${post.slug.current}`)
 
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "BlogPosting",
     headline: post.title,
-    description: post.excerpt,
+    description: post.metaDescription?.trim() || post.excerpt,
     datePublished: post.publishedAt,
-    url: `https://finboom-cyan.vercel.app/blog/${post.slug.current}`,
-    mainEntityOfPage: `https://finboom-cyan.vercel.app/blog/${post.slug.current}`,
+    dateModified: post.updatedAt || post.publishedAt,
+    url: postUrl,
+    mainEntityOfPage: postUrl,
+    inLanguage: "en-IN",
+    wordCount,
+    ...(post.category && { articleSection: CATEGORY_LABELS[post.category] || post.category }),
+    ...(post.keywords?.length && { keywords: post.keywords.join(", ") }),
     ...(post.mainImage && {
       image: urlFor(post.mainImage).width(1200).height(630).url(),
     }),
     author: {
       "@type": "Organization",
-      name: "FinBoom",
-      url: "https://finboom-cyan.vercel.app",
+      name: SITE_NAME,
+      url: SITE_URL,
     },
     publisher: {
       "@type": "Organization",
-      name: "FinBoom",
-      url: "https://finboom-cyan.vercel.app",
+      name: SITE_NAME,
+      url: SITE_URL,
     },
   }
 

@@ -6,6 +6,15 @@ import { useUser } from "@/hooks/use-auth"
 import { useUser as useClerkUser } from "@clerk/nextjs"
 import Link from "next/link"
 import { Sparkles, Loader2 } from "lucide-react"
+import { BLOG_CATEGORIES } from "@/lib/blog/categories"
+
+function stripMarks(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, "$1")
+    .replace(/__(.+?)__/g, "$1")
+    .replace(/`(.+?)`/g, "$1")
+    .trim()
+}
 
 function markdownToPortableText(markdown: string) {
   const lines = markdown.split("\n")
@@ -84,6 +93,23 @@ function markdownToPortableText(markdown: string) {
       continue
     }
 
+    // Key-takeaways brief: ```keypoints ... ```
+    if (/^```\s*keypoints\s*$/i.test(line.trim())) {
+      flushList()
+      const items: string[] = []
+      let j = i + 1
+      while (j < lines.length && lines[j].trim() !== "```") {
+        const clean = stripMarks(lines[j].trim().replace(/^[-*]\s+/, ""))
+        if (clean) items.push(clean)
+        j++
+      }
+      if (items.length > 0) {
+        blocks.push({ _type: "callout", _key: nextKey(), style: "keypoints", items })
+      }
+      i = j
+      continue
+    }
+
     // Table: detect | ... | rows and collect them
     if (line.trim().startsWith("|") && line.trim().endsWith("|")) {
       flushList()
@@ -108,7 +134,7 @@ function markdownToPortableText(markdown: string) {
             cells: cells.map(cell => ({
               _type: "tableCell",
               _key: nextKey(),
-              text: cell,
+              text: stripMarks(cell),
             })),
           })),
         })
@@ -225,6 +251,14 @@ export default function NewBlogPost() {
   const [category, setCategory] = useState("guides")
   const [excerpt, setExcerpt] = useState("")
   const [markdown, setMarkdown] = useState("")
+  const [heroImageUrl, setHeroImageUrl] = useState("")
+  const [heroImageAlt, setHeroImageAlt] = useState("")
+  const [seo, setSeo] = useState<{
+    metaTitle?: string
+    metaDescription?: string
+    primaryKeyword?: string
+    keywords?: string[]
+  }>({})
   const [status, setStatus] = useState<"idle" | "generating" | "publishing" | "success" | "error">("idle")
   const [message, setMessage] = useState("")
 
@@ -277,6 +311,14 @@ export default function NewBlogPost() {
         setCategory(data.category || "guides")
         setExcerpt(data.excerpt || "")
         setMarkdown(data.content || "")
+        setHeroImageUrl(data.heroImageUrl || "")
+        setHeroImageAlt(data.heroImageAlt || "")
+        setSeo({
+          metaTitle: data.metaTitle,
+          metaDescription: data.metaDescription,
+          primaryKeyword: data.primaryKeyword,
+          keywords: Array.isArray(data.keywords) ? data.keywords : undefined,
+        })
         setStatus("idle")
         setMessage("")
       } else {
@@ -307,6 +349,11 @@ export default function NewBlogPost() {
       slug: { _type: "slug", current: slugify(title) },
       category,
       excerpt: excerpt.trim(),
+      ...(seo.metaTitle && { metaTitle: seo.metaTitle }),
+      ...(seo.metaDescription && { metaDescription: seo.metaDescription }),
+      ...(seo.keywords?.length && { keywords: seo.keywords }),
+      // The server uploads heroImageUrl into Sanity as mainImage, then strips it.
+      ...(heroImageUrl && { heroImageUrl, heroImageAlt }),
       publishedAt: new Date().toISOString(),
       body,
     }
@@ -420,10 +467,11 @@ export default function NewBlogPost() {
               onChange={(e) => setCategory(e.target.value)}
               className="w-full px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 text-[#1d1d1f] dark:text-white focus:outline-none focus:ring-2 focus:ring-accent/30"
             >
-              <option value="guides">Guides</option>
-              <option value="tips">Financial Tips</option>
-              <option value="market">Market Updates</option>
-              <option value="product">Product Updates</option>
+              {BLOG_CATEGORIES.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -440,6 +488,36 @@ export default function NewBlogPost() {
               className="w-full px-4 py-2.5 rounded-xl border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-accent/30"
             />
           </div>
+
+          {/* Hero image */}
+          {heroImageUrl && (
+            <div>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-sm font-medium text-[#1d1d1f] dark:text-white">
+                  Hero image
+                </label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHeroImageUrl("")
+                    setHeroImageAlt("")
+                  }}
+                  className="text-xs text-red-600 dark:text-red-400 hover:opacity-80"
+                >
+                  Remove
+                </button>
+              </div>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={heroImageUrl}
+                alt={heroImageAlt || title}
+                className="w-full max-h-56 object-cover rounded-xl border border-black/10 dark:border-white/10"
+              />
+              <p className="mt-1 text-xs text-[#86868b]">
+                Uploaded to Sanity as the post&apos;s main image on publish.
+              </p>
+            </div>
+          )}
 
           {/* Markdown Content */}
           <div>

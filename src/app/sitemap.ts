@@ -1,5 +1,7 @@
 import type { MetadataRoute } from "next";
 import { sanityClient } from "@/lib/sanity";
+import { SITE_URL } from "@/lib/site";
+import { TOOLS } from "@/lib/tools";
 
 // Revalidate hourly so daily auto-published posts appear without a redeploy.
 export const revalidate = 3600;
@@ -10,7 +12,7 @@ type SitemapPost = {
 };
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const baseUrl = "https://finboom-cyan.vercel.app";
+  const baseUrl = SITE_URL;
 
   const staticEntries: MetadataRoute.Sitemap = [
     {
@@ -25,6 +27,18 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "daily",
       priority: 0.8,
     },
+    {
+      url: `${baseUrl}/tools`,
+      lastModified: new Date(),
+      changeFrequency: "monthly",
+      priority: 0.7,
+    },
+    ...TOOLS.map((tool) => ({
+      url: `${baseUrl}/tools/${tool.slug}`,
+      lastModified: new Date(),
+      changeFrequency: "monthly" as const,
+      priority: 0.6,
+    })),
   ];
 
   let posts: SitemapPost[] = [];
