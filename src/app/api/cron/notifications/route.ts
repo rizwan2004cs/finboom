@@ -18,6 +18,21 @@ interface NotificationToCreate {
   data: Record<string, unknown>
 }
 
+// Whole days until the next occurrence of a monthly SIP day, clamped to the
+// month length so day 31 falls back to the last day of shorter months.
+function daysUntilSipDay(sipDay: number, today: Date): number {
+  const y = today.getFullYear()
+  const m = today.getMonth()
+  const startOfToday = new Date(y, m, today.getDate())
+  const lastDayThisMonth = new Date(y, m + 1, 0).getDate()
+  let next = new Date(y, m, Math.min(sipDay, lastDayThisMonth))
+  if (next < startOfToday) {
+    const lastDayNextMonth = new Date(y, m + 2, 0).getDate()
+    next = new Date(y, m + 1, Math.min(sipDay, lastDayNextMonth))
+  }
+  return Math.round((next.getTime() - startOfToday.getTime()) / 86400000)
+}
+
 // GET /api/cron/notifications — runs for ALL users, called by external cron
 export async function GET(req: NextRequest) {
   // Verify cron secret
@@ -184,6 +199,41 @@ export async function GET(req: NextRequest) {
             title: `Large ${tx.type}: ₹${Number(tx.amount).toLocaleString("en-IN")}`,
             body: `${tx.category}${tx.description ? ` — ${tx.description}` : ""}`,
             data: { transaction_id: tx.id },
+          })
+        }
+      }
+    }
+
+    // --- 5. SIP reminders (due today or tomorrow) ---
+    const { data: sips } = await supabase
+      .from("sips")
+      .select("*")
+      .eq("user_id", userId)
+      .eq("active", true)
+      .eq("reminder_enabled", true)
+
+    if (sips) {
+      for (const sip of sips) {
+        const daysLeft = daysUntilSipDay(sip.sip_day, today)
+        if (daysLeft > 1) continue // only remind the day before and the day of
+
+        const { data: existing } = await supabase
+          .from("notifications")
+          .select("id")
+          .eq("user_id", userId)
+          .eq("type", "sip_reminder")
+          .gte("created_at", todayStr)
+          .contains("data", { sip_id: sip.id })
+          .limit(1)
+
+        if (!existing?.length) {
+          const label = sip.fund_name || sip.name
+          notifications.push({
+            user_id: userId,
+            type: "sip_reminder",
+            title: daysLeft === 0 ? `SIP due today: ${label}` : `SIP tomorrow: ${label}`,
+            body: `₹${Number(sip.amount).toLocaleString("en-IN")} ${daysLeft === 0 ? "is due today" : "is due tomorrow"} (day ${sip.sip_day})`,
+            data: { sip_id: sip.id, sip_day: sip.sip_day },
           })
         }
       }

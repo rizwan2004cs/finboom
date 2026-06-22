@@ -71,6 +71,22 @@ export interface Goal {
   updated_at: string
 }
 
+export interface Sip {
+  id: string
+  user_id: string
+  profile_id: string
+  name: string
+  fund_name?: string
+  amount: number
+  currency: string
+  sip_day: number
+  active: boolean
+  reminder_enabled: boolean
+  notes?: string
+  created_at: string
+  updated_at: string
+}
+
 export interface Snapshot {
   id: string
   user_id: string
@@ -138,7 +154,7 @@ export interface PartyTransaction {
 export interface AppNotification {
   id: string
   user_id: string
-  type: 'overdue_payment' | 'due_approaching' | 'goal_milestone' | 'large_transaction'
+  type: 'overdue_payment' | 'due_approaching' | 'goal_milestone' | 'large_transaction' | 'sip_reminder'
   title: string
   body: string
   data: Record<string, unknown>

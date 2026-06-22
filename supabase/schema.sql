@@ -164,6 +164,23 @@ create table if not exists budgets (
 create unique index if not exists budgets_unique_entry
   on budgets (user_id, profile_id, month, category);
 
+-- SIPs table (recurring investment plans)
+create table if not exists sips (
+  id uuid default uuid_generate_v4() primary key,
+  user_id text not null,
+  profile_id uuid references profiles(id) on delete set null,
+  name text not null,
+  fund_name text,
+  amount numeric not null default 0,
+  currency text not null default 'INR',
+  sip_day integer not null check (sip_day between 1 and 31),
+  active boolean not null default true,
+  reminder_enabled boolean not null default true,
+  notes text,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
 -- Auto-update trigger for updated_at
 create or replace function update_updated_at_column()
 returns trigger as $$
@@ -183,6 +200,7 @@ create or replace trigger set_updated_at_parties before update on parties for ea
 create or replace trigger set_updated_at_party_transactions before update on party_transactions for each row execute function update_updated_at_column();
 create or replace trigger set_updated_at_budgets before update on budgets for each row execute function update_updated_at_column();
 create or replace trigger set_updated_at_health_checks before update on health_checks for each row execute function update_updated_at_column();
+create or replace trigger set_updated_at_sips before update on sips for each row execute function update_updated_at_column();
 
 -- Indexes for fast lookups
 create index if not exists idx_assets_user_id on assets(user_id);
@@ -203,6 +221,9 @@ create index if not exists idx_budgets_month on budgets(user_id, profile_id, mon
 create index if not exists idx_health_checks_user_id on health_checks(user_id);
 create index if not exists idx_health_checks_updated_at on health_checks(updated_at);
 
+create index if not exists idx_sips_user_id on sips(user_id);
+create index if not exists idx_sips_profile on sips(user_id, profile_id);
+
 -- Indexes for delta sync
 create index if not exists idx_assets_updated_at on assets(updated_at);
 create index if not exists idx_liabilities_updated_at on liabilities(updated_at);
@@ -213,6 +234,7 @@ create index if not exists idx_profiles_updated_at on profiles(updated_at);
 create index if not exists idx_parties_updated_at on parties(updated_at);
 create index if not exists idx_party_transactions_updated_at on party_transactions(updated_at);
 create index if not exists idx_budgets_updated_at on budgets(updated_at);
+create index if not exists idx_sips_updated_at on sips(updated_at);
 
 -- Row Level Security (RLS)
 -- Every row is scoped to its owner via the Clerk user id, which arrives in the
@@ -231,6 +253,7 @@ alter table parties enable row level security;
 alter table party_transactions enable row level security;
 alter table budgets enable row level security;
 alter table health_checks enable row level security;
+alter table sips enable row level security;
 
 create policy "assets_owner_all" on assets for all to authenticated
   using ((select auth.jwt() ->> 'sub') = user_id) with check ((select auth.jwt() ->> 'sub') = user_id);
@@ -263,4 +286,7 @@ create policy "budgets_owner_all" on budgets for all to authenticated
   using ((select auth.jwt() ->> 'sub') = user_id) with check ((select auth.jwt() ->> 'sub') = user_id);
 
 create policy "health_checks_owner_all" on health_checks for all to authenticated
+  using ((select auth.jwt() ->> 'sub') = user_id) with check ((select auth.jwt() ->> 'sub') = user_id);
+
+create policy "sips_owner_all" on sips for all to authenticated
   using ((select auth.jwt() ->> 'sub') = user_id) with check ((select auth.jwt() ->> 'sub') = user_id);

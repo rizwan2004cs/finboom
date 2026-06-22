@@ -26,6 +26,7 @@ import {
   Map as MapIcon,
   Calculator,
   GripVertical,
+  Repeat,
 } from "lucide-react"
 
 const NAV_ORDER_KEY = "sidebar-nav-order"
@@ -38,6 +39,7 @@ const navItems = [
   { href: "/dashboard/budget", label: "Budget", icon: PiggyBank },
   { href: "/dashboard/parties", label: "Parties", icon: HandCoins },
   { href: "/dashboard/goals", label: "Goals", icon: Target },
+  { href: "/dashboard/sips", label: "SIPs", icon: Repeat },
   { href: "/dashboard/snapshots", label: "Snapshots", icon: Camera },
   { href: "/dashboard/health", label: "Health", icon: Heart },
   { href: "/tools", label: "Calculators", icon: Calculator },
@@ -58,6 +60,7 @@ const moreSubPages = [
   "/dashboard/budget",
   "/dashboard/parties",
   "/dashboard/goals",
+  "/dashboard/sips",
   "/dashboard/snapshots",
   "/dashboard/health",
   "/dashboard/profiles",
@@ -70,6 +73,7 @@ const moreSheetItems = [
   { href: "/dashboard/budget", label: "Budget", icon: PiggyBank },
   { href: "/dashboard/parties", label: "Parties", icon: HandCoins },
   { href: "/dashboard/goals", label: "Goals", icon: Target },
+  { href: "/dashboard/sips", label: "SIPs", icon: Repeat },
   { href: "/dashboard/snapshots", label: "Snapshots", icon: Camera },
   { href: "/dashboard/health", label: "Health", icon: Heart },
   { href: "/tools", label: "Calculators", icon: Calculator },

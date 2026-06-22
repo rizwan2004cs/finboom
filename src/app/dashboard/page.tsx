@@ -3,12 +3,12 @@
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
 import { useOfflineQuery } from "@/hooks/use-offline-query"
-import { TrendingUp, Wallet, CreditCard, Target, ArrowUpRight, Plus, Receipt, Camera, Download, HandCoins, Clock } from "lucide-react"
+import { TrendingUp, Wallet, CreditCard, Target, ArrowUpRight, Plus, Receipt, Camera, Download, HandCoins, Clock, Repeat } from "lucide-react"
 import Link from "next/link"
 import { NetWorthChart } from "@/components/charts/net-worth-chart"
 import { AllocationChart } from "@/components/charts/allocation-chart"
 import { SpendingChart } from "@/components/charts/spending-chart"
-import type { Asset, Liability, Goal, Snapshot, PartyTransaction, Transaction } from "@/lib/types"
+import type { Asset, Liability, Goal, Snapshot, PartyTransaction, Transaction, Sip } from "@/lib/types"
 import { ASSET_CLASSES } from "@/lib/constants"
 import { useCurrency } from "@/hooks/use-currency"
 
@@ -42,6 +42,9 @@ export default function DashboardPage() {
   const { data: transactions = [], isLoading: loadingTransactions } = useOfflineQuery<Transaction>(
     "transactions", user?.id, { filters: pf, enabled: !!activeProfile }
   )
+  const { data: sips = [] } = useOfflineQuery<Sip>(
+    "sips", user?.id, { filters: pf, enabled: !!activeProfile }
+  )
 
   const loading = loadingAssets || loadingLiabilities || loadingGoals || !user || !activeProfile
 
@@ -70,6 +73,12 @@ export default function DashboardPage() {
   const receivableIn30 = partyTransactions
     .filter(tx => tx.type === "lent" && tx.due_date && new Date(tx.due_date) >= today && new Date(tx.due_date) <= in30Days)
     .reduce((s, tx) => s + Number(tx.amount), 0)
+
+  // SIPs still due in the remainder of this month (active only)
+  const todayDay = today.getDate()
+  const upcomingSips = sips.filter(s => s.active && s.sip_day >= todayDay)
+  const sipsDueAmount = upcomingSips.reduce((sum, s) => sum + Number(s.amount), 0)
+  const nextSipDay = upcomingSips.length > 0 ? Math.min(...upcomingSips.map(s => s.sip_day)) : 0
 
   // Asset allocation breakdown
   const allocationData = ASSET_CLASSES.map(cls => {
@@ -195,6 +204,22 @@ export default function DashboardPage() {
             <p className="text-[12px] text-[#86868b] mt-1">upcoming dues</p>
           </Link>
         </div>
+      )}
+
+      {/* SIPs due this month */}
+      {upcomingSips.length > 0 && (
+        <Link href="/dashboard/sips" className="block liquid-glass rounded-2xl p-5 transition-all hover:shadow-md">
+          <div className="flex items-center justify-between">
+            <p className="text-[14px] text-[#86868b] font-medium">SIPs due this month</p>
+            <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center">
+              <Repeat className="w-5 h-5 text-indigo-600" />
+            </div>
+          </div>
+          <p className="text-[28px] font-semibold mt-2 text-[#1d1d1f]">{formatCurrency(sipsDueAmount)}</p>
+          <p className="text-[12px] text-[#86868b] mt-1">
+            {upcomingSips.length} SIP{upcomingSips.length > 1 ? "s" : ""} remaining · next on day {nextSipDay}
+          </p>
+        </Link>
       )}
 
       {/* Charts Section */}
