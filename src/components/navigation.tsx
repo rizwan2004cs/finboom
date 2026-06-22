@@ -23,7 +23,7 @@ import {
   X,
   BookOpen,
   PiggyBank,
-  Map,
+  Map as MapIcon,
   Calculator,
   GripVertical,
 } from "lucide-react"
@@ -79,7 +79,7 @@ const moreSheetItems = [
 ]
 
 // Tour button item (handled via callback, not a link)
-const tourItem = { label: "Tour", icon: Map }
+const tourItem = { label: "Tour", icon: MapIcon }
 
 type NavItem = (typeof navItems)[number]
 
@@ -97,7 +97,7 @@ export function Sidebar({ onStartTour }: { onStartTour?: () => void }) {
       const saved = localStorage.getItem(NAV_ORDER_KEY)
       if (!saved) return
       const hrefs = JSON.parse(saved) as string[]
-      const byHref = new Map(navItems.map((i) => [i.href, i]))
+      const byHref = new Map(navItems.map((i): [string, NavItem] => [i.href, i]))
       const ordered = hrefs.map((h) => byHref.get(h)).filter(Boolean) as NavItem[]
       const seen = new Set(hrefs)
       const appended = navItems.filter((i) => !seen.has(i.href))
