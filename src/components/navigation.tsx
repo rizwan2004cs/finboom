@@ -25,7 +25,10 @@ import {
   PiggyBank,
   Map,
   Calculator,
+  GripVertical,
 } from "lucide-react"
+
+const NAV_ORDER_KEY = "sidebar-nav-order"
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -78,9 +81,68 @@ const moreSheetItems = [
 // Tour button item (handled via callback, not a link)
 const tourItem = { label: "Tour", icon: Map }
 
+type NavItem = (typeof navItems)[number]
+
 export function Sidebar({ onStartTour }: { onStartTour?: () => void }) {
   const pathname = usePathname()
   const { collapsed, toggle } = useSidebar()
+  const [items, setItems] = useState<NavItem[]>(navItems)
+  const [draggingHref, setDraggingHref] = useState<string | null>(null)
+  const dragHref = useRef<string | null>(null)
+
+  // Load any saved custom order on mount, reconciling with the current item set
+  // (drops removed routes, appends newly added ones).
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(NAV_ORDER_KEY)
+      if (!saved) return
+      const hrefs = JSON.parse(saved) as string[]
+      const byHref = new Map(navItems.map((i) => [i.href, i]))
+      const ordered = hrefs.map((h) => byHref.get(h)).filter(Boolean) as NavItem[]
+      const seen = new Set(hrefs)
+      const appended = navItems.filter((i) => !seen.has(i.href))
+      const next = [...ordered, ...appended]
+      if (next.length === navItems.length) setItems(next)
+    } catch {
+      /* ignore malformed storage */
+    }
+  }, [])
+
+  function persistOrder(next: NavItem[]) {
+    try {
+      localStorage.setItem(NAV_ORDER_KEY, JSON.stringify(next.map((i) => i.href)))
+    } catch {
+      /* storage may be unavailable (private mode) — order just won't persist */
+    }
+  }
+
+  function handleDragStart(href: string) {
+    dragHref.current = href
+    setDraggingHref(href)
+  }
+
+  function handleDragEnter(targetHref: string) {
+    const from = dragHref.current
+    if (!from || from === targetHref) return
+    setItems((prev) => {
+      const fromIdx = prev.findIndex((i) => i.href === from)
+      const toIdx = prev.findIndex((i) => i.href === targetHref)
+      if (fromIdx === -1 || toIdx === -1) return prev
+      const next = [...prev]
+      const [moved] = next.splice(fromIdx, 1)
+      next.splice(toIdx, 0, moved)
+      return next
+    })
+  }
+
+  function handleDragEnd() {
+    dragHref.current = null
+    setDraggingHref(null)
+    setItems((prev) => {
+      persistOrder(prev)
+      return prev
+    })
+  }
 
   return (
     <aside
@@ -101,15 +163,17 @@ export function Sidebar({ onStartTour }: { onStartTour?: () => void }) {
 
       {/* Nav items */}
       <nav className={cn("flex-1 py-2 space-y-0.5 overflow-y-auto", collapsed ? "px-2" : "px-3")}>
-        {navItems.map((item) => {
+        {items.map((item) => {
           const isActive = pathname === item.href || 
             (item.href !== "/dashboard" && pathname.startsWith(item.href))
+          const isDragging = draggingHref === item.href
           const link = (
             <Link
               href={item.href}
+              draggable={false}
               data-tour={item.label.toLowerCase()}
               className={cn(
-                "flex items-center gap-3 rounded-xl text-[14px] font-medium transition-all duration-200",
+                "group flex items-center gap-3 rounded-xl text-[14px] font-medium transition-all duration-200",
                 collapsed ? "justify-center px-2 py-2.5" : "px-3 py-2",
                 isActive
                   ? "bg-white/70 text-[#1d1d1f] shadow-sm shadow-black/[0.06] backdrop-blur-sm"
@@ -118,14 +182,37 @@ export function Sidebar({ onStartTour }: { onStartTour?: () => void }) {
             >
               <item.icon className="w-[18px] h-[18px] flex-shrink-0" strokeWidth={1.5} />
               {!collapsed && <span>{item.label}</span>}
+              {!collapsed && (
+                <GripVertical
+                  className="ml-auto w-4 h-4 flex-shrink-0 text-[#c7c7cc] opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing"
+                  strokeWidth={1.5}
+                />
+              )}
             </Link>
           )
-          return collapsed ? (
-            <Tooltip key={item.href} label={item.label} side="right">
-              {link}
-            </Tooltip>
-          ) : (
-            <div key={item.href}>{link}</div>
+          return (
+            <div
+              key={item.href}
+              draggable
+              onDragStart={() => handleDragStart(item.href)}
+              onDragEnter={() => handleDragEnter(item.href)}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => e.preventDefault()}
+              onDragEnd={handleDragEnd}
+              className={cn(
+                "rounded-xl transition-opacity duration-200",
+                isDragging && "opacity-40",
+                collapsed && "cursor-grab active:cursor-grabbing"
+              )}
+            >
+              {collapsed ? (
+                <Tooltip label={item.label} side="right">
+                  {link}
+                </Tooltip>
+              ) : (
+                link
+              )}
+            </div>
           )
         })}
 

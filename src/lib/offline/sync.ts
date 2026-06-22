@@ -4,7 +4,7 @@
  */
 
 import { createClient } from "@/utils/supabase/client"
-import { getQueue, dequeue, type QueuedMutation } from "./queue"
+import { getQueue, dequeue, setRetries, type QueuedMutation } from "./queue"
 import { putAll, setMeta, getMeta, DATA_STORES, type DataStore } from "./db"
 
 type SyncListener = (status: "syncing" | "synced" | "error" | "offline" | "online") => void
@@ -17,6 +17,10 @@ let retryCount = 0
 const SYNC_COOLDOWN = 5_000 // 5 seconds between sync attempts
 const MAX_RETRIES = 3
 const RETRY_DELAYS = [3_000, 8_000, 20_000] // escalating retry delays
+// How many times a single mutation may fail to replay before we discard it.
+// Prevents a permanently-rejected ("poison") mutation from blocking the queue
+// — and pinning the sync badge — forever.
+const MAX_REPLAY_ATTEMPTS = 3
 
 export function onSyncStatus(fn: SyncListener): () => void {
   listeners.add(fn)
@@ -60,25 +64,44 @@ async function replayMutation(m: QueuedMutation): Promise<boolean> {
   }
 }
 
-/** Replay all queued mutations in order */
-export async function replayQueue(): Promise<{ success: number; failed: number }> {
+/** Replay all queued mutations in order.
+ *  - On success: dequeue.
+ *  - On failure: bump the retry counter. If it has now failed too many times it's
+ *    treated as a "poison" mutation and dropped so it can't block the queue (and
+ *    the sync badge) forever; otherwise we stop to preserve ordering and retry it
+ *    on the next sync.
+ */
+export async function replayQueue(): Promise<{ success: number; failed: number; dropped: number }> {
   const queue = await getQueue()
   let success = 0
   let failed = 0
+  let dropped = 0
 
   for (const mutation of queue) {
     const ok = await replayMutation(mutation)
     if (ok) {
       await dequeue(mutation.queue_id)
       success++
-    } else {
-      failed++
-      // Stop on first failure to preserve order
-      break
+      continue
     }
+
+    const attempts = (mutation.retries ?? 0) + 1
+    if (attempts >= MAX_REPLAY_ATTEMPTS) {
+      // Poison mutation: the server keeps rejecting it. Drop it and move on so
+      // the rest of the queue can sync instead of being blocked indefinitely.
+      console.warn(`[sync] Dropping mutation after ${attempts} failed attempts:`, mutation)
+      await dequeue(mutation.queue_id)
+      dropped++
+      continue
+    }
+
+    // Not exhausted yet — persist the bumped count, then stop to preserve order.
+    await setRetries(mutation, attempts)
+    failed++
+    break
   }
 
-  return { success, failed }
+  return { success, failed, dropped }
 }
 
 /** Pull fresh data from Supabase for a specific user and cache in IndexedDB.
@@ -148,7 +171,10 @@ export async function fullSync(userId: string): Promise<void> {
 
   try {
     // 1. Replay offline mutations
-    const { failed } = await replayQueue()
+    const { failed, dropped } = await replayQueue()
+    if (dropped > 0) {
+      console.warn(`[sync] Discarded ${dropped} change(s) the server kept rejecting`)
+    }
     if (failed > 0) {
       notify("error")
       syncing = false

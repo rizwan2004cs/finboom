@@ -50,6 +50,11 @@ export async function dequeue(queueId: string): Promise<void> {
   await remove("_queue", queueId)
 }
 
+/** Persist an updated retry count on a queued mutation */
+export async function setRetries(mutation: QueuedMutation, retries: number): Promise<void> {
+  await put("_queue", { ...mutation, retries })
+}
+
 /** Get count of pending mutations */
 export async function getPendingCount(): Promise<number> {
   const all = await getAll<QueuedMutation>("_queue")

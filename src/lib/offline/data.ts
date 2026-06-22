@@ -18,6 +18,23 @@ function isOnline(): boolean {
   return typeof navigator !== "undefined" ? navigator.onLine : true
 }
 
+/**
+ * A "permanent" error is one the server will reject on every attempt — RLS
+ * denial, constraint/validation violation, unknown column, etc. PostgREST and
+ * Postgres errors carry a non-empty string `code`; genuine network failures
+ * (offline, aborted fetch) do not. We must NOT queue permanent errors for
+ * offline replay: they would fail forever and block the whole sync queue.
+ */
+function isPermanentError(err: unknown): boolean {
+  const code = (err as { code?: unknown } | null)?.code
+  return typeof code === "string" && code.length > 0
+}
+
+function errorMessage(err: unknown, fallback: string): string {
+  const msg = (err as { message?: unknown } | null)?.message
+  return typeof msg === "string" && msg.length > 0 ? msg : fallback
+}
+
 // Deduplication: prevent multiple concurrent fetches for the same table+user
 const inflight = new Map<string, Promise<unknown[]>>()
 
@@ -153,6 +170,11 @@ export async function insertRow<T extends { id?: string }>(
       await put(store, result)
       return { data: result as T, error: null, offline: false }
     } catch (err) {
+      if (isOnline() && isPermanentError(err)) {
+        // Server rejected the write; queueing it would loop forever. Surface it.
+        console.error(`[offline] Insert rejected by server for ${table}:`, err)
+        return { data: null, error: errorMessage(err, "Insert failed"), offline: false }
+      }
       console.warn(`[offline] Insert failed for ${table}, queueing:`, err)
     }
   }
@@ -184,6 +206,10 @@ export async function updateRow<T>(
       await put(store, result)
       return { data: result as T, error: null, offline: false }
     } catch (err) {
+      if (isOnline() && isPermanentError(err)) {
+        console.error(`[offline] Update rejected by server for ${table}/${id}:`, err)
+        return { data: null, error: errorMessage(err, "Update failed"), offline: false }
+      }
       console.warn(`[offline] Update failed for ${table}/${id}, queueing:`, err)
     }
   }
@@ -217,6 +243,10 @@ export async function deleteRow(
       await idbRemove(store, id)
       return { error: null, offline: false }
     } catch (err) {
+      if (isOnline() && isPermanentError(err)) {
+        console.error(`[offline] Delete rejected by server for ${table}/${id}:`, err)
+        return { error: errorMessage(err, "Delete failed"), offline: false }
+      }
       console.warn(`[offline] Delete failed for ${table}/${id}, queueing:`, err)
     }
   }
