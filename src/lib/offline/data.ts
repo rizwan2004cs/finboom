@@ -5,21 +5,14 @@
  */
 
 import { createClient } from "@/utils/supabase/client"
-import { getAll, put, putAll, remove as idbRemove, type StoreName } from "./db"
+import { getAll, put, putAll, remove as idbRemove, DATA_STORES, type StoreName } from "./db"
 import { enqueue } from "./queue"
 
-const TABLE_TO_STORE: Record<string, StoreName> = {
-  assets: "assets",
-  liabilities: "liabilities",
-  transactions: "transactions",
-  goals: "goals",
-  budgets: "budgets",
-  snapshots: "snapshots",
-  parties: "parties",
-  party_transactions: "party_transactions",
-  profiles: "profiles",
-  health_checks: "health_checks",
-}
+// Table name === store name for every synced table; derive the map from the
+// single registry in db.ts instead of repeating the list here.
+const TABLE_TO_STORE: Record<string, StoreName> = Object.fromEntries(
+  DATA_STORES.map((name) => [name, name])
+)
 
 function isOnline(): boolean {
   return typeof navigator !== "undefined" ? navigator.onLine : true

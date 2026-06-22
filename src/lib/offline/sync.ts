@@ -5,7 +5,7 @@
 
 import { createClient } from "@/utils/supabase/client"
 import { getQueue, dequeue, type QueuedMutation } from "./queue"
-import { putAll, setMeta, getMeta, type StoreName } from "./db"
+import { putAll, setMeta, getMeta, DATA_STORES, type DataStore } from "./db"
 
 type SyncListener = (status: "syncing" | "synced" | "error" | "offline" | "online") => void
 
@@ -85,21 +85,21 @@ export async function replayQueue(): Promise<{ success: number; failed: number }
  *  Uses delta sync: only fetches rows updated since the last sync per table.
  *  Falls back to full pull if no previous sync timestamp exists.
  */
+// Per-table pull tweaks (ordering / row caps). Everything else uses defaults.
+const PULL_OVERRIDES: Partial<
+  Record<DataStore, { order?: { column: string; ascending: boolean }; limit?: number }>
+> = {
+  snapshots: { order: { column: "snapshot_date", ascending: true }, limit: 12 },
+}
+
 export async function pullAllData(userId: string): Promise<void> {
   const supabase = createClient()
 
-  const tables: { table: string; store: StoreName; order?: { column: string; ascending: boolean }; limit?: number }[] = [
-    { table: "assets", store: "assets" },
-    { table: "liabilities", store: "liabilities" },
-    { table: "transactions", store: "transactions" },
-    { table: "goals", store: "goals" },
-    { table: "budgets", store: "budgets" },
-    { table: "snapshots", store: "snapshots", order: { column: "snapshot_date", ascending: true }, limit: 12 },
-    { table: "parties", store: "parties" },
-    { table: "party_transactions", store: "party_transactions" },
-    { table: "profiles", store: "profiles" },
-    { table: "health_checks", store: "health_checks" },
-  ]
+  const tables = DATA_STORES.map((name) => ({
+    table: name,
+    store: name,
+    ...PULL_OVERRIDES[name],
+  }))
 
   const syncStart = new Date().toISOString()
 

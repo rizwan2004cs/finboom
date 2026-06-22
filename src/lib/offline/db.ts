@@ -6,7 +6,11 @@
 const DB_NAME = "finboom-offline"
 const DB_VERSION = 4
 
-const STORES = [
+// Single source of truth for the user-data tables synced offline. Every layer
+// (IndexedDB stores, the offline data router, and the sync puller) derives its
+// table list from this array, so adding a table only needs a change here plus a
+// matching Supabase table — not edits scattered across three files.
+export const DATA_STORES = [
   "assets",
   "liabilities",
   "transactions",
@@ -17,6 +21,12 @@ const STORES = [
   "party_transactions",
   "profiles",
   "health_checks",
+] as const
+
+export type DataStore = (typeof DATA_STORES)[number]
+
+const STORES = [
+  ...DATA_STORES,
   "_queue", // mutation queue for offline writes
   "_meta",  // metadata (last sync timestamps, etc.)
 ] as const

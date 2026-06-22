@@ -26,6 +26,9 @@ jobs:
       - name: Type check
         run: npm run typecheck
 
+      - name: Test
+        run: npm test
+
       # Lint currently has known findings from the new React Compiler rules
       # (see CONTRIBUTING.md → "good first issues"). It is reported but does not
       # fail the build yet — remove `continue-on-error` once the backlog is cleared.
