@@ -18,6 +18,7 @@ import {
   syncQueueWithPublishedTitles,
 } from "@/lib/blog/topic-queue"
 import { getSupabaseSecretKey } from "@/utils/supabase/admin"
+import { sendBlogPostEmailToUsers } from "@/lib/email/send"
 
 // The cron fires once a day, but each post publishes ~30-60s after the
 // trigger. A strict 24h guard would then see the previous post as "just
@@ -51,6 +52,7 @@ type SelectedTopic = {
 type NotificationResult = {
   usersNotified: number
   pushesSent: number
+  emailsSent?: number
   skipped?: string
 }
 
@@ -207,26 +209,28 @@ async function broadcastBlogNotification(
 
   const supabase = createClient(supabaseUrl, supabaseServiceRoleKey)
 
-  if (!configureWebPush()) {
-    return {
-      usersNotified: 0,
-      pushesSent: 0,
-      skipped: "Missing VAPID keys.",
-    }
-  }
-
   const { data: subscriptions } = await supabase
     .from("push_subscriptions")
     .select("*")
 
   if (!subscriptions?.length) {
-    return { usersNotified: 0, pushesSent: 0 }
+    return { usersNotified: 0, pushesSent: 0, emailsSent: 0 }
   }
 
   const uniqueUserIds = [...new Set(subscriptions.map((subscription) => subscription.user_id).filter(Boolean))]
 
+  // Branded email announcement to the same audience — independent of push, so it
+  // still goes out when VAPID keys are absent. No-ops without RESEND_API_KEY.
+  const emailsSent = await sendBlogPostEmailToUsers(uniqueUserIds, {
+    title,
+    excerpt,
+    url: `/blog/${slug}`,
+  })
+
+  // Web-push to the same audience, only when VAPID keys are configured.
   let pushesSent = 0
-  for (const subscription of subscriptions as PushSubscriptionRow[]) {
+  const pushEnabled = configureWebPush()
+  for (const subscription of pushEnabled ? (subscriptions as PushSubscriptionRow[]) : []) {
     const payload = JSON.stringify({
       title: `New blog: ${title}`,
       body: excerpt || "A new post has been published on FinBoom.",
@@ -259,7 +263,7 @@ async function broadcastBlogNotification(
     }
   }
 
-  return { usersNotified: uniqueUserIds.length, pushesSent }
+  return { usersNotified: uniqueUserIds.length, pushesSent, emailsSent }
 }
 
 // Runs the full pipeline: topic selection -> generation -> publish -> notify.

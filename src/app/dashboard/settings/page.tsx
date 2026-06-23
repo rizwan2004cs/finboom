@@ -3,12 +3,21 @@
 import { useEffect, useState } from "react"
 import { useUser, useAuth } from "@/hooks/use-auth"
 import { createClient } from "@/utils/supabase/client"
-import { Settings, Download, Globe, Trash2, LogOut, Moon, Sun, RefreshCw, Lock } from "lucide-react"
+import { Settings, Download, Globe, Trash2, LogOut, Moon, Sun, RefreshCw, Lock, Mail } from "lucide-react"
 import { PinSetup } from "@/components/pin-lock"
 import { CURRENCIES } from "@/lib/constants"
 import { CustomSelect } from "@/components/custom-select"
 import { useAppDialog } from "@/components/app-dialog"
 import { useCurrency } from "@/hooks/use-currency"
+
+type EmailChannelKey = "reminders" | "weekly_summary" | "blog"
+type EmailPrefsState = Record<EmailChannelKey, boolean>
+
+const EMAIL_CHANNELS: { key: EmailChannelKey; title: string; description: string }[] = [
+  { key: "reminders", title: "Reminders & alerts", description: "SIP debits, due payments and goal milestones." },
+  { key: "weekly_summary", title: "Weekly net-worth report", description: "A weekly summary of how your wealth changed." },
+  { key: "blog", title: "New articles", description: "Occasional money guides from the FinBoom blog." },
+]
 
 export default function SettingsPage() {
   const { user } = useUser()
@@ -31,7 +40,47 @@ export default function SettingsPage() {
     return "light"
   })
   const [exporting, setExporting] = useState(false)
+  const [emailPrefs, setEmailPrefs] = useState<EmailPrefsState | null>(null)
+  const [savingPref, setSavingPref] = useState<EmailChannelKey | null>(null)
+  const [prefsError, setPrefsError] = useState<string | null>(null)
   const loading = !user
+
+  useEffect(() => {
+    let active = true
+    fetch("/api/email/preferences")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (active && d && typeof d.reminders === "boolean") setEmailPrefs(d as EmailPrefsState)
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [])
+
+  async function toggleEmailPref(channel: EmailChannelKey) {
+    if (!emailPrefs || savingPref) return
+    const previous = emailPrefs
+    const next = { ...emailPrefs, [channel]: !emailPrefs[channel] }
+    setEmailPrefs(next)
+    setSavingPref(channel)
+    setPrefsError(null)
+    try {
+      const res = await fetch("/api/email/preferences", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ [channel]: next[channel] }),
+      })
+      if (!res.ok) throw new Error("save failed")
+      const data = await res.json()
+      if (typeof data.reminders === "boolean") setEmailPrefs(data as EmailPrefsState)
+    } catch {
+      setEmailPrefs(previous)
+      setPrefsError("Couldn’t save your preference. Please try again.")
+    } finally {
+      setSavingPref(null)
+    }
+  }
 
   useEffect(() => {
     // Apply theme
@@ -265,6 +314,46 @@ export default function SettingsPage() {
             {fetchingRates ? "Fetching…" : "Fetch latest rates"}
           </button>
         </div>
+      </div>
+
+      {/* Email Notifications */}
+      <div className="liquid-glass rounded-2xl p-5">
+        <h3 className="font-semibold text-[#1d1d1f] dark:text-white mb-1 flex items-center gap-2">
+          <Mail className="w-4 h-4" /> Email Notifications
+        </h3>
+        <p className="text-xs text-[#86868b] mb-4">Choose which emails FinBoom sends you. You can opt back in any time.</p>
+        <div className="space-y-1">
+          {EMAIL_CHANNELS.map((channel) => {
+            const enabled = emailPrefs?.[channel.key] ?? true
+            const disabled = !emailPrefs || savingPref !== null
+            return (
+              <div key={channel.key} className="flex items-center justify-between gap-3 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-[#1d1d1f] dark:text-white">{channel.title}</p>
+                  <p className="text-xs text-[#86868b]">{channel.description}</p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={enabled}
+                  aria-label={`Toggle ${channel.title}`}
+                  disabled={disabled}
+                  onClick={() => toggleEmailPref(channel.key)}
+                  className={`relative shrink-0 w-11 h-6 rounded-full transition-colors disabled:opacity-50 ${
+                    enabled ? "bg-[#34c759]" : "bg-[#d1d1d6] dark:bg-[#3a3a3c]"
+                  }`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform ${
+                      enabled ? "translate-x-5" : "translate-x-0"
+                    }`}
+                  />
+                </button>
+              </div>
+            )
+          })}
+        </div>
+        {prefsError && <p className="text-xs text-[#ff3b30] mt-2">{prefsError}</p>}
       </div>
 
       {/* Export Data */}

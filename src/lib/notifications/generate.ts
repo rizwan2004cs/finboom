@@ -13,6 +13,7 @@
 
 import webpush from "web-push"
 import type { SupabaseClient } from "@supabase/supabase-js"
+import { EXPENSE_CATEGORIES } from "@/lib/constants"
 
 export interface NotificationToCreate {
   user_id: string
@@ -67,8 +68,11 @@ function urlForType(type: string): string {
   if (type === "goal_milestone") return "/dashboard/goals"
   if (type === "large_transaction") return "/dashboard/transactions"
   if (type === "sip_reminder") return "/dashboard/sips"
+  if (type === "budget_exceeded") return "/dashboard/budget"
   return "/dashboard"
 }
+
+const CATEGORY_LABEL = new Map<string, string>(EXPENSE_CATEGORIES.map((c) => [c.id, c.label]))
 
 const inr = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`
 
@@ -91,6 +95,8 @@ interface AssetRow { id: string; current_value: number }
 interface TxnRow { id: string; type: string; amount: number; category: string; description?: string | null }
 interface SipRow { id: string; name: string; fund_name?: string | null; amount: number; sip_day: number }
 interface SubRow { id: string; endpoint: string; keys_p256dh: string; keys_auth: string }
+interface BudgetRow { id: string; profile_id: string | null; category: string; amount: number }
+interface BudgetTxnRow { profile_id: string | null; category: string; amount: number; type: string; date: string }
 
 /**
  * Evaluate all notification rules for one user, persist any new notifications,
@@ -111,21 +117,24 @@ export async function processUserNotifications(
   const add = (type: string, title: string, body: string, data: Record<string, unknown>) =>
     notifications.push({ user_id: userId, type, title, body, data: { ...data, url: urlForType(type) } })
 
-  async function notifiedToday(type: string, match: Record<string, unknown>): Promise<boolean> {
-    const { data } = await supabase
-      .from("notifications").select("id")
-      .eq("user_id", userId).eq("type", type)
-      .gte("created_at", startOfTodayUTC)
-      .contains("data", match).limit(1)
-    return !!data?.length
-  }
-  async function notifiedEver(type: string, match: Record<string, unknown>): Promise<boolean> {
-    const { data } = await supabase
-      .from("notifications").select("id")
-      .eq("user_id", userId).eq("type", type)
-      .contains("data", match).limit(1)
-    return !!data?.length
-  }
+  // Prefetch existing notifications once and dedupe in memory, instead of issuing
+  // a separate query per candidate (the old N+1). "Today" covers the per-day
+  // reminder types; the all-time set covers types that should only fire once
+  // (goal milestones, large transactions, and budget alerts — once per month).
+  const EVER_TYPES = ["goal_milestone", "large_transaction", "budget_exceeded"]
+  const [{ data: todayNotifs }, { data: everNotifs }] = await Promise.all([
+    supabase.from("notifications").select("type, data").eq("user_id", userId).gte("created_at", startOfTodayUTC),
+    supabase.from("notifications").select("type, data").eq("user_id", userId).in("type", EVER_TYPES),
+  ])
+  const todayList = (todayNotifs || []) as { type: string; data: Record<string, unknown> }[]
+  const everList = (everNotifs || []) as { type: string; data: Record<string, unknown> }[]
+
+  const dataMatches = (data: Record<string, unknown> | null, match: Record<string, unknown>) =>
+    !!data && Object.entries(match).every(([k, v]) => data[k] === v)
+  const notifiedToday = (type: string, match: Record<string, unknown>) =>
+    todayList.some((n) => n.type === type && dataMatches(n.data, match))
+  const notifiedEver = (type: string, match: Record<string, unknown>) =>
+    everList.some((n) => n.type === type && dataMatches(n.data, match))
 
   // --- 1 & 2. Party payments — based on NET outstanding per party ---
   const { data: ptxData } = await supabase
@@ -149,12 +158,12 @@ export async function processUserNotifications(
     const earliest = dues[0]
     const verb = receivable ? "owes you" : "you owe"
     if (earliest < todayStr) {
-      if (!(await notifiedToday("overdue_payment", { party_id: partyId }))) {
+      if (!notifiedToday("overdue_payment", { party_id: partyId })) {
         add("overdue_payment", `Overdue: ${agg.name}`, `${agg.name} ${verb} ${inr(Math.abs(agg.net))} — was due ${earliest}`, { party_id: partyId })
       }
     } else if (earliest <= threeDaysStr) {
       const daysLeft = Math.round((Date.parse(earliest) - Date.UTC(y, m, d)) / 86400000)
-      if (!(await notifiedToday("due_approaching", { party_id: partyId }))) {
+      if (!notifiedToday("due_approaching", { party_id: partyId })) {
         add("due_approaching", `Due ${daysLeft === 0 ? "today" : `in ${daysLeft}d`}: ${agg.name}`, `${agg.name} ${verb} ${inr(Math.abs(agg.net))} — due ${earliest}`, { party_id: partyId })
       }
     }
@@ -174,7 +183,7 @@ export async function processUserNotifications(
         : Number(goal.current_amount || 0)
       const pct = Math.round((funded / target) * 100)
       for (const milestone of [50, 100]) {
-        if (pct >= milestone && !(await notifiedEver("goal_milestone", { goal_id: goal.id, milestone }))) {
+        if (pct >= milestone && !notifiedEver("goal_milestone", { goal_id: goal.id, milestone })) {
           add(
             "goal_milestone",
             milestone === 100 ? `Goal reached: ${goal.name}` : `Halfway: ${goal.name}`,
@@ -193,7 +202,7 @@ export async function processUserNotifications(
     .from("transactions").select("*").eq("user_id", userId)
     .gte("created_at", dayAgoUTC).gte("amount", 50000)
   for (const tx of (largeData || []) as TxnRow[]) {
-    if (!(await notifiedEver("large_transaction", { transaction_id: tx.id }))) {
+    if (!notifiedEver("large_transaction", { transaction_id: tx.id })) {
       add("large_transaction", `Large ${tx.type}: ${inr(Number(tx.amount))}`, `${tx.category}${tx.description ? ` — ${tx.description}` : ""}`, { transaction_id: tx.id })
     }
   }
@@ -203,7 +212,7 @@ export async function processUserNotifications(
     .from("sips").select("*").eq("user_id", userId).eq("active", true).eq("reminder_enabled", true)
   for (const sip of (sipsData || []) as SipRow[]) {
     if (daysUntilSipDay(sip.sip_day, now) > 1) continue
-    if (!(await notifiedToday("sip_reminder", { sip_id: sip.id }))) {
+    if (!notifiedToday("sip_reminder", { sip_id: sip.id })) {
       const label = sip.fund_name || sip.name
       const dueToday = daysUntilSipDay(sip.sip_day, now) === 0
       add(
@@ -211,6 +220,37 @@ export async function processUserNotifications(
         dueToday ? `SIP due today: ${label}` : `SIP tomorrow: ${label}`,
         `${inr(Number(sip.amount))} ${dueToday ? "is due today" : "is due tomorrow"}`,
         { sip_id: sip.id },
+      )
+    }
+  }
+
+  // --- 6. Budget exceeded (per category, once per month) ---
+  const monthKey = todayStr.slice(0, 7)
+  const { data: budgetData } = await supabase
+    .from("budgets").select("id, profile_id, category, amount").eq("user_id", userId).eq("month", monthKey)
+  const budgets = (budgetData || []) as BudgetRow[]
+  if (budgets.length > 0) {
+    const { data: monthTxns } = await supabase
+      .from("transactions").select("profile_id, category, amount, type, date")
+      .eq("user_id", userId).gte("date", `${monthKey}-01`).lte("date", `${monthKey}-31`)
+    const spentByKey = new Map<string, number>()
+    for (const tx of (monthTxns || []) as BudgetTxnRow[]) {
+      if (tx.type !== "expense") continue
+      const key = `${tx.profile_id ?? ""}|${tx.category}`
+      spentByKey.set(key, (spentByKey.get(key) ?? 0) + Number(tx.amount))
+    }
+    for (const budget of budgets) {
+      const limit = Number(budget.amount)
+      if (limit <= 0) continue
+      const spent = spentByKey.get(`${budget.profile_id ?? ""}|${budget.category}`) ?? 0
+      if (spent <= limit) continue
+      if (notifiedEver("budget_exceeded", { budget_id: budget.id, period: monthKey })) continue
+      const label = CATEGORY_LABEL.get(budget.category) || budget.category
+      add(
+        "budget_exceeded",
+        `Over budget: ${label}`,
+        `You've spent ${inr(spent)} of your ${inr(limit)} ${label} budget — ${inr(spent - limit)} over.`,
+        { budget_id: budget.id, period: monthKey, category: budget.category },
       )
     }
   }

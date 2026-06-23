@@ -1,25 +1,8 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/utils/supabase/admin"
-import webpush from "web-push"
 import { sendWeeklyReports, type WeeklyReportEntry } from "@/lib/email/send"
 
 const CRON_SECRET = process.env.CRON_SECRET
-
-// Configure web-push lazily so a missing VAPID key disables push instead of
-// crashing the whole route at import time (email can still go out).
-let webPushReady: boolean | null = null
-function configureWebPush(): boolean {
-  if (webPushReady !== null) return webPushReady
-  const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
-  const privateKey = process.env.VAPID_PRIVATE_KEY
-  if (!publicKey || !privateKey) {
-    webPushReady = false
-    return false
-  }
-  webpush.setVapidDetails("mailto:rizwan22cse@gmail.com", publicKey, privateKey)
-  webPushReady = true
-  return true
-}
 
 function formatINR(value: number): string {
   const sign = value < 0 ? "-" : ""
@@ -31,6 +14,9 @@ function formatPercent(pct: number): string {
   return `${sign}${Math.abs(pct).toFixed(1)}%`
 }
 
+// Monthly net-worth report (email only). Scheduled a few hours after the
+// monthly-snapshot cron so the new snapshot exists; month-over-month change is
+// measured against a snapshot from ~3 weeks ago (last month's).
 export async function GET(req: NextRequest) {
   const authHeader = req.headers.get("authorization")
   if (CRON_SECRET && authHeader !== `Bearer ${CRON_SECRET}`) {
@@ -38,13 +24,12 @@ export async function GET(req: NextRequest) {
   }
 
   const supabase = createAdminClient()
-  const pushEnabled = configureWebPush()
-
   const { data: users } = await supabase.from("profiles").select("user_id")
   const uniqueUserIds = [...new Set((users || []).map((u) => u.user_id))]
 
-  let notificationsSent = 0
-  let subscriptionsCleaned = 0
+  // Compare against the most recent snapshot from at least ~20 days ago, so we
+  // skip this month's fresh snapshot and land on last month's.
+  const cutoff = new Date(Date.now() - 20 * 86400000).toISOString().slice(0, 10)
   const reportEntries: WeeklyReportEntry[] = []
 
   for (const userId of uniqueUserIds) {
@@ -60,21 +45,18 @@ export async function GET(req: NextRequest) {
     )
     const currentNetWorth = totalAssets - totalLiabilities
 
-    const { data: latestSnapshots } = await supabase
+    const { data: priorSnapshots } = await supabase
       .from("snapshots")
       .select("net_worth, snapshot_date")
       .eq("user_id", userId)
+      .lte("snapshot_date", cutoff)
       .order("snapshot_date", { ascending: false })
       .limit(1)
 
-    const previousSnapshot = latestSnapshots?.[0]
-    let body: string
     let change: WeeklyReportEntry["change"] = null
-
-    if (!previousSnapshot) {
-      body = `Your net worth is ${formatINR(currentNetWorth)}`
-    } else {
-      const previousNetWorth = Number(previousSnapshot.net_worth)
+    const prior = priorSnapshots?.[0]
+    if (prior) {
+      const previousNetWorth = Number(prior.net_worth)
       const diff = currentNetWorth - previousNetWorth
       const pctChange = previousNetWorth !== 0 ? (diff / Math.abs(previousNetWorth)) * 100 : 0
       change = {
@@ -82,16 +64,8 @@ export async function GET(req: NextRequest) {
         amountLabel: formatINR(Math.abs(diff)),
         pctLabel: formatPercent(pctChange),
       }
-      if (diff > 0) {
-        body = `Your net worth is ${formatINR(currentNetWorth)} (↑${formatINR(diff)} this week, ${formatPercent(pctChange)})`
-      } else if (diff < 0) {
-        body = `Your net worth is ${formatINR(currentNetWorth)} (↓${formatINR(Math.abs(diff))} this week, ${formatPercent(pctChange)})`
-      } else {
-        body = `Your net worth is ${formatINR(currentNetWorth)} (no change this week)`
-      }
     }
 
-    // Top 3 holdings by current value, for the email breakdown.
     const topMovers = [...(assets || [])]
       .map((a) => ({ label: (a as { name?: string }).name || "Asset", value: Number(a.current_value) }))
       .sort((x, y) => y.value - x.value)
@@ -100,49 +74,13 @@ export async function GET(req: NextRequest) {
 
     reportEntries.push({
       userId,
-      period: "week",
+      period: "month",
       netWorthLabel: formatINR(currentNetWorth),
       assetsLabel: formatINR(totalAssets),
       liabilitiesLabel: formatINR(totalLiabilities),
       change,
       topMovers,
     })
-
-    if (!pushEnabled) continue
-
-    const payload = JSON.stringify({
-      title: "Weekly Summary",
-      body,
-      icon: "/icons/icon-192.svg",
-      data: { url: "/dashboard" },
-    })
-
-    const { data: subs } = await supabase
-      .from("push_subscriptions")
-      .select("*")
-      .eq("user_id", userId)
-
-    if (subs?.length) {
-      for (const sub of subs) {
-        try {
-          await webpush.sendNotification(
-            { endpoint: sub.endpoint, keys: { p256dh: sub.keys_p256dh, auth: sub.keys_auth } },
-            payload,
-          )
-          notificationsSent++
-        } catch (err: unknown) {
-          if (
-            err &&
-            typeof err === "object" &&
-            "statusCode" in err &&
-            (err as { statusCode: number }).statusCode === 410
-          ) {
-            await supabase.from("push_subscriptions").delete().eq("id", sub.id)
-            subscriptionsCleaned++
-          }
-        }
-      }
-    }
   }
 
   const emailsSent = await sendWeeklyReports(reportEntries)
@@ -150,8 +88,6 @@ export async function GET(req: NextRequest) {
   return NextResponse.json({
     ok: true,
     users_checked: uniqueUserIds.length,
-    notifications_sent: notificationsSent,
-    subscriptions_cleaned: subscriptionsCleaned,
     emails_sent: emailsSent,
   })
 }
