@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js"
+import { getSupabaseSecretKey } from "@/utils/supabase/admin"
 
 export type BlogAutomationStatus = {
   queueEnabled: boolean
@@ -18,7 +19,7 @@ export type BlogAutomationStatus = {
 
 export async function getBlogAutomationStatus(): Promise<BlogAutomationStatus> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const supabaseServiceRoleKey = getSupabaseSecretKey()
   if (!supabaseUrl || !supabaseServiceRoleKey) {
     return {
       queueEnabled: false,

@@ -17,6 +17,7 @@ import {
   skipQueueTopic,
   syncQueueWithPublishedTitles,
 } from "@/lib/blog/topic-queue"
+import { getSupabaseSecretKey } from "@/utils/supabase/admin"
 
 // The cron fires once a day, but each post publishes ~30-60s after the
 // trigger. A strict 24h guard would then see the previous post as "just
@@ -199,7 +200,7 @@ async function broadcastBlogNotification(
   slug: string
 ): Promise<NotificationResult> {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const supabaseServiceRoleKey = getSupabaseSecretKey()
   if (!supabaseUrl || !supabaseServiceRoleKey) {
     return { usersNotified: 0, pushesSent: 0, skipped: "Missing Supabase service role key." }
   }

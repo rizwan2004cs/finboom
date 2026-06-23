@@ -25,16 +25,17 @@ export default function HealthPage() {
 
   const { activeProfile } = useProfile()
   const pf = activeProfile ? [{ column: "profile_id", op: "eq" as const, value: activeProfile.id }] : undefined
-  const { data: txData = [] } = useOfflineQuery<Transaction>("transactions", user?.id, { filters: pf })
-  const { data: assets = [] } = useOfflineQuery<Asset>("assets", user?.id, { filters: pf })
-  const { data: liabilities = [] } = useOfflineQuery<Liability>("liabilities", user?.id, { filters: pf })
-  const { data: goals = [] } = useOfflineQuery<Goal>("goals", user?.id, { filters: pf })
+  const { data: txData = [] } = useOfflineQuery<Transaction>("transactions", user?.id, { filters: pf, enabled: !!activeProfile })
+  const { data: assets = [] } = useOfflineQuery<Asset>("assets", user?.id, { filters: pf, enabled: !!activeProfile })
+  const { data: liabilities = [] } = useOfflineQuery<Liability>("liabilities", user?.id, { filters: pf, enabled: !!activeProfile })
+  const { data: goals = [] } = useOfflineQuery<Goal>("goals", user?.id, { filters: pf, enabled: !!activeProfile })
 
   // Persist through the same offline-first layer as the rest of the app
   // (Supabase + IndexedDB + sync queue) so saves survive reloads and offline
   // use, with the error/success surfaced via toast instead of failing silently.
+  // Scoped per profile so each family member keeps their own health record.
   const { data: healthRows = [], isLoading: loading } =
-    useOfflineQuery<HealthCheck & { id: string }>("health_checks", user?.id)
+    useOfflineQuery<HealthCheck & { id: string }>("health_checks", user?.id, { filters: pf, enabled: !!activeProfile })
   const healthData = healthRows[0]
 
   const insertHealth = useInsertMutation<HealthCheck & { id: string }>("health_checks", {
@@ -53,17 +54,26 @@ export default function HealthPage() {
   }, [healthData])
 
   useEffect(() => {
-    const incomes = txData.filter(t => t.type === "income")
+    // Average income over the last 6 calendar months, divided by the number of
+    // months that actually had income — not by an arbitrary count/3, which
+    // overestimated monthly income roughly 3× and skewed every income-based score.
+    const now = new Date()
+    const windowStart = new Date(now.getFullYear(), now.getMonth() - 5, 1)
+    const incomes = txData.filter(t => t.type === "income" && new Date(t.date) >= windowStart)
     if (incomes.length > 0) {
       const total = incomes.reduce((sum, t) => sum + Number(t.amount), 0)
-      setMonthlyIncome(total / Math.max(1, Math.ceil(incomes.length / 3)))
+      const months = new Set(incomes.map(t => t.date.slice(0, 7)))
+      setMonthlyIncome(months.size > 0 ? total / months.size : 0)
+    } else {
+      setMonthlyIncome(0)
     }
   }, [txData])
 
   async function saveHealth() {
-    if (!user) return
+    if (!user || !activeProfile) return
     const payload: Record<string, unknown> = {
       user_id: user.id,
+      profile_id: activeProfile.id,
       has_term_insurance: health.has_term_insurance,
       term_insurance_cover: health.term_insurance_cover,
       has_health_insurance: health.has_health_insurance,
@@ -87,8 +97,10 @@ export default function HealthPage() {
   const idealHealthCover = Math.max(500000, annualIncome * 0.5) // 50% of annual or 5L min
   const idealEmergencyMonths = 6
 
-  const termScore = health.has_term_insurance
-    ? Math.min(100, (health.term_insurance_cover / Math.max(idealTermCover, 1)) * 100)
+  // Without an income estimate we can't judge term-cover adequacy, so score 0
+  // ("unknown") rather than dividing by a 1-rupee floor that always yields 100%.
+  const termScore = health.has_term_insurance && idealTermCover > 0
+    ? Math.min(100, (health.term_insurance_cover / idealTermCover) * 100)
     : 0
   const healthScore = health.has_health_insurance
     ? Math.min(100, (health.health_insurance_cover / Math.max(idealHealthCover, 1)) * 100)
@@ -121,7 +133,7 @@ export default function HealthPage() {
     return <AlertTriangle className="w-5 h-5 text-[#86868b]" />
   }
 
-  if (loading || !user) {
+  if (loading || !user || !activeProfile) {
     return (
       <div className="space-y-4">
         <div className="skeleton h-7 w-32 rounded-lg" />

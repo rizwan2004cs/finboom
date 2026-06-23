@@ -8,6 +8,7 @@ import { X, Loader2 } from "lucide-react"
 import { ASSET_CLASSES, CURRENCIES } from "@/lib/constants"
 import type { Asset } from "@/lib/types"
 import { CustomSelect } from "@/components/custom-select"
+import { useCurrency } from "@/hooks/use-currency"
 
 interface Props {
   asset?: Asset | null
@@ -18,6 +19,7 @@ interface Props {
 export function AddAssetModal({ asset, onClose, onSave }: Props) {
   const { user } = useUser()
   const { activeProfile } = useProfile()
+  const { toINR } = useCurrency()
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
     name: asset?.name || "",
@@ -34,14 +36,19 @@ export function AddAssetModal({ asset, onClose, onSave }: Props) {
     if (!user || !activeProfile) return
     setSaving(true)
 
+    // Normalise to INR on save. The rest of the app aggregates assuming every
+    // amount is INR, so storing a foreign-currency figure verbatim would inflate
+    // or deflate net worth. We convert using current rates and persist as INR.
+    const enteredCurrent = parseFloat(form.current_value) || 0
+    const enteredInvested = parseFloat(form.invested_value) || 0
     const data = {
       user_id: user.id,
       profile_id: activeProfile.id,
       name: form.name,
       asset_class: form.asset_class,
-      current_value: parseFloat(form.current_value) || 0,
-      invested_value: parseFloat(form.invested_value) || 0,
-      currency: form.currency,
+      current_value: toINR(enteredCurrent, form.currency),
+      invested_value: toINR(enteredInvested, form.currency),
+      currency: "INR",
       units: form.units ? parseFloat(form.units) : null,
       notes: form.notes || null,
       updated_at: new Date().toISOString(),

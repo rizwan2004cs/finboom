@@ -20,6 +20,7 @@ export function AddSipModal({ sip, onClose, onSave }: Readonly<Props>) {
   const { user } = useUser()
   const { activeProfile } = useProfile()
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState({
     name: sip?.name || "",
     fund_name: sip?.fund_name || "",
@@ -34,6 +35,7 @@ export function AddSipModal({ sip, onClose, onSave }: Readonly<Props>) {
     e.preventDefault()
     if (!user || !activeProfile) return
     setSaving(true)
+    setError(null)
 
     const day = Math.min(31, Math.max(1, Number.parseInt(form.sip_day, 10) || 1))
     const data = {
@@ -50,13 +52,19 @@ export function AddSipModal({ sip, onClose, onSave }: Readonly<Props>) {
       updated_at: new Date().toISOString(),
     }
 
-    if (sip) {
-      await updateRow("sips", sip.id, data)
-    } else {
-      await insertRow("sips", data)
-    }
+    const res = sip
+      ? await updateRow("sips", sip.id, data)
+      : await insertRow("sips", data)
 
     setSaving(false)
+
+    // Surface server rejections (e.g. missing table, RLS) instead of silently
+    // closing as if the save succeeded — otherwise the SIP just "disappears".
+    if (res.error) {
+      setError(res.error)
+      return
+    }
+
     onSave()
   }
 
@@ -156,6 +164,12 @@ export function AddSipModal({ sip, onClose, onSave }: Readonly<Props>) {
               className="mt-1 w-full px-4 py-3 rounded-xl bg-[#f5f5f7] dark:bg-white/[0.06] border-0 text-sm text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10 resize-none"
             />
           </div>
+
+          {error && (
+            <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 rounded-xl px-4 py-3">
+              Couldn&apos;t save SIP: {error}
+            </p>
+          )}
 
           <button
             type="submit"

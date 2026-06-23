@@ -177,22 +177,31 @@ function PartiesPageInner() {
     .filter(p => p.balance < 0)
     .reduce((sum, p) => sum + Math.abs(p.balance), 0)
 
-  // Due within 30 days
+  // Net outstanding per party, to skip obligations that are already settled.
+  const balanceByParty = new Map(partyBalances.map(p => [p.party.id, p.balance]))
+  const isUnsettled = (tx: PartyTransaction) => {
+    const bal = balanceByParty.get(tx.party_id) ?? 0
+    if (tx.type === "lent") return bal > 0      // still owed to you
+    if (tx.type === "borrowed") return bal < 0  // you still owe
+    return false
+  }
+
+  // Due within 30 days — receivables AND payables that are still outstanding.
   const today = new Date()
   const in30Days = new Date(today)
   in30Days.setDate(in30Days.getDate() + 30)
   const dueSoon = transactions.filter(tx => {
-    if (!tx.due_date) return false
-    if (tx.type !== "lent") return false
+    if (!tx.due_date || !isUnsettled(tx)) return false
     const d = new Date(tx.due_date)
     return d >= today && d <= in30Days
   })
-  const dueSoonAmount = dueSoon.reduce((sum, tx) => sum + Number(tx.amount), 0)
+  // Sum each party's NET outstanding once, rather than gross per-entry amounts.
+  const dueSoonAmount = Array.from(new Set(dueSoon.map(tx => tx.party_id)))
+    .reduce((sum, pid) => sum + Math.abs(balanceByParty.get(pid) ?? 0), 0)
 
-  // Overdue items
+  // Overdue items — still-outstanding receivables and payables past their due date.
   const overdue = transactions.filter(tx => {
-    if (!tx.due_date) return false
-    if (tx.type !== "lent" && tx.type !== "borrowed") return false
+    if (!tx.due_date || !isUnsettled(tx)) return false
     return new Date(tx.due_date) < today
   })
 

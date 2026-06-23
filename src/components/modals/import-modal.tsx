@@ -73,7 +73,7 @@ function chooseTable(tables: RawTable[]): {
 }
 
 export function ImportModal({ onClose, onImport }: Props) {
-  const { formatCompact } = useCurrency()
+  const { formatCompact, toINR } = useCurrency()
   const { user } = useUser()
   const { activeProfile } = useProfile()
   const queryClient = useQueryClient()
@@ -263,15 +263,17 @@ export function ImportModal({ onClose, onImport }: Props) {
     setImporting(true)
     let count = 0
     for (const r of importableRows) {
+      // Normalise to INR — the app aggregates assuming INR, so a USD/EUR import
+      // must be converted before storage rather than kept in its source currency.
       await insertRow("assets", {
         user_id: user.id,
         profile_id: activeProfile.id,
         name: r.name,
         asset_class: r.asset_class,
-        current_value: r.current_value,
-        invested_value: r.invested_value,
+        current_value: toINR(r.current_value, r.currency),
+        invested_value: toINR(r.invested_value, r.currency),
         units: r.units ?? null,
-        currency: r.currency,
+        currency: "INR",
         ...(r.isin ? { notes: `ISIN: ${r.isin}` } : {}),
       })
       count += 1

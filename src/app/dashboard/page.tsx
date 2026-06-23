@@ -10,6 +10,7 @@ import { AllocationChart } from "@/components/charts/allocation-chart"
 import { SpendingChart } from "@/components/charts/spending-chart"
 import type { Asset, Liability, Goal, Snapshot, PartyTransaction, Transaction, Sip } from "@/lib/types"
 import { ASSET_CLASSES } from "@/lib/constants"
+import { goalProgressPct } from "@/lib/finance/goals"
 import { useCurrency } from "@/hooks/use-currency"
 
 export default function DashboardPage() {
@@ -30,7 +31,9 @@ export default function DashboardPage() {
   )
   const { data: snapshots = [] } = useOfflineQuery<Snapshot>(
     "snapshots", user?.id, {
-      order: { column: "snapshot_date", ascending: true },
+      // Newest first so we get the LATEST 12 snapshots (ascending returned the
+      // oldest 12, making the trend and "% from last month" use a stale baseline).
+      order: { column: "snapshot_date", ascending: false },
       limit: 12,
       filters: pf,
       enabled: !!activeProfile,
@@ -52,9 +55,13 @@ export default function DashboardPage() {
   const totalLiabilities = liabilities.reduce((sum, l) => sum + Number(l.outstanding_amount), 0)
   const netWorth = totalAssets - totalLiabilities
   
-  // Calculate previous net worth from snapshots for % change
-  const prevSnapshot = snapshots.length > 1 ? snapshots[snapshots.length - 2] : null
-  const netWorthChange = prevSnapshot ? ((netWorth - Number(prevSnapshot.net_worth)) / Number(prevSnapshot.net_worth)) * 100 : 0
+  // Snapshots arrive newest-first; present oldest→newest for the chart.
+  const orderedSnapshots = [...snapshots].reverse()
+  // Compare current net worth against the snapshot before the most recent one
+  // ("last month"), guarding against a zero baseline.
+  const prevSnapshot = orderedSnapshots.length > 1 ? orderedSnapshots[orderedSnapshots.length - 2] : null
+  const prevNetWorth = prevSnapshot ? Number(prevSnapshot.net_worth) : 0
+  const netWorthChange = prevNetWorth !== 0 ? ((netWorth - prevNetWorth) / prevNetWorth) * 100 : 0
 
   // Party balances — receivable vs payable
   const partyBalanceMap = new Map<string, number>()
@@ -71,14 +78,24 @@ export default function DashboardPage() {
   const in30Days = new Date(today)
   in30Days.setDate(in30Days.getDate() + 30)
   const receivableIn30 = partyTransactions
-    .filter(tx => tx.type === "lent" && tx.due_date && new Date(tx.due_date) >= today && new Date(tx.due_date) <= in30Days)
+    .filter(tx =>
+      tx.type === "lent" &&
+      tx.due_date &&
+      (partyBalanceMap.get(tx.party_id) || 0) > 0 && // skip parties already settled
+      new Date(tx.due_date) >= today &&
+      new Date(tx.due_date) <= in30Days
+    )
     .reduce((s, tx) => s + Number(tx.amount), 0)
 
-  // SIPs still due in the remainder of this month (active only)
+  // SIPs still due in the remainder of this month (active only). A SIP scheduled
+  // for a day beyond this month's length (e.g. 31 in April) debits on the last
+  // day, so clamp before comparing — matching the reminder cron's logic.
   const todayDay = today.getDate()
-  const upcomingSips = sips.filter(s => s.active && s.sip_day >= todayDay)
+  const lastDayThisMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
+  const effectiveSipDay = (day: number) => Math.min(day, lastDayThisMonth)
+  const upcomingSips = sips.filter(s => s.active && effectiveSipDay(s.sip_day) >= todayDay)
   const sipsDueAmount = upcomingSips.reduce((sum, s) => sum + Number(s.amount), 0)
-  const nextSipDay = upcomingSips.length > 0 ? Math.min(...upcomingSips.map(s => s.sip_day)) : 0
+  const nextSipDay = upcomingSips.length > 0 ? Math.min(...upcomingSips.map(s => effectiveSipDay(s.sip_day))) : 0
 
   // Asset allocation breakdown
   const allocationData = ASSET_CLASSES.map(cls => {
@@ -232,7 +249,7 @@ export default function DashboardPage() {
               View all <ArrowUpRight className="w-3 h-3" />
             </Link>
           </div>
-          <NetWorthChart snapshots={snapshots} />
+          <NetWorthChart snapshots={orderedSnapshots} />
         </div>
 
         {/* Asset Allocation */}
@@ -269,7 +286,7 @@ export default function DashboardPage() {
           </div>
           <div className="space-y-3">
             {goals.slice(0, 3).map((goal) => {
-              const progress = (Number(goal.current_amount) / Number(goal.target_amount)) * 100
+              const progress = goalProgressPct(goal, assets)
               return (
                 <div key={goal.id} className="flex items-center gap-3">
                   <div className="w-9 h-9 rounded-xl bg-white/50 backdrop-blur-sm flex items-center justify-center">

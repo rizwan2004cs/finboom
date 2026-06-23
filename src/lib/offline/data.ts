@@ -35,6 +35,19 @@ function errorMessage(err: unknown, fallback: string): string {
   return typeof msg === "string" && msg.length > 0 ? msg : fallback
 }
 
+/**
+ * Broadcast a failed write so a top-level listener can surface a toast. Keeps
+ * this data layer UI-agnostic (no React imports) while guaranteeing that NO
+ * write fails silently — even for callers that ignore the returned `error`.
+ * Returns the message so callers can write `error: reportWriteError(msg)`.
+ */
+function reportWriteError(message: string): string {
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("finboom:write-error", { detail: message }))
+  }
+  return message
+}
+
 // Deduplication: prevent multiple concurrent fetches for the same table+user
 const inflight = new Map<string, Promise<unknown[]>>()
 
@@ -155,7 +168,7 @@ export async function insertRow<T extends { id?: string }>(
   data: Record<string, unknown>,
 ): Promise<{ data: T | null; error: string | null; offline: boolean }> {
   const store = TABLE_TO_STORE[table]
-  if (!store) return { data: null, error: `Unknown table: ${table}`, offline: false }
+  if (!store) return { data: null, error: reportWriteError(`Unknown table: ${table}`), offline: false }
 
   // Generate a temporary ID for offline inserts
   const tempId = data.id as string || crypto.randomUUID()
@@ -173,15 +186,19 @@ export async function insertRow<T extends { id?: string }>(
       if (isOnline() && isPermanentError(err)) {
         // Server rejected the write; queueing it would loop forever. Surface it.
         console.error(`[offline] Insert rejected by server for ${table}:`, err)
-        return { data: null, error: errorMessage(err, "Insert failed"), offline: false }
+        return { data: null, error: reportWriteError(errorMessage(err, "Insert failed")), offline: false }
       }
       console.warn(`[offline] Insert failed for ${table}, queueing:`, err)
     }
   }
 
-  // Offline or network failure: store locally + queue
+  // Offline or network failure: store locally + queue.
+  // Queue the record WITH its generated id so the server inserts the same id —
+  // otherwise the server would assign a new id and the next sync would create a
+  // duplicate alongside this temp row (and updates/deletes against the temp id
+  // would never match the server row).
   await put(store, record)
-  await enqueue(table, "insert", data)
+  await enqueue(table, "insert", record)
   return { data: record as T, error: null, offline: true }
 }
 
@@ -196,7 +213,7 @@ export async function updateRow<T>(
   data: Record<string, unknown>,
 ): Promise<{ data: T | null; error: string | null; offline: boolean }> {
   const store = TABLE_TO_STORE[table]
-  if (!store) return { data: null, error: `Unknown table: ${table}`, offline: false }
+  if (!store) return { data: null, error: reportWriteError(`Unknown table: ${table}`), offline: false }
 
   if (isOnline()) {
     try {
@@ -208,17 +225,19 @@ export async function updateRow<T>(
     } catch (err) {
       if (isOnline() && isPermanentError(err)) {
         console.error(`[offline] Update rejected by server for ${table}/${id}:`, err)
-        return { data: null, error: errorMessage(err, "Update failed"), offline: false }
+        return { data: null, error: reportWriteError(errorMessage(err, "Update failed")), offline: false }
       }
       console.warn(`[offline] Update failed for ${table}/${id}, queueing:`, err)
     }
   }
 
-  // Offline: update local copy + queue
+  // Offline: update local copy + queue. Only merge into an existing cached row;
+  // writing `{ ...undefined, ...data }` would persist a sparse record missing
+  // required fields. The queued update still carries the change either way.
   const existing = await getAll<Record<string, unknown>>(store)
   const current = existing.find(r => r.id === id)
-  const updated = { ...current, ...data, id }
-  await put(store, updated)
+  const updated = current ? { ...current, ...data, id } : { ...data, id }
+  if (current) await put(store, updated)
   await enqueue(table, "update", data, { id })
   return { data: updated as T, error: null, offline: true }
 }
@@ -233,7 +252,7 @@ export async function deleteRow(
   id: string,
 ): Promise<{ error: string | null; offline: boolean }> {
   const store = TABLE_TO_STORE[table]
-  if (!store) return { error: `Unknown table: ${table}`, offline: false }
+  if (!store) return { error: reportWriteError(`Unknown table: ${table}`), offline: false }
 
   if (isOnline()) {
     try {
@@ -245,7 +264,7 @@ export async function deleteRow(
     } catch (err) {
       if (isOnline() && isPermanentError(err)) {
         console.error(`[offline] Delete rejected by server for ${table}/${id}:`, err)
-        return { error: errorMessage(err, "Delete failed"), offline: false }
+        return { error: reportWriteError(errorMessage(err, "Delete failed")), offline: false }
       }
       console.warn(`[offline] Delete failed for ${table}/${id}, queueing:`, err)
     }

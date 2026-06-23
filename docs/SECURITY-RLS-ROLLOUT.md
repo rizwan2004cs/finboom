@@ -33,9 +33,11 @@ running app yet (it still sends no token; policies are still open).
 
 ### 2. Set environment variables (Vercel) — _no behavior change yet_
 
-- `SUPABASE_SERVICE_ROLE_KEY` — from Supabase → Project Settings → API. Required
-  by the cron/server jobs that operate across all users (they now fail loudly if
-  it's missing instead of silently falling back to the anon key).
+- `SUPABASE_SECRET_KEY` — the server-only secret from Supabase → Project Settings
+  → **API Keys** (the new `sb_secret_…` key; the legacy `SUPABASE_SERVICE_ROLE_KEY`
+  JWT also works). Required by the cron/server jobs that operate across all users
+  (they now fail loudly if it's missing instead of silently falling back to the
+  anon key).
 - `NEXT_PUBLIC_SUPABASE_CLERK_AUTH` — leave **unset** for now.
 
 ### 3. Deploy the code — _still safe_
@@ -57,9 +59,11 @@ Network tab, requests to `*.supabase.co/rest/v1/*` should carry an
 
 ### 5. Apply the RLS migration (the actual lockdown)
 
-Run `supabase/migrations/20260621000000_secure_rls_clerk.sql` (via the Supabase
-SQL Editor or `supabase db push`). This swaps the open policies for per-user
-ones and creates the missing `health_checks` table.
+Run `supabase/migrations/20260621000000_secure_rls_clerk.sql` **and**
+`supabase/migrations/20260622000000_sips.sql` (via the Supabase SQL Editor or
+`supabase db push`). These swap the open policies for per-user ones and create
+the missing `health_checks` and `sips` tables. Any interim open policies named
+`"Users can manage their own …"` are dropped and replaced automatically.
 
 Verify immediately:
 

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { getSupabaseSecretKey } from "@/utils/supabase/admin"
 
 const TARGET_CURRENCIES = ["usd", "eur", "gbp", "sgd", "aed", "aud", "cad", "jpy", "chf"]
 
@@ -27,7 +28,7 @@ export async function POST() {
 
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
+      getSupabaseSecretKey()!
     )
 
     const rows = [

@@ -5,8 +5,7 @@ import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
 import { useSearchParams } from "next/navigation"
 import { useOfflineQuery } from "@/hooks/use-offline-query"
-import { deleteRow } from "@/lib/offline"
-import { createClient } from "@/utils/supabase/client"
+import { deleteRow, fetchTable } from "@/lib/offline"
 import { useQueryClient } from "@tanstack/react-query"
 import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Edit2, Receipt } from "lucide-react"
 import type { Transaction } from "@/lib/types"
@@ -38,8 +37,10 @@ function TransactionsPage() {
   )
 
   const startDate = `${monthFilter}-01`
-  const endDate = new Date(parseInt(monthFilter.slice(0, 4)), parseInt(monthFilter.slice(5, 7)), 0)
-    .toISOString().slice(0, 10)
+  // Build the last-day string from local parts. Using toISOString() here shifted
+  // the boundary back a day in IST, dropping transactions dated on the 31st.
+  const lastDayOfMonth = new Date(parseInt(monthFilter.slice(0, 4)), parseInt(monthFilter.slice(5, 7)), 0).getDate()
+  const endDate = `${monthFilter}-${String(lastDayOfMonth).padStart(2, "0")}`
 
   const { data: transactions = [], isLoading: loading } = useOfflineQuery<Transaction>(
     "transactions", user?.id, {
@@ -64,17 +65,15 @@ function TransactionsPage() {
     await showConfirm("Delete this transaction?", {
       destructive: true,
       onConfirm: async () => {
-        // Also delete any linked party_transaction (expense mapped to receivable)
+        // Also delete any linked party_transaction (expense mapped to receivable).
+        // Look it up through the offline layer so the cascade also works offline —
+        // a direct Supabase query would silently no-op without a network.
         try {
-          const supabase = createClient()
-          const { data: linked } = await supabase
-            .from("party_transactions")
-            .select("id")
-            .eq("linked_transaction_id", id)
-          if (linked && linked.length > 0) {
-            for (const pt of linked) {
-              await deleteRow("party_transactions", pt.id)
-            }
+          const linked = (await fetchTable<{ id: string; linked_transaction_id?: string }>(
+            "party_transactions", user!.id
+          )).filter((pt) => pt.linked_transaction_id === id)
+          for (const pt of linked) {
+            await deleteRow("party_transactions", pt.id)
           }
         } catch (e) {
           console.warn("Could not delete linked party transactions:", e)
@@ -264,7 +263,12 @@ function TransactionsPage() {
         <AddTransactionModal
           transaction={editTransaction}
           onClose={() => { setShowAddModal(false); setEditTransaction(null) }}
-          onSave={() => { setShowAddModal(false); setEditTransaction(null); queryClient.invalidateQueries({ queryKey: ["transactions"] }) }}
+          onSave={() => {
+            setShowAddModal(false)
+            setEditTransaction(null)
+            queryClient.invalidateQueries({ queryKey: ["transactions"] })
+            queryClient.invalidateQueries({ queryKey: ["party_transactions"] })
+          }}
         />
       )}
     </div>

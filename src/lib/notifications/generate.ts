@@ -1,0 +1,249 @@
+/**
+ * Notification generation — shared by the daily cron (all users, admin client)
+ * and the per-user check route (authenticated client). Keeping a single
+ * implementation prevents the two paths from drifting and fixes several issues
+ * the duplicated copies had:
+ *  - Party alerts now use each party's NET outstanding balance, so settled or
+ *    partially-repaid loans no longer alert with the original amount.
+ *  - Day boundaries are computed in IST (the app's reporting timezone) instead
+ *    of the server's UTC clock.
+ *  - Push delivery degrades gracefully when VAPID keys are absent and deep-links
+ *    to the relevant page per notification type.
+ */
+
+import webpush from "web-push"
+import type { SupabaseClient } from "@supabase/supabase-js"
+
+export interface NotificationToCreate {
+  user_id: string
+  type: string
+  title: string
+  body: string
+  data: Record<string, unknown>
+}
+
+// The app reports in IST; day-boundary math is anchored here regardless of where
+// the server runs.
+const IST_OFFSET_MS = 5.5 * 60 * 60 * 1000
+
+let vapidReady = false
+function ensureVapid(): boolean {
+  if (vapidReady) return true
+  const pub = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
+  const priv = process.env.VAPID_PRIVATE_KEY
+  if (!pub || !priv) return false
+  webpush.setVapidDetails("mailto:rizwan22cse@gmail.com", pub, priv)
+  vapidReady = true
+  return true
+}
+
+function istParts(now: Date): { y: number; m: number; d: number } {
+  const ist = new Date(now.getTime() + IST_OFFSET_MS)
+  return { y: ist.getUTCFullYear(), m: ist.getUTCMonth(), d: ist.getUTCDate() }
+}
+
+/** Format a (possibly overflowing) Y/M/D as an IST calendar date string. */
+function ymd(y: number, m: number, d: number): string {
+  const date = new Date(Date.UTC(y, m, d))
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`
+}
+
+/** Whole days until the next monthly SIP occurrence, computed in IST and clamped
+ *  so day 31 falls back to the last day of shorter months. */
+function daysUntilSipDay(sipDay: number, now: Date): number {
+  const { y, m, d } = istParts(now)
+  const startOfToday = Date.UTC(y, m, d)
+  const lastThisMonth = new Date(Date.UTC(y, m + 1, 0)).getUTCDate()
+  let next = Date.UTC(y, m, Math.min(sipDay, lastThisMonth))
+  if (next < startOfToday) {
+    const lastNextMonth = new Date(Date.UTC(y, m + 2, 0)).getUTCDate()
+    next = Date.UTC(y, m + 1, Math.min(sipDay, lastNextMonth))
+  }
+  return Math.round((next - startOfToday) / 86400000)
+}
+
+function urlForType(type: string): string {
+  if (type === "overdue_payment" || type === "due_approaching") return "/dashboard/parties"
+  if (type === "goal_milestone") return "/dashboard/goals"
+  if (type === "large_transaction") return "/dashboard/transactions"
+  if (type === "sip_reminder") return "/dashboard/sips"
+  return "/dashboard"
+}
+
+const inr = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`
+
+interface PartyTxRow {
+  id: string
+  party_id: string
+  type: string
+  amount: number
+  due_date: string | null
+  party?: { name?: string } | null
+}
+interface GoalRow {
+  id: string
+  name: string
+  target_amount: number
+  current_amount: number
+  linked_assets?: string[] | null
+}
+interface AssetRow { id: string; current_value: number }
+interface TxnRow { id: string; type: string; amount: number; category: string; description?: string | null }
+interface SipRow { id: string; name: string; fund_name?: string | null; amount: number; sip_day: number }
+interface SubRow { id: string; endpoint: string; keys_p256dh: string; keys_auth: string }
+
+/**
+ * Evaluate all notification rules for one user, persist any new notifications,
+ * and send web-push for them. Returns the notifications that were created.
+ */
+export async function processUserNotifications(
+  supabase: SupabaseClient,
+  userId: string,
+): Promise<NotificationToCreate[]> {
+  const now = new Date()
+  const { y, m, d } = istParts(now)
+  const todayStr = ymd(y, m, d)
+  const threeDaysStr = ymd(y, m, d + 3)
+  const startOfTodayUTC = new Date(Date.UTC(y, m, d) - IST_OFFSET_MS).toISOString()
+  const dayAgoUTC = new Date(now.getTime() - 86400000).toISOString()
+
+  const notifications: NotificationToCreate[] = []
+  const add = (type: string, title: string, body: string, data: Record<string, unknown>) =>
+    notifications.push({ user_id: userId, type, title, body, data: { ...data, url: urlForType(type) } })
+
+  async function notifiedToday(type: string, match: Record<string, unknown>): Promise<boolean> {
+    const { data } = await supabase
+      .from("notifications").select("id")
+      .eq("user_id", userId).eq("type", type)
+      .gte("created_at", startOfTodayUTC)
+      .contains("data", match).limit(1)
+    return !!data?.length
+  }
+  async function notifiedEver(type: string, match: Record<string, unknown>): Promise<boolean> {
+    const { data } = await supabase
+      .from("notifications").select("id")
+      .eq("user_id", userId).eq("type", type)
+      .contains("data", match).limit(1)
+    return !!data?.length
+  }
+
+  // --- 1 & 2. Party payments — based on NET outstanding per party ---
+  const { data: ptxData } = await supabase
+    .from("party_transactions").select("*, party:parties(*)").eq("user_id", userId)
+  const parties = new Map<string, { name: string; net: number; lentDue: string[]; borrowedDue: string[] }>()
+  for (const tx of (ptxData || []) as PartyTxRow[]) {
+    const agg = parties.get(tx.party_id) || { name: tx.party?.name || "Someone", net: 0, lentDue: [], borrowedDue: [] }
+    const amt = Number(tx.amount)
+    if (tx.type === "lent") { agg.net += amt; if (tx.due_date) agg.lentDue.push(tx.due_date) }
+    else if (tx.type === "received_back") agg.net -= amt
+    else if (tx.type === "borrowed") { agg.net -= amt; if (tx.due_date) agg.borrowedDue.push(tx.due_date) }
+    else if (tx.type === "paid_back") agg.net += amt
+    if (tx.party?.name) agg.name = tx.party.name
+    parties.set(tx.party_id, agg)
+  }
+  for (const [partyId, agg] of Array.from(parties.entries())) {
+    if (Math.abs(agg.net) < 1) continue // fully settled
+    const receivable = agg.net > 0
+    const dues = (receivable ? agg.lentDue : agg.borrowedDue).filter(Boolean).sort((a, b) => a.localeCompare(b))
+    if (dues.length === 0) continue
+    const earliest = dues[0]
+    const verb = receivable ? "owes you" : "you owe"
+    if (earliest < todayStr) {
+      if (!(await notifiedToday("overdue_payment", { party_id: partyId }))) {
+        add("overdue_payment", `Overdue: ${agg.name}`, `${agg.name} ${verb} ${inr(Math.abs(agg.net))} — was due ${earliest}`, { party_id: partyId })
+      }
+    } else if (earliest <= threeDaysStr) {
+      const daysLeft = Math.round((Date.parse(earliest) - Date.UTC(y, m, d)) / 86400000)
+      if (!(await notifiedToday("due_approaching", { party_id: partyId }))) {
+        add("due_approaching", `Due ${daysLeft === 0 ? "today" : `in ${daysLeft}d`}: ${agg.name}`, `${agg.name} ${verb} ${inr(Math.abs(agg.net))} — due ${earliest}`, { party_id: partyId })
+      }
+    }
+  }
+
+  // --- 3. Goal milestones (50%, 100%) — uses linked assets when present ---
+  const { data: goalsData } = await supabase.from("goals").select("*").eq("user_id", userId)
+  const goals = (goalsData || []) as GoalRow[]
+  if (goals.length > 0) {
+    const { data: assetsData } = await supabase.from("assets").select("id, current_value").eq("user_id", userId)
+    const assetVal = new Map((assetsData || []).map((a: AssetRow) => [a.id, Number(a.current_value)]))
+    for (const goal of goals) {
+      const target = Number(goal.target_amount)
+      if (target <= 0) continue
+      const funded = goal.linked_assets?.length
+        ? goal.linked_assets.reduce((s, id) => s + (assetVal.get(id) ?? 0), 0)
+        : Number(goal.current_amount || 0)
+      const pct = Math.round((funded / target) * 100)
+      for (const milestone of [50, 100]) {
+        if (pct >= milestone && !(await notifiedEver("goal_milestone", { goal_id: goal.id, milestone }))) {
+          add(
+            "goal_milestone",
+            milestone === 100 ? `Goal reached: ${goal.name}` : `Halfway: ${goal.name}`,
+            milestone === 100
+              ? `You've reached your ${inr(target)} target for "${goal.name}"!`
+              : `You're 50% of the way to "${goal.name}" — ${inr(funded)} of ${inr(target)}`,
+            { goal_id: goal.id, milestone },
+          )
+        }
+      }
+    }
+  }
+
+  // --- 4. Large transactions (>= 50k logged in the last 24h) ---
+  const { data: largeData } = await supabase
+    .from("transactions").select("*").eq("user_id", userId)
+    .gte("created_at", dayAgoUTC).gte("amount", 50000)
+  for (const tx of (largeData || []) as TxnRow[]) {
+    if (!(await notifiedEver("large_transaction", { transaction_id: tx.id }))) {
+      add("large_transaction", `Large ${tx.type}: ${inr(Number(tx.amount))}`, `${tx.category}${tx.description ? ` — ${tx.description}` : ""}`, { transaction_id: tx.id })
+    }
+  }
+
+  // --- 5. SIP reminders (due today or tomorrow) ---
+  const { data: sipsData } = await supabase
+    .from("sips").select("*").eq("user_id", userId).eq("active", true).eq("reminder_enabled", true)
+  for (const sip of (sipsData || []) as SipRow[]) {
+    if (daysUntilSipDay(sip.sip_day, now) > 1) continue
+    if (!(await notifiedToday("sip_reminder", { sip_id: sip.id }))) {
+      const label = sip.fund_name || sip.name
+      const dueToday = daysUntilSipDay(sip.sip_day, now) === 0
+      add(
+        "sip_reminder",
+        dueToday ? `SIP due today: ${label}` : `SIP tomorrow: ${label}`,
+        `${inr(Number(sip.amount))} ${dueToday ? "is due today" : "is due tomorrow"}`,
+        { sip_id: sip.id },
+      )
+    }
+  }
+
+  if (notifications.length === 0) return []
+
+  await supabase.from("notifications").insert(notifications)
+
+  if (ensureVapid()) {
+    const { data: subsData } = await supabase.from("push_subscriptions").select("*").eq("user_id", userId)
+    const subs = (subsData || []) as SubRow[]
+    for (const notif of notifications) {
+      const payload = JSON.stringify({
+        title: notif.title,
+        body: notif.body,
+        icon: "/icons/icon-192.svg",
+        badge: "/icons/icon-192.svg",
+        data: { url: notif.data.url ?? "/dashboard" },
+      })
+      for (const sub of subs) {
+        try {
+          await webpush.sendNotification(
+            { endpoint: sub.endpoint, keys: { p256dh: sub.keys_p256dh, auth: sub.keys_auth } },
+            payload,
+          )
+        } catch (err: unknown) {
+          if (err && typeof err === "object" && "statusCode" in err && (err as { statusCode: number }).statusCode === 410) {
+            await supabase.from("push_subscriptions").delete().eq("id", sub.id)
+          }
+        }
+      }
+    }
+  }
+
+  return notifications
+}

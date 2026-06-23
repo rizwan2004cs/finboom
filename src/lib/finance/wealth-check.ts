@@ -93,8 +93,10 @@ function insuranceDimension(health: HealthCheck, monthlyIncome: number): WealthD
   const annualIncome = monthlyIncome * 12
   const idealTerm = annualIncome * 10
   const idealHealth = Math.max(500000, annualIncome * 0.5)
-  const termScore = health.has_term_insurance
-    ? clamp((health.term_insurance_cover / Math.max(idealTerm, 1)) * 100)
+  // Score 0 ("unknown") when income — and thus the ideal cover — can't be
+  // estimated, instead of dividing by a 1-rupee floor that always returns 100%.
+  const termScore = health.has_term_insurance && idealTerm > 0
+    ? clamp((health.term_insurance_cover / idealTerm) * 100)
     : 0
   const healthScore = health.has_health_insurance
     ? clamp((health.health_insurance_cover / Math.max(idealHealth, 1)) * 100)

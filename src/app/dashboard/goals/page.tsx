@@ -12,6 +12,7 @@ import type { Goal, Asset } from "@/lib/types"
 import { useAppDialog } from "@/components/app-dialog"
 import { useCurrency } from "@/hooks/use-currency"
 import { useToast } from "@/components/toast"
+import { goalFundedAmount, goalProgressPct } from "@/lib/finance/goals"
 
 function calculateInflationAdjusted(target: number, years: number, rate: number) {
   return target * Math.pow(1 + rate / 100, years)
@@ -109,15 +110,18 @@ export default function GoalsPage() {
       ) : (
         <div className="space-y-3">
           {goals.map((goal) => {
-            const progress = Number(goal.target_amount) > 0 
-              ? (Number(goal.current_amount) / Number(goal.target_amount)) * 100 
-              : 0
-            const targetDate = new Date(goal.target_date)
+            const target = Number(goal.target_amount)
+            // Use linked assets when present (consistent with the Wealth Check),
+            // otherwise the manually-tracked current amount.
+            const funded = goalFundedAmount(goal, assets)
+            const progress = goalProgressPct(goal, assets)
+            // Parse the date-only string at local midnight so IST display doesn't slip a day.
+            const targetDate = new Date(`${goal.target_date}T00:00:00`)
             const yearsLeft = Math.max(0, (targetDate.getTime() - Date.now()) / (365.25 * 24 * 60 * 60 * 1000))
-            const inflationAdjusted = calculateInflationAdjusted(
-              Number(goal.target_amount), yearsLeft, Number(goal.inflation_rate)
-            )
-            const remaining = Number(goal.target_amount) - Number(goal.current_amount)
+            const inflationAdjusted = calculateInflationAdjusted(target, yearsLeft, Number(goal.inflation_rate))
+            // Monthly saving needed to reach the inflation-adjusted target the UI
+            // shows — never negative once the goal is already funded.
+            const remaining = Math.max(0, inflationAdjusted - funded)
             const monthlyRequired = yearsLeft > 0 ? remaining / (yearsLeft * 12) : remaining
 
             return (
@@ -158,7 +162,7 @@ export default function GoalsPage() {
                 <div className="space-y-2">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-[#86868b]">
-                      {formatCurrency(Number(goal.current_amount))} of {formatCurrency(Number(goal.target_amount))}
+                      {formatCurrency(funded)} of {formatCurrency(target)}
                     </span>
                     <span className="font-medium text-[#1d1d1f]">{Math.min(progress, 100).toFixed(0)}%</span>
                   </div>
@@ -171,7 +175,7 @@ export default function GoalsPage() {
                   <div className="flex items-center justify-between text-xs text-[#86868b]">
                     <span className="flex items-center gap-1">
                       <TrendingUp className="w-3 h-3" />
-                      ₹{Math.round(monthlyRequired).toLocaleString("en-IN")}/mo needed
+                      {formatCurrency(monthlyRequired)}/mo needed
                     </span>
                     {Number(goal.inflation_rate) > 0 && (
                       <span>Inflation-adj: {formatCurrency(inflationAdjusted)}</span>

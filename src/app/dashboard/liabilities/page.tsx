@@ -47,7 +47,7 @@ export default function LiabilitiesPage() {
   const totalOutstanding = liabilities.reduce((sum, l) => sum + Number(l.outstanding_amount), 0)
   const totalOriginal = liabilities.reduce((sum, l) => sum + Number(l.original_amount), 0)
   const totalEmi = liabilities.reduce((sum, l) => sum + Number(l.emi_amount || 0), 0)
-  const paidOff = totalOriginal - totalOutstanding
+  const paidOff = Math.max(0, totalOriginal - totalOutstanding)
 
   if (loading || !user || !activeProfile) {
     return (
@@ -153,7 +153,7 @@ export default function LiabilitiesPage() {
                     <p className="font-semibold text-[#1d1d1f] dark:text-white">{formatCurrency(Number(liability.outstanding_amount))}</p>
                     <p className="text-xs text-[#86868b]">
                       {liability.interest_rate}% p.a.
-                      {liability.emi_amount ? ` · ₹${Number(liability.emi_amount).toLocaleString("en-IN")}/mo` : ""}
+                      {liability.emi_amount ? ` · ${formatCurrency(Number(liability.emi_amount))}/mo` : ""}
                     </p>
                   </div>
                   <div className="flex gap-1 ml-2">
@@ -311,16 +311,21 @@ function AddLiabilityModal({
     notes: liability?.notes || "",
   })
   const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!user || !form.name || !form.outstanding_amount) return
     setSaving(true)
+    setError(null)
 
     const payload = {
       user_id: user.id,
       profile_id: activeProfile!.id,
       name: form.name,
+      // `liability_type` is NOT NULL in the schema — omitting it made every save
+      // fail server-side. Persist the selected type.
+      liability_type: form.liability_type,
       outstanding_amount: parseFloat(form.outstanding_amount) || 0,
       original_amount: parseFloat(form.original_amount) || 0,
       interest_rate: parseFloat(form.interest_rate) || 0,
@@ -330,13 +335,15 @@ function AddLiabilityModal({
       notes: form.notes || null,
     }
 
-    if (liability) {
-      await updateRow("liabilities", liability.id, payload)
-    } else {
-      await insertRow("liabilities", payload)
-    }
+    const res = liability
+      ? await updateRow("liabilities", liability.id, payload)
+      : await insertRow("liabilities", payload)
 
     setSaving(false)
+    if (res.error) {
+      setError(res.error)
+      return
+    }
     onSave()
   }
 
@@ -465,6 +472,12 @@ function AddLiabilityModal({
             className="mt-1 w-full px-4 py-3 rounded-xl bg-white/50 dark:bg-[#2c2c2e] border border-white/40 dark:border-white/[0.06] text-sm text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10 resize-none"
           />
         </div>
+
+        {error && (
+          <p className="text-sm text-rose-600 dark:text-rose-400 bg-rose-500/10 rounded-xl px-4 py-2.5">
+            {error}
+          </p>
+        )}
 
         <div className="flex gap-3 pt-2">
           <button

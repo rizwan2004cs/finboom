@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js"
 import { normalizeTopic } from "@/lib/blog/topic-utils"
+import { getSupabaseSecretKey } from "@/utils/supabase/admin"
 
 type DbTopicRow = {
   id: string
@@ -10,7 +11,7 @@ type DbTopicRow = {
 
 function getAdminSupabaseClient() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const serviceRoleKey = getSupabaseSecretKey()
   if (!supabaseUrl || !serviceRoleKey) return null
   return createClient(supabaseUrl, serviceRoleKey)
 }

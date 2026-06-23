@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
+import { getSupabaseSecretKey } from "@/utils/supabase/admin"
 
 const CRON_SECRET = process.env.CRON_SECRET
 
@@ -36,7 +37,7 @@ export async function GET(req: NextRequest) {
 
     const supabase = createClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.SUPABASE_SERVICE_ROLE_KEY!
+      getSupabaseSecretKey()!
     )
 
     // Build upsert rows: INR→INR is always 1, then INR→X for each target

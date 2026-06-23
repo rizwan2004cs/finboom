@@ -10,6 +10,7 @@ import { QueryProvider } from "@/components/query-provider"
 import { usePushSubscription } from "@/hooks/use-push"
 import { AppDialogProvider } from "@/components/app-dialog"
 import { ToastProvider } from "@/components/toast"
+import { WriteErrorToaster } from "@/components/write-error-toaster"
 import { FeatureTour, useFeatureTour } from "@/components/feature-tour"
 import { PinLockGate } from "@/components/pin-lock"
 import { cn } from "@/lib/utils"
@@ -45,6 +46,7 @@ export default function DashboardLayout({
   return (
     <QueryProvider>
       <ToastProvider>
+        <WriteErrorToaster />
         <AppDialogProvider>
           <SidebarProvider>
             <OfflineProvider>

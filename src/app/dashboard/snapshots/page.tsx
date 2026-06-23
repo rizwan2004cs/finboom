@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
-import { fetchTable, insertRow } from "@/lib/offline"
+import { fetchTable, insertRow, updateRow } from "@/lib/offline"
 import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { useDeleteMutation } from "@/hooks/use-offline-mutation"
 import { useQueryClient } from "@tanstack/react-query"
@@ -70,16 +70,26 @@ export default function SnapshotsPage() {
       breakdown[a.asset_class] += Number(a.current_value)
     })
 
-    await insertRow("snapshots", {
-      user_id: user.id,
-      profile_id: activeProfile.id,
+    // Local calendar date (toISOString() is UTC and can name the wrong day in IST).
+    const now = new Date()
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
+
+    const payload = {
       total_assets: totalAssets,
       total_liabilities: totalLiabilities,
       net_worth: netWorth,
       asset_breakdown: breakdown,
       currency: "INR",
-      snapshot_date: new Date().toISOString().slice(0, 10),
-    })
+      snapshot_date: todayStr,
+    }
+
+    // Avoid stacking multiple snapshots on the same day — refresh today's instead.
+    const existingToday = snapshots.find(s => s.snapshot_date === todayStr)
+    if (existingToday) {
+      await updateRow("snapshots", existingToday.id, payload)
+    } else {
+      await insertRow("snapshots", { user_id: user.id, profile_id: activeProfile.id, ...payload })
+    }
 
     setTaking(false)
     queryClient.invalidateQueries({ queryKey: ["snapshots"] })

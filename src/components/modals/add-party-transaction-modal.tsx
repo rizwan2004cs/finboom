@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
-import { fetchTable, insertRow } from "@/lib/offline"
+import { fetchTable, insertRow, updateRow } from "@/lib/offline"
 import { createClient } from "@/utils/supabase/client"
 import { X, ArrowUpRight, ArrowDownLeft, ArrowDownRight, ArrowUpLeft, Plus, Loader2 } from "lucide-react"
 import type { Party } from "@/lib/types"
@@ -78,7 +78,7 @@ export function AddPartyTransactionModal({ onClose, onSave, preselectedPartyId, 
       const amount = parseFloat(form.amount)
 
       // Create the party transaction
-      const { data: ptData, error: ptError } = await insertRow("party_transactions", {
+      const { data: ptData, error: ptError } = await insertRow<{ id: string }>("party_transactions", {
         user_id: user.id,
         party_id: form.party_id,
         type: form.type,
@@ -159,14 +159,11 @@ export function AddPartyTransactionModal({ onClose, onSave, preselectedPartyId, 
           }
 
           if (txInsert) {
-            const { data: txData } = await insertRow("transactions", txInsert)
-            // Link the party_transaction to the auto-created transaction
+            const { data: txData } = await insertRow<{ id: string }>("transactions", txInsert)
+            // Link the party_transaction to the auto-created transaction through
+            // the offline layer so the link is also recorded offline.
             if (txData) {
-              const supabase = createClient()
-              await supabase
-                .from("party_transactions")
-                .update({ linked_transaction_id: txData.id })
-                .eq("id", ptData.id)
+              await updateRow("party_transactions", ptData.id, { linked_transaction_id: txData.id })
             }
           }
         }

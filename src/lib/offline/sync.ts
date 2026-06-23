@@ -5,7 +5,7 @@
 
 import { createClient } from "@/utils/supabase/client"
 import { getQueue, dequeue, setRetries, type QueuedMutation } from "./queue"
-import { putAll, setMeta, getMeta, DATA_STORES, type DataStore } from "./db"
+import { putAll, bulkPut, clearAllStores, setMeta, getMeta, DATA_STORES, type DataStore } from "./db"
 
 type SyncListener = (status: "syncing" | "synced" | "error" | "offline" | "online") => void
 
@@ -109,11 +109,18 @@ export async function replayQueue(): Promise<{ success: number; failed: number; 
  *  Falls back to full pull if no previous sync timestamp exists.
  */
 // Per-table pull tweaks (ordering / row caps). Everything else uses defaults.
+// `snapshots` keeps the most RECENT rows (descending) — the dashboard trend and
+// "% from last month" rely on the latest history, not the oldest.
 const PULL_OVERRIDES: Partial<
   Record<DataStore, { order?: { column: string; ascending: boolean }; limit?: number }>
 > = {
-  snapshots: { order: { column: "snapshot_date", ascending: true }, limit: 12 },
+  snapshots: { order: { column: "snapshot_date", ascending: false }, limit: 60 },
 }
+
+// How often to force a FULL pull (instead of an incremental delta). A full pull
+// reconciles server-side deletes (rows removed elsewhere) and heals any cache
+// gaps, while everyday syncs stay cheap by pulling only what changed.
+const FULL_REFRESH_INTERVAL = 6 * 60 * 60 * 1000 // 6 hours
 
 export async function pullAllData(userId: string): Promise<void> {
   const supabase = createClient()
@@ -125,6 +132,9 @@ export async function pullAllData(userId: string): Promise<void> {
   }))
 
   const syncStart = new Date().toISOString()
+  const lastFull = await getMeta("lastFullSync")
+  const forceFull =
+    !lastFull || Date.now() - new Date(lastFull).getTime() > FULL_REFRESH_INTERVAL
 
   // Fetch in batches of 3 to avoid exhausting browser connections
   for (let i = 0; i < tables.length; i += 3) {
@@ -132,19 +142,27 @@ export async function pullAllData(userId: string): Promise<void> {
     const results = await Promise.allSettled(
       batch.map(async ({ table, store, order, limit }) => {
         const lastTableSync = await getMeta(`lastSync_${table}`)
+        // A full pull replaces the whole store; a delta merges only changes.
+        const isFullPull = forceFull || !lastTableSync
         let query = supabase.from(table).select("*").eq("user_id", userId)
 
         // Delta sync: only fetch rows updated since last sync
-        if (lastTableSync) {
+        if (!isFullPull && lastTableSync) {
           query = query.gte("updated_at", lastTableSync)
         }
 
         if (order) query = query.order(order.column, { ascending: order.ascending })
-        if (limit && !lastTableSync) query = query.limit(limit) // skip limit for delta pulls
+        if (isFullPull && limit) query = query.limit(limit) // cap only full pulls
         const { data, error } = await query
         if (error) throw error
-        if (data && data.length > 0) {
-          await putAll(store, data)
+
+        if (isFullPull) {
+          // Replace the store with the authoritative server snapshot. This also
+          // prunes rows deleted on the server (or another device).
+          await putAll(store, data || [])
+        } else if (data && data.length > 0) {
+          // Merge changed rows without clearing untouched ones.
+          await bulkPut(store, data)
         }
         // Update per-table sync timestamp on success
         await setMeta(`lastSync_${table}`, syncStart)
@@ -158,6 +176,7 @@ export async function pullAllData(userId: string): Promise<void> {
   }
 
   await setMeta("lastSync", syncStart)
+  if (forceFull) await setMeta("lastFullSync", syncStart)
 }
 
 /** Full sync: replay queue → pull fresh data */
@@ -170,6 +189,16 @@ export async function fullSync(userId: string): Promise<void> {
   notify("syncing")
 
   try {
+    // 0. Guard against account switches on a shared device: if the cached data
+    //    belongs to a different user, wipe everything (data, queue, sync marks)
+    //    BEFORE replaying — otherwise the previous user's queued writes would be
+    //    replayed under, and their cached rows shown to, the new account.
+    const cachedUser = await getMeta("userId")
+    if (cachedUser && cachedUser !== userId) {
+      await clearAllStores()
+    }
+    await setMeta("userId", userId)
+
     // 1. Replay offline mutations
     const { failed, dropped } = await replayQueue()
     if (dropped > 0) {

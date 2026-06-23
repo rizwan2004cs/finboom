@@ -32,7 +32,10 @@ export function NotificationBell() {
 
   useEffect(() => {
     if (!user) return
-    loadNotifications()
+    // Generate any new notifications for this session, then load them. Previously
+    // the check route was never called, so in-app alerts only appeared once a day
+    // when the cron ran.
+    runCheck().then(loadNotifications)
 
     // Poll every 60 seconds
     const interval = setInterval(loadNotifications, 60_000)
@@ -57,6 +60,21 @@ export function NotificationBell() {
       .order("created_at", { ascending: false })
       .limit(30)
     setNotifications((data as AppNotification[]) || [])
+  }
+
+  async function runCheck() {
+    try {
+      await fetch("/api/notifications/check", { method: "POST" })
+    } catch {
+      // best-effort — the periodic poll will still surface anything created later
+    }
+  }
+
+  function toggleOpen() {
+    const next = !open
+    setOpen(next)
+    // Re-evaluate rules when the user actively opens the panel.
+    if (next) runCheck().then(loadNotifications)
   }
 
   async function markRead(id: string) {
@@ -94,7 +112,7 @@ export function NotificationBell() {
     <div className="relative" ref={ref}>
       <Tooltip label={unreadCount > 0 ? `${unreadCount} unread notification${unreadCount > 1 ? "s" : ""}` : "Notifications"} side="bottom">
         <button
-          onClick={() => setOpen(!open)}
+          onClick={toggleOpen}
           aria-label="Notifications"
           className="relative p-2 rounded-full hover:bg-white/60 dark:hover:bg-white/[0.08] transition-all duration-200"
         >

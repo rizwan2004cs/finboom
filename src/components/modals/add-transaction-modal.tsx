@@ -70,13 +70,23 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
     setSaving(true)
 
     if (isEditing) {
+      const amount = parseFloat(form.amount) || 0
       await updateRow("transactions", transaction.id, {
         type: form.type,
         category: form.category || categories[0].id,
-        amount: parseFloat(form.amount) || 0,
+        amount,
         description: form.description || null,
         date: form.date,
       })
+      // Keep any linked party receivable/payable in sync with the edited amount
+      // and date, so editing a "spent for someone" expense doesn't leave a stale
+      // party balance behind.
+      const linked = (await fetchTable<{ id: string; linked_transaction_id?: string }>(
+        "party_transactions", user.id
+      )).filter((pt) => pt.linked_transaction_id === transaction.id)
+      for (const pt of linked) {
+        await updateRow("party_transactions", pt.id, { amount, date: form.date })
+      }
     } else {
       const { data: txData } = await insertRow("transactions", {
         user_id: user.id,

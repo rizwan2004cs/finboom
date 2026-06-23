@@ -31,6 +31,8 @@ interface CurrencyContextValue {
   setCurrency: (code: string) => void
   /** Convert an amount stored in INR to the display currency */
   convert: (amountInINR: number) => number
+  /** Convert an amount entered in `fromCurrency` back to INR for storage */
+  toINR: (amount: number, fromCurrency: string) => number
   /** Format a number (assumed INR-stored) into display currency string */
   formatCurrency: (amount: number) => string
   /** Format with compact notation (K, L, Cr for INR / K, M, B for others) */
@@ -107,6 +109,17 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
     [rate]
   )
 
+  // Rates are expressed as "units of target per 1 INR", so converting back to INR
+  // divides by that rate. Used to normalise amounts to INR before storage so the
+  // rest of the app (which assumes INR) aggregates correctly.
+  const toINR = useCallback(
+    (amount: number, fromCurrency: string) => {
+      const r = rates[fromCurrency]
+      return r && r > 0 ? amount / r : amount
+    },
+    [rates]
+  )
+
   const currencyInfo = CURRENCIES.find((c) => c.code === currency) || CURRENCIES[0]
   const symbol = currencyInfo.symbol
 
@@ -141,7 +154,7 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
 
   return (
     <CurrencyContext.Provider
-      value={{ currency, symbol, setCurrency, convert, formatCurrency, formatCompact, refreshRates, loading, lastUpdated }}
+      value={{ currency, symbol, setCurrency, convert, toINR, formatCurrency, formatCompact, refreshRates, loading, lastUpdated }}
     >
       {children}
     </CurrencyContext.Provider>

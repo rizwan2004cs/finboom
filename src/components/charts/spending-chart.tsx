@@ -5,6 +5,11 @@ import { PieChart, Pie, Cell, Tooltip } from "recharts"
 import { useCurrency } from "@/hooks/use-currency"
 import { TrendingDown, TrendingUp } from "lucide-react"
 import type { Transaction } from "@/lib/types"
+import { EXPENSE_CATEGORIES } from "@/lib/constants"
+
+// Map raw category ids (e.g. "food_dining") to human labels ("Food & Dining").
+const EXPENSE_LABELS = new Map<string, string>(EXPENSE_CATEGORIES.map((c) => [c.id, c.label]))
+const categoryLabel = (id: string) => EXPENSE_LABELS.get(id) ?? id
 
 interface Props {
   transactions: Transaction[]
@@ -64,7 +69,7 @@ export function SpendingChart({ transactions, isLoading }: Props) {
     }
 
     const sorted = Array.from(categoryMap.entries())
-      .map(([name, value]) => ({ name, value }))
+      .map(([name, value]) => ({ name: categoryLabel(name), value }))
       .sort((a, b) => b.value - a.value)
 
     const totalThis = thisMonthExpenses.reduce((s, t) => s + Number(t.amount), 0)

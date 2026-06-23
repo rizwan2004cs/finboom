@@ -133,7 +133,9 @@ export async function put<T>(store: StoreName, record: T): Promise<void> {
   })
 }
 
-/** Put multiple records (bulk upsert), clearing old data first */
+/** Put multiple records (bulk upsert), clearing old data first.
+ *  Use for FULL pulls only — it replaces the entire store. For incremental
+ *  (delta) pulls use {@link bulkPut}, which merges without clearing. */
 export async function putAll<T>(store: StoreName, records: T[]): Promise<void> {
   const db = await openDB()
   return new Promise((resolve, reject) => {
@@ -142,6 +144,36 @@ export async function putAll<T>(store: StoreName, records: T[]): Promise<void> {
     objectStore.clear()
     for (const record of records) {
       objectStore.put(record)
+    }
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+}
+
+/** Merge multiple records into a store WITHOUT clearing existing rows.
+ *  Used for delta sync so unchanged rows are preserved. */
+export async function bulkPut<T>(store: StoreName, records: T[]): Promise<void> {
+  const db = await openDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(store, "readwrite")
+    const objectStore = tx.objectStore(store)
+    for (const record of records) {
+      objectStore.put(record)
+    }
+    tx.oncomplete = () => resolve()
+    tx.onerror = () => reject(tx.error)
+  })
+}
+
+/** Wipe every store (data + queue + meta). Used when the signed-in user
+ *  changes so one account's cached data and queued writes never leak into
+ *  another's session on a shared device. */
+export async function clearAllStores(): Promise<void> {
+  const db = await openDB()
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORES as unknown as string[], "readwrite")
+    for (const name of STORES) {
+      tx.objectStore(name).clear()
     }
     tx.oncomplete = () => resolve()
     tx.onerror = () => reject(tx.error)

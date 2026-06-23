@@ -197,20 +197,24 @@ export default function BudgetPage() {
     if (!activeProfile) return
     setLoadingAction("suggest")
     try {
-      // Average expenses per category over the last 3 months
-      const expensesByCategory: Record<string, number[]> = {}
+      // Average expenses per category over the last 3 months, tracking which
+      // months actually had spend so the average reflects real history.
+      const byCategory: Record<string, { total: number; months: Set<string> }> = {}
       for (const t of recentTransactions) {
         if (t.type !== "expense") continue
         const tMonth = t.date.slice(0, 7)
-        if (tMonth === month) continue // exclude current month
-        if (!expensesByCategory[t.category]) expensesByCategory[t.category] = []
-        expensesByCategory[t.category].push(Number(t.amount))
+        if (tMonth === month) continue // exclude the month being budgeted
+        const entry = (byCategory[t.category] ??= { total: 0, months: new Set<string>() })
+        entry.total += Number(t.amount)
+        entry.months.add(tMonth)
       }
 
       let added = 0
-      for (const [category, amounts] of Object.entries(expensesByCategory)) {
+      for (const [category, { total, months }] of Object.entries(byCategory)) {
         if (budgetedCategories.has(category)) continue
-        const avg = amounts.reduce((s, v) => s + v, 0) / 3
+        // Divide by the number of months with data (1–3), not a hardcoded 3, so a
+        // category seen in only one month isn't suggested at a third of its spend.
+        const avg = total / Math.max(1, months.size)
         const rounded = Math.ceil(avg / 500) * 500
         if (rounded <= 0) continue
         await insertBudget.mutateAsync({
