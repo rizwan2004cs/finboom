@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { runBlogAutomation } from "@/lib/blog/run-automation"
+import { sendOpsAlertEmail } from "@/lib/email/send"
 
 // The multi-step pipeline (outline -> draft -> optional expand -> images
 // -> hero upload) makes several model calls, so allow extra headroom.
@@ -35,6 +36,12 @@ export async function GET(req: NextRequest) {
     }
 
     if (result.status === "no_topic") {
+      await sendOpsAlertEmail(
+        "FinBoom blog cron: no post published",
+        "The daily blog automation ran but found no topic to publish.\n\n" +
+          "No topic was available from the Supabase queue or AI fallback generation. " +
+          "Check the blog_topics queue and the AI provider keys."
+      )
       return NextResponse.json(
         { error: "No topic available from seed list or fallback generation." },
         { status: 500 }
@@ -53,6 +60,10 @@ export async function GET(req: NextRequest) {
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Unknown blog automation error."
+    await sendOpsAlertEmail(
+      "FinBoom blog cron: no post published",
+      `The daily blog automation failed and nothing was published.\n\nError:\n${message}`
+    )
     return NextResponse.json({ error: message }, { status: 500 })
   }
 }

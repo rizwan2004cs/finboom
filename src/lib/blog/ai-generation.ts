@@ -433,19 +433,53 @@ function getOpenAiProvider(): OpenAICompatibleProvider | null {
   }
 }
 
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// Pull a server-suggested retry delay (in ms) out of a provider error message.
+// Groq/OpenAI rate-limit errors carry hints like "Please try again in 6.05s",
+// which is usually all the daily post needs to recover. Returns 0 when absent.
+const RETRY_AFTER_SECONDS_RE = /try again in ([\d.]+)\s*s\b/i
+const RETRY_AFTER_MILLIS_RE = /try again in ([\d.]+)\s*ms\b/i
+
+function parseRetryAfterMs(err: unknown): number {
+  const msg = err instanceof Error ? err.message : String(err)
+  const millis = RETRY_AFTER_MILLIS_RE.exec(msg)
+  if (millis) return Math.ceil(Number.parseFloat(millis[1]))
+  const seconds = RETRY_AFTER_SECONDS_RE.exec(msg)
+  if (seconds) return Math.ceil(Number.parseFloat(seconds[1]) * 1000)
+  return 0
+}
+
+// Retrying the whole provider chain rescues the daily post from transient
+// failures that hit every provider at once - e.g. a Gemini 503 "high demand"
+// spike alongside a free-tier Groq TPM rate limit, both of which self-heal in
+// seconds. We cap total wall-clock spent retrying so the run still finishes
+// inside the function's maxDuration.
+const MAX_GENERATION_ROUNDS = 3
+const GENERATION_RETRY_DEADLINE_MS = 240_000
+const GENERATION_BACKOFF_BASE_MS = 1_500
+const GENERATION_BACKOFF_MAX_MS = 20_000
+
 // Gemini first (best long-form quality on the free tier), then Groq,
 // then OpenAI - whichever providers have keys configured. A provider
 // outage OR a malformed/unparseable response moves on to the next
-// provider instead of killing the daily post.
-export async function generateParsedJson<T>(prompt: string, options: GenerateOptions): Promise<T> {
-  const failures: string[] = []
+// provider instead of killing the daily post. If every provider fails in a
+// pass, the whole chain is retried with backoff (honoring rate-limit hints).
+export async function generateParsedJson<T>(
+  prompt: string,
+  options: GenerateOptions,
+  // Optional content check. A parsed result that fails it is treated like a
+  // failed attempt (try the next provider / next round) rather than accepted -
+  // so a provider returning valid-but-empty JSON (e.g. {"markdown":""}) no
+  // longer kills the daily post.
+  validate?: (value: T) => boolean,
+): Promise<T> {
+  const startedAt = Date.now()
   const message = (err: unknown) => (err instanceof Error ? err.message : String(err))
 
   const attempts: Array<{ name: string; run: () => Promise<string> }> = []
   if (process.env.GEMINI_API_KEY) {
     attempts.push({ name: "Gemini", run: () => generateWithGemini(prompt, options) })
-  } else {
-    failures.push("Gemini: key not configured")
   }
   for (const provider of [getGroqProvider(), getOpenAiProvider()]) {
     if (!provider) continue
@@ -454,24 +488,50 @@ export async function generateParsedJson<T>(prompt: string, options: GenerateOpt
       run: () => generateWithOpenAICompatible(provider, prompt, options),
     })
   }
-
-  for (const attempt of attempts) {
-    let text: string
-    try {
-      text = await attempt.run()
-    } catch (err) {
-      failures.push(`${attempt.name}: ${message(err)}`)
-      continue
-    }
-    const parsed = parseJsonSafely<T>(text)
-    if (parsed !== null) {
-      return parsed
-    }
-    const tail = text.slice(-120).replace(/\s+/g, " ")
-    failures.push(`${attempt.name}: returned unparseable JSON (${text.length} chars, ...${tail})`)
+  if (attempts.length === 0) {
+    throw new Error(
+      "No AI providers configured. Set GEMINI_API_KEY, GROQ_API_KEY, or OPENAI_API_KEY."
+    )
   }
 
-  throw new Error(`All AI providers failed. ${failures.join(" | ")}`)
+  let failures: string[] = []
+  for (let round = 0; round < MAX_GENERATION_ROUNDS; round++) {
+    failures = []
+    let suggestedDelayMs = 0
+
+    for (const attempt of attempts) {
+      let text: string
+      try {
+        text = await attempt.run()
+      } catch (err) {
+        failures.push(`${attempt.name}: ${message(err)}`)
+        suggestedDelayMs = Math.max(suggestedDelayMs, parseRetryAfterMs(err))
+        continue
+      }
+      const parsed = parseJsonSafely<T>(text)
+      if (parsed !== null && (!validate || validate(parsed))) {
+        return parsed
+      }
+      const reason = parsed === null ? "unparseable JSON" : "JSON that failed validation"
+      const tail = text.slice(-120).replace(/\s+/g, " ")
+      failures.push(`${attempt.name}: returned ${reason} (${text.length} chars, ...${tail})`)
+    }
+
+    // Every provider failed this pass. Back off and retry the whole chain,
+    // waiting at least as long as any server-supplied hint - unless another
+    // round would risk blowing the function's time budget.
+    const elapsed = Date.now() - startedAt
+    const hasTimeForAnotherRound = elapsed < GENERATION_RETRY_DEADLINE_MS
+    if (round < MAX_GENERATION_ROUNDS - 1 && hasTimeForAnotherRound) {
+      const backoff = Math.min(GENERATION_BACKOFF_MAX_MS, GENERATION_BACKOFF_BASE_MS * 2 ** round)
+      const jitter = Math.floor(Math.random() * 500)
+      await sleep(Math.max(backoff, suggestedDelayMs) + jitter)
+    } else {
+      break
+    }
+  }
+
+  throw new Error(`All AI providers failed after ${MAX_GENERATION_ROUNDS} rounds. ${failures.join(" | ")}`)
 }
 
 const IMAGE_TOKEN_PLACEHOLDER = /\{\{\s*IMAGE\s*:[^}]*\}\}/gi
@@ -486,7 +546,9 @@ function countWords(text: string): number {
 async function generateOutline(topic: string, opts: BlogGenerationOptions): Promise<BlogOutline> {
   const parsed = await generateParsedJson<Partial<BlogOutline>>(
     `${buildOutlinePrompt(topic, opts)}\n\nTOPIC: ${topic.trim()}`,
-    { temperature: 0.8, maxOutputTokens: 2048 }
+    { temperature: 0.8, maxOutputTokens: 2048 },
+    (value) =>
+      Boolean(value.title?.trim()) && Array.isArray(value.sections) && value.sections.length > 0
   )
 
   const sections = Array.isArray(parsed.sections)
@@ -532,10 +594,15 @@ async function generateOutline(topic: string, opts: BlogGenerationOptions): Prom
   }
 }
 
+// A real draft is well over this; the floor just rejects empty/stub responses
+// so the retry chain moves on to another provider instead of giving up.
+const MIN_WRITER_CONTENT_CHARS = 200
+
 async function writeArticle(topic: string, outline: BlogOutline): Promise<string> {
   const parsed = await generateParsedJson<{ markdown?: string }>(
     buildWriterPrompt(topic, outline),
-    { temperature: 0.7, maxOutputTokens: 16384 }
+    { temperature: 0.7, maxOutputTokens: 16384 },
+    (value) => (value.markdown?.trim().length ?? 0) >= MIN_WRITER_CONTENT_CHARS
   )
   return parsed.markdown?.trim() ?? ""
 }

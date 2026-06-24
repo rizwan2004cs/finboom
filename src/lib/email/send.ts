@@ -94,6 +94,20 @@ export async function sendBrandedEmail(
       }
     : undefined
 
+  return deliverRawEmail(to, subject, html, text, headers)
+}
+
+/**
+ * Low-level delivery over the configured transport (Gmail SMTP preferred, then
+ * Resend). Used by branded user emails and by plain ops alerts alike.
+ */
+async function deliverRawEmail(
+  to: string,
+  subject: string,
+  html: string,
+  text: string,
+  headers?: Record<string, string>,
+): Promise<SendResult> {
   const gmail = getGmailTransport()
   if (gmail) {
     try {
@@ -136,6 +150,32 @@ export async function sendBrandedEmail(
   }
 
   return { sent: false, error: "No email transport configured" }
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+}
+
+/**
+ * Fire-and-forget ops alert to the site owner - NOT a user-facing email, so it
+ * skips Clerk lookup and preference gating. Turns silent cron failures (e.g. a
+ * blog run where every AI provider was down) into a visible heads-up. Recipient
+ * is ALERT_EMAIL, else the Gmail sender, else EMAIL_FROM. No-ops (never throws)
+ * when nothing is configured, so it's safe to await inside a cron catch block.
+ */
+export async function sendOpsAlertEmail(subject: string, body: string): Promise<SendResult> {
+  try {
+    if (!emailEnabled()) return { sent: false, error: "No email transport configured" }
+    const to = process.env.ALERT_EMAIL || GMAIL_USER || process.env.EMAIL_FROM
+    if (!to) return { sent: false, error: "No alert recipient configured" }
+    const html = `<pre style="font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;white-space:pre-wrap;word-break:break-word">${escapeHtml(body)}</pre>`
+    return await deliverRawEmail(to, subject, html, body)
+  } catch (err) {
+    return { sent: false, error: err instanceof Error ? err.message : "Ops alert failed" }
+  }
 }
 
 export interface Recipient {
