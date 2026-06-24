@@ -163,6 +163,12 @@ export function PinLockGate({ children }: { children: React.ReactNode }) {
         setAttempts(newAttempts)
         setError(`Incorrect PIN (${MAX_ATTEMPTS - newAttempts} attempts left)`)
         setPin("")
+        // This reset fires from inside the auto-submit effect while the
+        // controlled input still holds 4 digits (capped by maxLength), which
+        // can leave the value stuck in the DOM and block the next attempt.
+        // Clear the input imperatively and refocus so the user can retry.
+        if (inputRef.current) inputRef.current.value = ""
+        inputRef.current?.focus()
 
         if (newAttempts >= MAX_ATTEMPTS) {
           const until = Date.now() + LOCKOUT_DURATION
@@ -174,6 +180,13 @@ export function PinLockGate({ children }: { children: React.ReactNode }) {
     },
     [attempts, lockedUntil]
   )
+
+  // Clear the stale error as soon as the user starts the next attempt so the
+  // dots reflect typing again instead of staying red.
+  const handlePinChange = useCallback((value: string) => {
+    setError("")
+    setPin(value)
+  }, [])
 
   useEffect(() => {
     if (pin.length === 4) handleSubmit(pin)
@@ -254,7 +267,7 @@ export function PinLockGate({ children }: { children: React.ReactNode }) {
           <>
             <PinInput
               value={pin}
-              onChange={setPin}
+              onChange={handlePinChange}
               error={!!error}
               disabled={isLockedOut}
               inputRef={inputRef}
