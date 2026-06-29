@@ -222,7 +222,10 @@ function PartiesPageInner() {
     return false
   }
 
-  // Due within 30 days — receivables AND payables that are still outstanding.
+  // Due within 30 days — sum the individual due-dated entries (NOT the whole
+  // party net balance), so setting a due date on one transaction doesn't pull
+  // the entire party balance into this card. Cap each party's contribution at
+  // its net outstanding so a partial repayment can't overstate what's due.
   const today = new Date()
   const in30Days = new Date(today)
   in30Days.setDate(in30Days.getDate() + 30)
@@ -231,9 +234,14 @@ function PartiesPageInner() {
     const d = new Date(tx.due_date)
     return d >= today && d <= in30Days
   })
-  // Sum each party's NET outstanding once, rather than gross per-entry amounts.
-  const dueSoonAmount = Array.from(new Set(dueSoon.map(tx => tx.party_id)))
-    .reduce((sum, pid) => sum + Math.abs(balanceByParty.get(pid) ?? 0), 0)
+  const dueSoonGrossByParty = new Map<string, number>()
+  for (const tx of dueSoon) {
+    dueSoonGrossByParty.set(tx.party_id, (dueSoonGrossByParty.get(tx.party_id) ?? 0) + Number(tx.amount))
+  }
+  const dueSoonAmount = Array.from(dueSoonGrossByParty.entries()).reduce(
+    (sum, [pid, gross]) => sum + Math.min(gross, Math.abs(balanceByParty.get(pid) ?? 0)),
+    0,
+  )
 
   // Overdue items — still-outstanding receivables and payables past their due date.
   const overdue = transactions.filter(tx => {
@@ -333,7 +341,7 @@ function PartiesPageInner() {
             </div>
           </div>
           <p className="text-[28px] font-semibold mt-2 text-orange-700 dark:text-orange-500">{formatCurrency(dueSoonAmount)}</p>
-          <p className="text-[12px] text-[#86868b] mt-1">{dueSoon.length} entries upcoming</p>
+          <p className="text-[12px] text-[#86868b] mt-1">{dueSoon.length} {dueSoon.length === 1 ? "entry" : "entries"} upcoming</p>
         </div>
       </div>
 
