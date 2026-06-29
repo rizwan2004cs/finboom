@@ -28,6 +28,11 @@ export function NotificationBell() {
   const [notifications, setNotifications] = useState<AppNotification[]>([])
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
+  // Coalesce concurrent check requests. The bell fires runCheck on mount and on
+  // every open, and React StrictMode double-fires mount effects in dev — without
+  // this guard each event issues its own POST. (The DB dedupe_key backstop already
+  // prevents duplicate rows; this just avoids redundant server work.)
+  const checkInFlight = useRef<Promise<void> | null>(null)
   const unreadCount = notifications.filter((n) => !n.read).length
 
   useEffect(() => {
@@ -59,14 +64,27 @@ export function NotificationBell() {
       .eq("user_id", user!.id)
       .order("created_at", { ascending: false })
       .limit(30)
-    setNotifications((data as AppNotification[]) || [])
+    // Filter cleared (hidden) tombstones client-side. They're kept in the table
+    // as dedupe memory so dismissed alerts don't regenerate, but must not show.
+    // Client-side (not a `.neq("hidden", true)` filter) so a not-yet-applied
+    // migration can't break the bell with an unknown-column error.
+    setNotifications(((data as AppNotification[]) || []).filter((n) => !n.hidden))
   }
 
   async function runCheck() {
+    if (checkInFlight.current) return checkInFlight.current
+    const p = (async () => {
+      try {
+        await fetch("/api/notifications/check", { method: "POST" })
+      } catch {
+        // best-effort — the periodic poll will still surface anything created later
+      }
+    })()
+    checkInFlight.current = p
     try {
-      await fetch("/api/notifications/check", { method: "POST" })
-    } catch {
-      // best-effort — the periodic poll will still surface anything created later
+      await p
+    } finally {
+      if (checkInFlight.current === p) checkInFlight.current = null
     }
   }
 
@@ -93,7 +111,19 @@ export function NotificationBell() {
   async function clearAll() {
     if (!user) return
     const supabase = createClient()
-    await supabase.from("notifications").delete().eq("user_id", user.id)
+    // Hide (tombstone) instead of delete so the dedupe_key rows survive and the
+    // generator won't recreate these alerts on the next bell open / cron run.
+    const { error } = await supabase
+      .from("notifications")
+      .update({ hidden: true })
+      .eq("user_id", user.id)
+      .eq("hidden", false)
+    if (error) {
+      // `hidden` column not present yet (migration not applied) — fall back to
+      // delete so clear still works, accepting alerts may regenerate until the
+      // migration is applied.
+      await supabase.from("notifications").delete().eq("user_id", user.id)
+    }
     setNotifications([])
   }
 

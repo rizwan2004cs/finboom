@@ -2,6 +2,7 @@
 
 import { useState } from "react"
 import { updateRow } from "@/lib/offline"
+import { sanitizePhone, isValidPhone, PHONE_MAX_LENGTH } from "@/lib/utils"
 import { X, Loader2 } from "lucide-react"
 import type { Party } from "@/lib/types"
 
@@ -15,18 +16,22 @@ export function EditPartyModal({ party, onClose, onSave }: Props) {
   const [saving, setSaving] = useState(false)
   const [form, setForm] = useState({
     name: party.name,
-    phone: party.phone || "",
+    phone: sanitizePhone(party.phone || ""),
     notes: party.notes || "",
   })
+
+  const phoneInvalid = form.phone.length > 0 && !isValidPhone(form.phone)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!form.name.trim()) return
+    const phone = sanitizePhone(form.phone)
+    if (!isValidPhone(phone)) return
     setSaving(true)
 
     await updateRow("parties", party.id, {
       name: form.name.trim(),
-      phone: form.phone.trim() || null,
+      phone: phone || null,
       notes: form.notes.trim() || null,
     })
 
@@ -63,11 +68,20 @@ export function EditPartyModal({ party, onClose, onSave }: Props) {
             <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">Phone (optional)</label>
             <input
               type="tel"
+              inputMode="numeric"
+              autoComplete="tel"
+              maxLength={PHONE_MAX_LENGTH}
+              pattern="[0-9]{6,15}"
               value={form.phone}
-              onChange={(e) => setForm(prev => ({ ...prev, phone: e.target.value }))}
+              onChange={(e) => setForm(prev => ({ ...prev, phone: sanitizePhone(e.target.value) }))}
               placeholder="e.g. 9876543210"
               className="mt-1 w-full px-4 py-3 rounded-xl bg-[#f5f5f7] dark:bg-[#2c2c2e] border-0 text-sm text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10"
             />
+            {phoneInvalid && (
+              <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                Enter a valid phone number — 6 to 15 digits.
+              </p>
+            )}
           </div>
           <div>
             <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">Notes (optional)</label>
@@ -81,7 +95,7 @@ export function EditPartyModal({ party, onClose, onSave }: Props) {
           </div>
           <button
             type="submit"
-            disabled={saving || !form.name.trim()}
+            disabled={saving || !form.name.trim() || phoneInvalid}
             className="w-full py-3 rounded-xl bg-[#1d1d1f] text-white font-medium hover:opacity-90 transition-all disabled:opacity-50"
           >
             {saving ? <><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Saving...</> : "Save Changes"}

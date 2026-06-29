@@ -28,6 +28,7 @@ import { AddPartyTransactionModal } from "@/components/modals/add-party-transact
 import { AddPartyModal } from "@/components/modals/add-party-modal"
 import { EditPartyModal } from "@/components/modals/edit-party-modal"
 import { useCurrency } from "@/hooks/use-currency"
+import { formatDueDate } from "@/lib/utils"
 
 const typeConfig = {
   lent: { label: "Gave", icon: ArrowUpRight, color: "text-red-600", bg: "bg-red-50 dark:bg-red-500/10" },
@@ -35,6 +36,27 @@ const typeConfig = {
   borrowed: { label: "Borrowed", icon: ArrowDownRight, color: "text-orange-600", bg: "bg-orange-50 dark:bg-orange-500/10" },
   paid_back: { label: "Paid Back", icon: ArrowUpLeft, color: "text-blue-600", bg: "bg-blue-50 dark:bg-blue-500/10" },
 }
+
+// Filter options for the Transactions tab (by entry type) and the Parties tab
+// (by net balance status). "Receivable" = parties who owe you, "Payable" =
+// parties you owe, "Settled" = net zero.
+type TxFilter = "all" | keyof typeof typeConfig
+type PartyBalanceFilter = "all" | "receivable" | "payable" | "settled"
+
+const TX_FILTERS: { id: TxFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "lent", label: "Gave" },
+  { id: "received_back", label: "Received Back" },
+  { id: "borrowed", label: "Borrowed" },
+  { id: "paid_back", label: "Paid Back" },
+]
+
+const PARTY_FILTERS: { id: PartyBalanceFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "receivable", label: "Receivable" },
+  { id: "payable", label: "Payable" },
+  { id: "settled", label: "Settled" },
+]
 
 function PartiesPageInner() {
   const { formatCompact: formatCurrency } = useCurrency()
@@ -49,6 +71,8 @@ function PartiesPageInner() {
   const [selectedPartyId, setSelectedPartyId] = useState<string | null>(null)
   const [editingParty, setEditingParty] = useState<Party | null>(null)
   const [deletingPartyId, setDeletingPartyId] = useState<string | null>(null)
+  const [txFilter, setTxFilter] = useState<TxFilter>("all")
+  const [partyFilter, setPartyFilter] = useState<PartyBalanceFilter>("all")
 
   const { data: parties = [], isLoading: loadingParties } = useOfflineQuery<Party>(
     "parties", user?.id, { order: { column: "name", ascending: true } }
@@ -64,6 +88,11 @@ function PartiesPageInner() {
       .map(tx => ({ ...tx, party: partyMap.get(tx.party_id) as Party }))
       .filter(tx => tx.party)
   }, [parties, rawTx])
+
+  const filteredTransactions = useMemo(
+    () => (txFilter === "all" ? transactions : transactions.filter(tx => tx.type === txFilter)),
+    [transactions, txFilter],
+  )
 
   const invalidateParties = () => {
     queryClient.invalidateQueries({ queryKey: ["parties"] })
@@ -169,6 +198,13 @@ function PartiesPageInner() {
 
     return Array.from(map.values()).sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance))
   }, [parties, transactions])
+
+  const filteredPartyBalances = useMemo(() => {
+    if (partyFilter === "receivable") return partyBalances.filter(p => p.balance > 0)
+    if (partyFilter === "payable") return partyBalances.filter(p => p.balance < 0)
+    if (partyFilter === "settled") return partyBalances.filter(p => p.balance === 0)
+    return partyBalances
+  }, [partyBalances, partyFilter])
 
   const totalReceivable = partyBalances
     .filter(p => p.balance > 0)
@@ -311,7 +347,7 @@ function PartiesPageInner() {
           <div className="space-y-1">
             {overdue.slice(0, 3).map(tx => (
               <p key={tx.id} className="text-[12px] text-red-700 dark:text-red-400">
-                {tx.party?.name} — {formatCurrency(Number(tx.amount))} (due {new Date(tx.due_date!).toLocaleDateString("en-IN", { day: "numeric", month: "short" })})
+                {tx.party?.name} — {formatCurrency(Number(tx.amount))} (due {formatDueDate(tx.due_date!)})
               </p>
             ))}
             {overdue.length > 3 && (
@@ -343,7 +379,7 @@ function PartiesPageInner() {
 
       {/* Transactions tab */}
       {tab === "transactions" && (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {transactions.length === 0 ? (
             <div className="liquid-glass rounded-2xl p-8 text-center">
               <HandCoins className="w-10 h-10 text-[#86868b] mx-auto" />
@@ -357,62 +393,89 @@ function PartiesPageInner() {
               </button>
             </div>
           ) : (
-            transactions.map(tx => {
-              const config = typeConfig[tx.type]
-              const Icon = config.icon
-              const isOverdue = tx.due_date && new Date(tx.due_date) < today && (tx.type === "lent" || tx.type === "borrowed")
-              return (
-                <div key={tx.id} className="liquid-glass rounded-2xl p-4 flex items-center gap-3">
-                  <div className={`w-10 h-10 rounded-xl ${config.bg} flex items-center justify-center flex-shrink-0`}>
-                    <Icon className={`w-5 h-5 ${config.color}`} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <p className="text-[14px] font-medium text-[#1d1d1f] dark:text-white truncate max-w-[120px] sm:max-w-none">{tx.party?.name}</p>
-                      <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-md flex-shrink-0 ${config.bg} ${config.color}`}>
-                        {config.label}
-                      </span>
-                      {isOverdue && (
-                        <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400 flex-shrink-0">
-                          Overdue
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-1.5 mt-0.5 overflow-hidden">
-                      <p className="text-[12px] text-[#86868b] flex-shrink-0">
-                        {new Date(tx.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
-                      </p>
-                      {tx.due_date && (
-                        <p className="text-[12px] text-[#86868b] flex-shrink-0">
-                          · Due {new Date(tx.due_date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
-                        </p>
-                      )}
-                      {tx.notes && (
-                        <p className="text-[12px] text-[#86868b] truncate">· {tx.notes}</p>
-                      )}
-                    </div>
-                  </div>
-                  <p className={`text-[15px] font-semibold tabular-nums whitespace-nowrap flex-shrink-0 ${
-                    tx.type === "lent" || tx.type === "paid_back" ? "text-red-600" : "text-green-600"
-                  }`}>
-                    {tx.type === "lent" || tx.type === "paid_back" ? "-" : "+"}₹{Number(tx.amount).toLocaleString("en-IN")}
-                  </p>
+            <>
+              {/* Type filter chips */}
+              <div className="flex flex-wrap gap-2">
+                {TX_FILTERS.map(f => (
                   <button
-                    onClick={() => handleDelete(tx.id)}
-                    className="p-2 rounded-lg hover:bg-[#f5f5f7] dark:hover:bg-white/[0.08] transition-all flex-shrink-0"
+                    key={f.id}
+                    onClick={() => setTxFilter(f.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
+                      txFilter === f.id
+                        ? "bg-[#1d1d1f] text-white"
+                        : "bg-white/50 dark:bg-white/[0.06] text-[#86868b] hover:bg-white/70 dark:hover:bg-white/[0.1]"
+                    }`}
                   >
-                    <Trash2 className="w-4 h-4 text-[#86868b]" />
+                    {f.label}
                   </button>
+                ))}
+              </div>
+
+              {filteredTransactions.length === 0 ? (
+                <div className="liquid-glass rounded-2xl p-6 text-center">
+                  <p className="text-[13px] text-[#86868b]">No entries match this filter.</p>
                 </div>
-              )
-            })
+              ) : (
+                <div className="space-y-2">
+                  {filteredTransactions.map(tx => {
+                    const config = typeConfig[tx.type]
+                    const Icon = config.icon
+                    const isOverdue = tx.due_date && new Date(tx.due_date) < today && (tx.type === "lent" || tx.type === "borrowed")
+                    return (
+                      <div key={tx.id} className="liquid-glass rounded-2xl p-4 flex items-center gap-3">
+                        <div className={`w-10 h-10 rounded-xl ${config.bg} flex items-center justify-center flex-shrink-0`}>
+                          <Icon className={`w-5 h-5 ${config.color}`} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <p className="text-[14px] font-medium text-[#1d1d1f] dark:text-white truncate max-w-[120px] sm:max-w-none">{tx.party?.name}</p>
+                            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded-md flex-shrink-0 ${config.bg} ${config.color}`}>
+                              {config.label}
+                            </span>
+                            {isOverdue && (
+                              <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-red-100 dark:bg-red-500/10 text-red-700 dark:text-red-400 flex-shrink-0">
+                                Overdue
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-0.5 overflow-hidden">
+                            <p className="text-[12px] text-[#86868b] flex-shrink-0">
+                              {new Date(tx.date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}
+                            </p>
+                            {tx.due_date && (
+                              <p className="text-[12px] text-[#86868b] flex-shrink-0">
+                                · Due {formatDueDate(tx.due_date)}
+                              </p>
+                            )}
+                            {tx.notes && (
+                              <p className="text-[12px] text-[#86868b] truncate">· {tx.notes}</p>
+                            )}
+                          </div>
+                        </div>
+                        <p className={`text-[15px] font-semibold tabular-nums whitespace-nowrap flex-shrink-0 ${
+                          tx.type === "lent" || tx.type === "paid_back" ? "text-red-600" : "text-green-600"
+                        }`}>
+                          {tx.type === "lent" || tx.type === "paid_back" ? "-" : "+"}₹{Number(tx.amount).toLocaleString("en-IN")}
+                        </p>
+                        <button
+                          onClick={() => handleDelete(tx.id)}
+                          className="p-2 rounded-lg hover:bg-[#f5f5f7] dark:hover:bg-white/[0.08] transition-all flex-shrink-0"
+                        >
+                          <Trash2 className="w-4 h-4 text-[#86868b]" />
+                        </button>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}
 
       {/* Parties tab */}
       {tab === "parties" && (
-        <div className="space-y-2">
+        <div className="space-y-3">
           {partyBalances.length === 0 ? (
             <div className="liquid-glass rounded-2xl p-8 text-center">
               <User className="w-10 h-10 text-[#86868b] mx-auto" />
@@ -563,7 +626,7 @@ function PartiesPageInner() {
                             </p>
                             {tx.due_date && (
                               <p className="text-[12px] text-[#86868b] flex-shrink-0">
-                                · Due {new Date(tx.due_date).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+                                · Due {formatDueDate(tx.due_date)}
                               </p>
                             )}
                             {tx.notes && (
@@ -589,48 +652,75 @@ function PartiesPageInner() {
               </div>
             )
           })() : (
-            partyBalances.map(({ party, balance, txCount }) => (
-              <div
-                key={party.id}
-                className="liquid-glass rounded-2xl p-4 flex items-center gap-3 cursor-pointer hover:shadow-md transition-all"
-                onClick={() => setSelectedPartyId(party.id)}
-              >
-                <div className="w-10 h-10 rounded-xl bg-[#f5f5f7] dark:bg-[#2c2c2e] flex items-center justify-center flex-shrink-0">
-                  <span className="text-[15px] font-semibold text-[#1d1d1f] dark:text-white">
-                    {party.name.charAt(0).toUpperCase()}
-                  </span>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-[14px] font-medium text-[#1d1d1f] dark:text-white truncate">{party.name}</p>
-                  <p className="text-[12px] text-[#86868b]">{txCount} transactions</p>
-                </div>
-                <div className="text-right flex-shrink-0">
-                  {balance === 0 ? (
-                    <div className="flex items-center gap-1">
-                      <CheckCircle2 className="w-4 h-4 text-green-600" />
-                      <span className="text-[13px] font-medium text-green-600">Settled</span>
-                    </div>
-                  ) : (
-                    <>
-                      <p className={`text-[16px] font-semibold tabular-nums ${balance > 0 ? "text-green-600" : "text-red-600"}`}>
-                        {balance > 0 ? "+" : "-"}₹{Math.abs(balance).toLocaleString("en-IN")}
-                      </p>
-                      <p className="text-[11px] text-[#86868b]">
-                        {balance > 0 ? "will receive" : "you owe"}
-                      </p>
-                    </>
-                  )}
-                </div>
-                {balance !== 0 && (
+            <>
+              {/* Status filter chips */}
+              <div className="flex flex-wrap gap-2">
+                {PARTY_FILTERS.map(f => (
                   <button
-                    onClick={(e) => { e.stopPropagation(); handleSettle(party.id, balance) }}
-                    className="px-3 py-1.5 rounded-lg bg-[#f5f5f7] dark:bg-[#2c2c2e] text-[12px] font-medium text-[#1d1d1f] dark:text-white hover:bg-[#e8e8ed] dark:hover:bg-[#3a3a3c] transition-all flex-shrink-0"
+                    key={f.id}
+                    onClick={() => setPartyFilter(f.id)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all whitespace-nowrap ${
+                      partyFilter === f.id
+                        ? "bg-[#1d1d1f] text-white"
+                        : "bg-white/50 dark:bg-white/[0.06] text-[#86868b] hover:bg-white/70 dark:hover:bg-white/[0.1]"
+                    }`}
                   >
-                    Settle
+                    {f.label}
                   </button>
-                )}
+                ))}
               </div>
-            ))
+
+              {filteredPartyBalances.length === 0 ? (
+                <div className="liquid-glass rounded-2xl p-6 text-center">
+                  <p className="text-[13px] text-[#86868b]">No parties match this filter.</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {filteredPartyBalances.map(({ party, balance, txCount }) => (
+                    <div
+                      key={party.id}
+                      className="liquid-glass rounded-2xl p-4 flex items-center gap-3 cursor-pointer hover:shadow-md transition-all"
+                      onClick={() => setSelectedPartyId(party.id)}
+                    >
+                      <div className="w-10 h-10 rounded-xl bg-[#f5f5f7] dark:bg-[#2c2c2e] flex items-center justify-center flex-shrink-0">
+                        <span className="text-[15px] font-semibold text-[#1d1d1f] dark:text-white">
+                          {party.name.charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[14px] font-medium text-[#1d1d1f] dark:text-white truncate">{party.name}</p>
+                        <p className="text-[12px] text-[#86868b]">{txCount} transactions</p>
+                      </div>
+                      <div className="text-right flex-shrink-0">
+                        {balance === 0 ? (
+                          <div className="flex items-center gap-1">
+                            <CheckCircle2 className="w-4 h-4 text-green-600" />
+                            <span className="text-[13px] font-medium text-green-600">Settled</span>
+                          </div>
+                        ) : (
+                          <>
+                            <p className={`text-[16px] font-semibold tabular-nums ${balance > 0 ? "text-green-600" : "text-red-600"}`}>
+                              {balance > 0 ? "+" : "-"}₹{Math.abs(balance).toLocaleString("en-IN")}
+                            </p>
+                            <p className="text-[11px] text-[#86868b]">
+                              {balance > 0 ? "will receive" : "you owe"}
+                            </p>
+                          </>
+                        )}
+                      </div>
+                      {balance !== 0 && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleSettle(party.id, balance) }}
+                          className="px-3 py-1.5 rounded-lg bg-[#f5f5f7] dark:bg-[#2c2c2e] text-[12px] font-medium text-[#1d1d1f] dark:text-white hover:bg-[#e8e8ed] dark:hover:bg-[#3a3a3c] transition-all flex-shrink-0"
+                        >
+                          Settle
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

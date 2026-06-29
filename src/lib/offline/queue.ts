@@ -9,9 +9,10 @@ import { getAll, put, remove } from "./db"
 export interface QueuedMutation {
   queue_id: string
   table: string
-  operation: "insert" | "update" | "delete"
-  data: Record<string, unknown>       // for insert/update
+  operation: "insert" | "update" | "delete" | "upsert"
+  data: Record<string, unknown>       // for insert/update/upsert
   match: Record<string, unknown>      // for update/delete (eq filters)
+  onConflict?: string                 // for upsert: comma-separated conflict columns
   created_at: number                  // timestamp for ordering
   retries: number
 }
@@ -23,9 +24,10 @@ function generateId(): string {
 /** Enqueue a mutation for later sync */
 export async function enqueue(
   table: string,
-  operation: "insert" | "update" | "delete",
+  operation: "insert" | "update" | "delete" | "upsert",
   data: Record<string, unknown>,
   match: Record<string, unknown> = {},
+  onConflict?: string,
 ): Promise<void> {
   const mutation: QueuedMutation = {
     queue_id: generateId(),
@@ -33,6 +35,7 @@ export async function enqueue(
     operation,
     data,
     match,
+    onConflict,
     created_at: Date.now(),
     retries: 0,
   }

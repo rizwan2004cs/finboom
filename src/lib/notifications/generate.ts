@@ -14,6 +14,7 @@
 import webpush from "web-push"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { EXPENSE_CATEGORIES } from "@/lib/constants"
+import { notificationDedupeKey } from "@/lib/utils"
 
 export interface NotificationToCreate {
   user_id: string
@@ -21,6 +22,7 @@ export interface NotificationToCreate {
   title: string
   body: string
   data: Record<string, unknown>
+  dedupe_key: string
 }
 
 // The app reports in IST; day-boundary math is anchored here regardless of where
@@ -72,6 +74,54 @@ function urlForType(type: string): string {
   return "/dashboard"
 }
 
+// Deliver notifications to native devices via Expo's push service. Invalid /
+// unregistered tokens are pruned so the table self-heals, mirroring how the
+// web-push path deletes subscriptions that return HTTP 410.
+async function sendExpoPush(
+  supabase: SupabaseClient,
+  tokens: DeviceTokenRow[],
+  notifs: NotificationToCreate[],
+): Promise<void> {
+  if (tokens.length === 0 || notifs.length === 0) return
+
+  const messages = tokens.flatMap((dt) =>
+    notifs.map((n) => ({
+      to: dt.token,
+      title: n.title,
+      body: n.body,
+      data: { url: n.data.url ?? "/dashboard" },
+      sound: "default" as const,
+    })),
+  )
+
+  // Expo accepts up to 100 messages per request.
+  for (let i = 0; i < messages.length; i += 100) {
+    const batch = messages.slice(i, i + 100)
+    try {
+      const res = await fetch("https://exp.host/--/api/v2/push/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify(batch),
+      })
+      const json = (await res.json()) as {
+        data?: Array<{ status: string; details?: { error?: string } }>
+      }
+      const receipts = json.data ?? []
+      const deadTokens = new Set<string>()
+      receipts.forEach((receipt, idx) => {
+        if (receipt.status === "error" && receipt.details?.error === "DeviceNotRegistered") {
+          deadTokens.add(batch[idx].to)
+        }
+      })
+      if (deadTokens.size > 0) {
+        await supabase.from("device_tokens").delete().in("token", Array.from(deadTokens))
+      }
+    } catch {
+      // Network/Expo outage — notifications are still persisted in-app.
+    }
+  }
+}
+
 const CATEGORY_LABEL = new Map<string, string>(EXPENSE_CATEGORIES.map((c) => [c.id, c.label]))
 
 const inr = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`
@@ -95,6 +145,7 @@ interface AssetRow { id: string; current_value: number }
 interface TxnRow { id: string; type: string; amount: number; category: string; description?: string | null }
 interface SipRow { id: string; name: string; fund_name?: string | null; amount: number; sip_day: number }
 interface SubRow { id: string; endpoint: string; keys_p256dh: string; keys_auth: string }
+interface DeviceTokenRow { id: string; token: string }
 interface BudgetRow { id: string; profile_id: string | null; category: string; amount: number }
 interface BudgetTxnRow { profile_id: string | null; category: string; amount: number; type: string; date: string }
 
@@ -114,8 +165,22 @@ export async function processUserNotifications(
   const dayAgoUTC = new Date(now.getTime() - 86400000).toISOString()
 
   const notifications: NotificationToCreate[] = []
-  const add = (type: string, title: string, body: string, data: Record<string, unknown>) =>
-    notifications.push({ user_id: userId, type, title, body, data: { ...data, url: urlForType(type) } })
+  const add = (
+    type: string,
+    title: string,
+    body: string,
+    data: Record<string, unknown>,
+    dedupeId: string,
+  ) => {
+    notifications.push({
+      user_id: userId,
+      type,
+      title,
+      body,
+      data: { ...data, url: urlForType(type) },
+      dedupe_key: notificationDedupeKey(type, dedupeId, todayStr),
+    })
+  }
 
   // Prefetch existing notifications once and dedupe in memory, instead of issuing
   // a separate query per candidate (the old N+1). "Today" covers the per-day
@@ -159,12 +224,12 @@ export async function processUserNotifications(
     const verb = receivable ? "owes you" : "you owe"
     if (earliest < todayStr) {
       if (!notifiedToday("overdue_payment", { party_id: partyId })) {
-        add("overdue_payment", `Overdue: ${agg.name}`, `${agg.name} ${verb} ${inr(Math.abs(agg.net))} — was due ${earliest}`, { party_id: partyId })
+        add("overdue_payment", `Overdue: ${agg.name}`, `${agg.name} ${verb} ${inr(Math.abs(agg.net))} — was due ${earliest}`, { party_id: partyId }, partyId)
       }
     } else if (earliest <= threeDaysStr) {
       const daysLeft = Math.round((Date.parse(earliest) - Date.UTC(y, m, d)) / 86400000)
       if (!notifiedToday("due_approaching", { party_id: partyId })) {
-        add("due_approaching", `Due ${daysLeft === 0 ? "today" : `in ${daysLeft}d`}: ${agg.name}`, `${agg.name} ${verb} ${inr(Math.abs(agg.net))} — due ${earliest}`, { party_id: partyId })
+        add("due_approaching", `Due ${daysLeft === 0 ? "today" : `in ${daysLeft}d`}: ${agg.name}`, `${agg.name} ${verb} ${inr(Math.abs(agg.net))} — due ${earliest}`, { party_id: partyId }, partyId)
       }
     }
   }
@@ -191,6 +256,7 @@ export async function processUserNotifications(
               ? `You've reached your ${inr(target)} target for "${goal.name}"!`
               : `You're 50% of the way to "${goal.name}" — ${inr(funded)} of ${inr(target)}`,
             { goal_id: goal.id, milestone },
+            `${goal.id}:${milestone}`,
           )
         }
       }
@@ -203,7 +269,7 @@ export async function processUserNotifications(
     .gte("created_at", dayAgoUTC).gte("amount", 50000)
   for (const tx of (largeData || []) as TxnRow[]) {
     if (!notifiedEver("large_transaction", { transaction_id: tx.id })) {
-      add("large_transaction", `Large ${tx.type}: ${inr(Number(tx.amount))}`, `${tx.category}${tx.description ? ` — ${tx.description}` : ""}`, { transaction_id: tx.id })
+      add("large_transaction", `Large ${tx.type}: ${inr(Number(tx.amount))}`, `${tx.category}${tx.description ? ` — ${tx.description}` : ""}`, { transaction_id: tx.id }, tx.id)
     }
   }
 
@@ -220,6 +286,7 @@ export async function processUserNotifications(
         dueToday ? `SIP due today: ${label}` : `SIP tomorrow: ${label}`,
         `${inr(Number(sip.amount))} ${dueToday ? "is due today" : "is due tomorrow"}`,
         { sip_id: sip.id },
+        sip.id,
       )
     }
   }
@@ -251,18 +318,35 @@ export async function processUserNotifications(
         `Over budget: ${label}`,
         `You've spent ${inr(spent)} of your ${inr(limit)} ${label} budget — ${inr(spent - limit)} over.`,
         { budget_id: budget.id, period: monthKey, category: budget.category },
+        `${budget.id}:${monthKey}`,
       )
     }
   }
 
   if (notifications.length === 0) return []
 
-  await supabase.from("notifications").insert(notifications)
+  // Upsert with a uniqueness backstop. The (user_id, dedupe_key) conflict target
+  // means a concurrent cron + bell check (or a StrictMode double-fire of the
+  // bell effect) can never create duplicate rows: the loser is dropped silently.
+  // `.select()` returns only the rows that were actually inserted, so we push
+  // and email only for genuinely new alerts — never for duplicates.
+  const { data: insertedRows } = await supabase
+    .from("notifications")
+    .upsert(notifications, { onConflict: "user_id,dedupe_key", ignoreDuplicates: true })
+    .select()
+
+  const inserted = (insertedRows || []) as NotificationToCreate[]
+  if (inserted.length === 0) return []
+
+  // Native (Expo) push — independent of VAPID/web-push configuration.
+  const { data: deviceData } = await supabase
+    .from("device_tokens").select("id, token").eq("user_id", userId)
+  await sendExpoPush(supabase, (deviceData ?? []) as DeviceTokenRow[], inserted)
 
   if (ensureVapid()) {
     const { data: subsData } = await supabase.from("push_subscriptions").select("*").eq("user_id", userId)
     const subs = (subsData || []) as SubRow[]
-    for (const notif of notifications) {
+    for (const notif of inserted) {
       const payload = JSON.stringify({
         title: notif.title,
         body: notif.body,
@@ -285,5 +369,5 @@ export async function processUserNotifications(
     }
   }
 
-  return notifications
+  return inserted
 }

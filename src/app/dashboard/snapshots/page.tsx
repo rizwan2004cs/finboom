@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
-import { fetchTable, insertRow, updateRow } from "@/lib/offline"
+import { fetchTable, upsertRow } from "@/lib/offline"
 import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { useDeleteMutation } from "@/hooks/use-offline-mutation"
 import { useQueryClient } from "@tanstack/react-query"
@@ -13,7 +13,7 @@ import { ASSET_CLASSES } from "@/lib/constants"
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
 import { useAppDialog } from "@/components/app-dialog"
 import { useCurrency } from "@/hooks/use-currency"
-import { subMonths, subYears } from "@/lib/utils"
+import { subMonths, subYears, todayLocalISO } from "@/lib/utils"
 
 type TimeRange = "1M" | "6M" | "1Y" | "3Y" | "5Y" | "All"
 
@@ -71,25 +71,22 @@ export default function SnapshotsPage() {
     })
 
     // Local calendar date (toISOString() is UTC and can name the wrong day in IST).
-    const now = new Date()
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`
+    const todayStr = todayLocalISO()
 
-    const payload = {
+    // Upsert on (profile_id, snapshot_date): a second snapshot on the same day
+    // overwrites the first atomically instead of stacking a duplicate — and it
+    // does not depend on the (possibly stale) snapshots list from React-query,
+    // which is what caused same-day snapshots to silently keep the first value.
+    await upsertRow("snapshots", {
+      user_id: user.id,
+      profile_id: activeProfile.id,
       total_assets: totalAssets,
       total_liabilities: totalLiabilities,
       net_worth: netWorth,
       asset_breakdown: breakdown,
       currency: "INR",
       snapshot_date: todayStr,
-    }
-
-    // Avoid stacking multiple snapshots on the same day — refresh today's instead.
-    const existingToday = snapshots.find(s => s.snapshot_date === todayStr)
-    if (existingToday) {
-      await updateRow("snapshots", existingToday.id, payload)
-    } else {
-      await insertRow("snapshots", { user_id: user.id, profile_id: activeProfile.id, ...payload })
-    }
+    }, { columns: ["profile_id", "snapshot_date"] })
 
     setTaking(false)
     queryClient.invalidateQueries({ queryKey: ["snapshots"] })

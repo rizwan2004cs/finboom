@@ -159,6 +159,8 @@ export interface AppNotification {
   body: string
   data: Record<string, unknown>
   read: boolean
+  hidden?: boolean
+  dedupe_key?: string
   created_at: string
 }
 

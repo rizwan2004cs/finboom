@@ -4,6 +4,14 @@ import { useState, useEffect } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
 import { fetchTable, insertRow, updateRow } from "@/lib/offline"
+import {
+  sanitizePhone,
+  isValidPhone,
+  isValidISODate,
+  isFutureISODate,
+  todayLocalISO,
+  PHONE_MAX_LENGTH,
+} from "@/lib/utils"
 import { X, Plus, Loader2 } from "lucide-react"
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/constants"
 import { CategoryIcon } from "@/components/category-icon"
@@ -33,10 +41,14 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
     category: transaction?.category || "",
     amount: transaction?.amount?.toString() || "",
     description: transaction?.description || "",
-    date: transaction?.date || new Date().toISOString().slice(0, 10),
+    date: transaction?.date || todayLocalISO(),
     spent_for_party_id: "",
     due_date: "",
   })
+  const [error, setError] = useState("")
+
+  const newPartyPhoneInvalid = newPartyPhone.length > 0 && !isValidPhone(newPartyPhone)
+  const todayStr = todayLocalISO()
 
   useEffect(() => {
     if (!user) return
@@ -48,10 +60,12 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
 
   async function handleCreateParty() {
     if (!user || !newPartyName.trim()) return
+    const phone = sanitizePhone(newPartyPhone)
+    if (!isValidPhone(phone)) return
     const { data } = await insertRow<Party>("parties", {
       user_id: user.id,
       name: newPartyName.trim(),
-      phone: newPartyPhone.trim() || null,
+      phone: phone || null,
       notes: newPartyNotes.trim() || null,
     })
     if (data) {
@@ -67,10 +81,24 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!user) return
+
+    const amount = parseFloat(form.amount)
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setError("Enter an amount greater than 0.")
+      return
+    }
+    if (!isValidISODate(form.date) || isFutureISODate(form.date)) {
+      setError("Pick a valid date — it cannot be in the future.")
+      return
+    }
+    if (form.spent_for_party_id && form.due_date && (!isValidISODate(form.due_date) || form.due_date < form.date)) {
+      setError("Due date cannot be before the transaction date.")
+      return
+    }
+    setError("")
     setSaving(true)
 
     if (isEditing) {
-      const amount = parseFloat(form.amount) || 0
       await updateRow("transactions", transaction.id, {
         type: form.type,
         category: form.category || categories[0].id,
@@ -93,7 +121,7 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
         profile_id: activeProfile!.id,
         type: form.type,
         category: form.category || categories[0].id,
-        amount: parseFloat(form.amount) || 0,
+        amount,
         description: form.description || null,
         date: form.date,
         currency: "INR",
@@ -105,7 +133,7 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
           user_id: user.id,
           party_id: form.spent_for_party_id,
           type: "lent",
-          amount: parseFloat(form.amount) || 0,
+          amount,
           currency: "INR",
           date: form.date,
           due_date: form.due_date || null,
@@ -164,8 +192,10 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
               type="number"
               required
               step="0.01"
+              min="0.01"
+              inputMode="decimal"
               value={form.amount}
-              onChange={(e) => setForm(prev => ({ ...prev, amount: e.target.value }))}
+              onChange={(e) => { setForm(prev => ({ ...prev, amount: e.target.value })); setError("") }}
               placeholder="0"
               className="mt-1 w-full px-4 py-3 rounded-xl bg-[#f5f5f7] dark:bg-white/[0.06] border-0 text-2xl font-bold text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10 text-center"
             />
@@ -210,8 +240,10 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
             <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">Date</label>
             <input
               type="date"
+              required
+              max={todayStr}
               value={form.date}
-              onChange={(e) => setForm(prev => ({ ...prev, date: e.target.value }))}
+              onChange={(e) => { setForm(prev => ({ ...prev, date: e.target.value })); setError("") }}
               onFocus={(e) => setTimeout(() => e.target.scrollIntoView({ behavior: "smooth", block: "center" }), 100)}
               className="mt-1 w-full px-4 py-3 rounded-xl bg-[#f5f5f7] dark:bg-white/[0.06] border-0 text-sm text-[#1d1d1f] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10 dark:[color-scheme:dark]"
             />
@@ -250,11 +282,20 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
                   />
                   <input
                     type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel"
+                    maxLength={PHONE_MAX_LENGTH}
+                    pattern="[0-9]{6,15}"
                     value={newPartyPhone}
-                    onChange={(e) => setNewPartyPhone(e.target.value)}
+                    onChange={(e) => setNewPartyPhone(sanitizePhone(e.target.value))}
                     placeholder="Phone (optional)"
                     className="w-full px-4 py-2.5 rounded-xl bg-[#f5f5f7] dark:bg-white/[0.06] border-0 text-sm text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10"
                   />
+                  {newPartyPhoneInvalid && (
+                    <p className="text-xs text-red-600 dark:text-red-400">
+                      Enter a valid phone number — 6 to 15 digits.
+                    </p>
+                  )}
                   <input
                     type="text"
                     value={newPartyNotes}
@@ -266,7 +307,7 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
                     <button
                       type="button"
                       onClick={handleCreateParty}
-                      disabled={!newPartyName.trim()}
+                      disabled={!newPartyName.trim() || newPartyPhoneInvalid}
                       className="flex-1 py-2.5 rounded-xl bg-[#1d1d1f] text-white text-sm font-medium hover:opacity-90 transition-all disabled:opacity-50"
                     >
                       Add Party
@@ -288,20 +329,29 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
                   </label>
                   <input
                     type="date"
+                    min={form.date || todayStr}
                     value={form.due_date}
-                    onChange={(e) => setForm(prev => ({ ...prev, due_date: e.target.value }))}
+                    onChange={(e) => { setForm(prev => ({ ...prev, due_date: e.target.value })); setError("") }}
                     onFocus={(e) => setTimeout(() => e.target.scrollIntoView({ behavior: "smooth", block: "center" }), 100)}
                     className="mt-1 w-full px-4 py-3 rounded-xl bg-[#f5f5f7] dark:bg-white/[0.06] border-0 text-sm text-[#1d1d1f] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10 dark:[color-scheme:dark]"
                   />
+                  {form.due_date && form.due_date < form.date && (
+                    <p className="mt-1 text-xs text-red-600 dark:text-red-400">
+                      Due date cannot be before the transaction date.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
           )}
 
           {/* Submit */}
+          {error && (
+            <p className="text-xs text-red-600 dark:text-red-400">{error}</p>
+          )}
           <button
             type="submit"
-            disabled={saving || !form.amount}
+            disabled={saving || !form.amount || !!error}
             className="w-full py-3 rounded-xl bg-[#1d1d1f] dark:bg-white/[0.12] text-white font-medium hover:opacity-90 transition-all disabled:opacity-50"
           >
             {saving ? <><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Saving...</> : isEditing ? "Update Transaction" : "Add Transaction"}

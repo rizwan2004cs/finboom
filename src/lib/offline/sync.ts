@@ -49,6 +49,8 @@ async function replayMutation(m: QueuedMutation): Promise<boolean> {
       for (const [key, val] of Object.entries(m.match)) {
         query = query.eq(key, val as string)
       }
+    } else if (m.operation === "upsert") {
+      query = supabase.from(m.table).upsert(m.data, { onConflict: m.onConflict })
     }
 
     if (query) {

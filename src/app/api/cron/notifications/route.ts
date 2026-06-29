@@ -16,6 +16,15 @@ export async function GET(req: NextRequest) {
 
   const supabase = createAdminClient()
 
+  // Prune dismissed (hidden) tombstones older than 45 days so the table doesn't
+  // grow unbounded from daily-type alerts that get cleared each day. Runs once
+  // per cron tick; no-op (and error-ignored) if the hidden column is absent.
+  await supabase
+    .from("notifications")
+    .delete()
+    .eq("hidden", true)
+    .lt("created_at", new Date(Date.now() - 45 * 86_400_000).toISOString())
+
   const { data: users } = await supabase.from("profiles").select("user_id")
   const uniqueUserIds = [...new Set((users || []).map((u) => u.user_id))]
 

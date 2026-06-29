@@ -203,6 +203,60 @@ export async function insertRow<T extends { id?: string }>(
 }
 
 /**
+ * Upsert a row, resolving collisions on the given conflict columns.
+ * Online: Supabase upsert + IDB cache.
+ * Offline: resolve against the cache (merge into the matching row or insert a
+ * fresh temp row) + enqueue for replay.
+ *
+ * This exists for the "take snapshot" flow: a second snapshot on the same day
+ * must overwrite the first instead of stacking a duplicate, and that decision
+ * must not depend on possibly-stale React-query state. Upserting on
+ * (profile_id, snapshot_date) makes the same-day override atomic and race-free.
+ */
+export async function upsertRow<T>(
+  table: string,
+  data: Record<string, unknown>,
+  conflict: { columns: string[] },
+): Promise<{ data: T | null; error: string | null; offline: boolean }> {
+  const store = TABLE_TO_STORE[table]
+  if (!store) return { data: null, error: reportWriteError(`Unknown table: ${table}`), offline: false }
+
+  const onConflict = conflict.columns.join(",")
+
+  if (isOnline()) {
+    try {
+      const supabase = createClient()
+      const { data: result, error } = await supabase
+        .from(table)
+        .upsert(data, { onConflict })
+        .select()
+        .single()
+      if (error) throw error
+      await put(store, result)
+      return { data: result as T, error: null, offline: false }
+    } catch (err) {
+      if (isOnline() && isPermanentError(err)) {
+        console.error(`[offline] Upsert rejected by server for ${table}:`, err)
+        return { data: null, error: reportWriteError(errorMessage(err, "Save failed")), offline: false }
+      }
+      console.warn(`[offline] Upsert failed for ${table}, queueing:`, err)
+    }
+  }
+
+  // Offline: resolve the conflict against the cache so the local view is correct
+  // immediately, then queue the resolved record (with a stable id) so the server
+  // upsert lands on the same row and a later delta sync doesn't create a
+  // duplicate beside this temp row.
+  const existing = await getAll<Record<string, unknown>>(store)
+  const match = existing.find(r => conflict.columns.every(c => r[c] === data[c]))
+  const tempId = (data.id as string) || crypto.randomUUID()
+  const record = match ? { ...match, ...data, id: match.id } : { ...data, id: tempId }
+  await put(store, record)
+  await enqueue(table, "upsert", record, {}, onConflict)
+  return { data: record as T, error: null, offline: true }
+}
+
+/**
  * Update a row.
  * Online: Supabase + IDB cache.
  * Offline: IDB + enqueue.

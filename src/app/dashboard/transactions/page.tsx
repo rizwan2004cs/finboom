@@ -1,19 +1,20 @@
 "use client"
 
-import { Suspense, useEffect, useState } from "react"
+import { Suspense, useEffect, useMemo, useState } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
 import { useSearchParams } from "next/navigation"
 import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { deleteRow, fetchTable } from "@/lib/offline"
 import { useQueryClient } from "@tanstack/react-query"
-import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Edit2, Receipt } from "lucide-react"
-import type { Transaction } from "@/lib/types"
+import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Edit2, Receipt, User } from "lucide-react"
+import type { Transaction, Party, PartyTransaction } from "@/lib/types"
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/constants"
 import { CategoryIcon } from "@/components/category-icon"
 import { AddTransactionModal } from "@/components/modals/add-transaction-modal"
 import { useAppDialog } from "@/components/app-dialog"
 import { useCurrency } from "@/hooks/use-currency"
+import { formatDueDate } from "@/lib/utils"
 
 export default function TransactionsPageWrapper() {
   return (
@@ -54,6 +55,30 @@ function TransactionsPage() {
       queryKey: [monthFilter],
     }
   )
+
+  // Pull party links so an expense "spent for" a party (or a party entry that
+  // auto-created this transaction) can show the party name + its due date here
+  // — otherwise the due date only lives on the Parties page and the expenditure
+  // looks like it has "no date", which was the source of the confusion.
+  const { data: partyTxs = [] } = useOfflineQuery<PartyTransaction>(
+    "party_transactions", user?.id, { enabled: !!user }
+  )
+  const { data: parties = [] } = useOfflineQuery<Party>(
+    "parties", user?.id, { enabled: !!user }
+  )
+
+  const partyLinkByTxId = useMemo(() => {
+    const partyName = new Map(parties.map(p => [p.id, p.name]))
+    const map = new Map<string, { partyName: string; dueDate?: string }>()
+    for (const pt of partyTxs) {
+      if (!pt.linked_transaction_id) continue
+      map.set(pt.linked_transaction_id, {
+        partyName: partyName.get(pt.party_id) || "Party",
+        dueDate: pt.due_date || undefined,
+      })
+    }
+    return map
+  }, [partyTxs, parties])
 
   useEffect(() => {
     if (searchParams.get("action") === "add") setShowAddModal(true)
@@ -218,6 +243,7 @@ function TransactionsPage() {
                 {txns.map((t) => {
                   const cats = t.type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES
                   const cat = cats.find(c => c.id === t.category)
+                  const link = partyLinkByTxId.get(t.id)
                   return (
                     <div key={t.id} className="liquid-glass rounded-2xl p-4">
                       <div className="flex items-center gap-3">
@@ -229,6 +255,15 @@ function TransactionsPage() {
                             {t.description || cat?.label || t.category}
                           </p>
                           <p className="text-xs text-[#86868b]">{cat?.label}</p>
+                          {link && (
+                            <p className="text-xs text-[#86868b] mt-0.5 flex items-center gap-1 flex-wrap">
+                              <User className="w-3 h-3 flex-shrink-0" />
+                              <span className="truncate">{link.partyName}</span>
+                              {link.dueDate && (
+                                <span className="flex-shrink-0">· Due {formatDueDate(link.dueDate)}</span>
+                              )}
+                            </p>
+                          )}
                         </div>
                         <div className="text-right">
                           <p className={`font-semibold ${t.type === "income" ? "text-[#1d1d1f] dark:text-white" : "text-[#6e6e73] dark:text-[#aeaeb2]"}`}>
