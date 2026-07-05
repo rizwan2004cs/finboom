@@ -62,21 +62,40 @@ const THEME_KEYWORDS: Array<{ match: RegExp; keywords: string }> = [
   { match: /insurance|term|health cover/i, keywords: "insurance,family,protection" },
 ]
 
-function fallbackKeywords(query: string): string {
-  for (const theme of THEME_KEYWORDS) {
-    if (theme.match.test(query)) return theme.keywords
+function querySeed(query: string): string {
+  const cleaned = sanitizeQuery(query) || "finance"
+  let h = 2166136261
+  for (let i = 0; i < cleaned.length; i++) {
+    h ^= cleaned.charCodeAt(i)
+    h = Math.imul(h, 16777619)
   }
-  const tokens = queryTokens(query).slice(0, 3)
+  return Math.abs(h).toString(36)
+}
+
+function pickVariantIndex(length: number, query: string): number {
+  if (length <= 1) return 0
+  return parseInt(querySeed(query), 36) % length
+}
+
+function fallbackKeywords(query: string): string {
+  const tokens = queryTokens(query)
+  for (const theme of THEME_KEYWORDS) {
+    if (theme.match.test(query)) {
+      const specific = tokens.find((t) => !theme.keywords.includes(t))
+      return specific ? `${theme.keywords},${specific}` : `${theme.keywords},${querySeed(query)}`
+    }
+  }
   return tokens.length ? tokens.join(",") : "finance,money,india"
 }
 
 function loremFlickrUrl(query: string): string {
-  return `https://loremflickr.com/1200/675/${encodeURIComponent(fallbackKeywords(query))}`
+  const keywords = fallbackKeywords(query)
+  const lock = querySeed(query)
+  return `https://loremflickr.com/1200/675/${encodeURIComponent(keywords)}?lock=${lock}`
 }
 
 function picsumUrl(query: string): string {
-  const seed = fallbackKeywords(query).split(",")[0] || "finance"
-  return `https://picsum.photos/seed/${encodeURIComponent(seed)}/1200/675`
+  return `https://picsum.photos/seed/${encodeURIComponent(querySeed(query))}/1200/675`
 }
 
 type UnsplashPhoto = {
@@ -110,16 +129,19 @@ async function searchUnsplash(query: string, usedIds: Set<string>): Promise<Reso
     if (results.length === 0) return null
 
     const tokens = queryTokens(query)
-    const best = results
+    const ranked = results
       .map((p) => {
         const tagText = (p.tags ?? []).map((t) => t.title ?? "").join(" ")
         const text = `${p.alt_description ?? ""} ${p.description ?? ""} ${tagText}`
         return { photo: p, score: relevanceScore(tokens, text) }
       })
-      .sort((a, b) => b.score - a.score)[0]
+      .sort((a, b) => b.score - a.score)
 
-    const photo = best.photo
-    if (!photo.urls?.regular) return null
+    // Pick among the top matches (not always #1) so similar queries across
+    // different posts don't all get the same hero image.
+    const top = ranked.slice(0, Math.min(5, ranked.length))
+    const photo = top[pickVariantIndex(top.length, query)]?.photo ?? ranked[0]?.photo
+    if (!photo?.urls?.regular) return null
     usedIds.add(photo.id)
     const alt = (photo.alt_description || photo.description || sanitizeQuery(query)).trim()
     return { url: photo.urls.regular, alt }
@@ -153,12 +175,13 @@ async function searchPexels(query: string, usedIds: Set<string>): Promise<Resolv
     if (photos.length === 0) return null
 
     const tokens = queryTokens(query)
-    const best = photos
+    const ranked = photos
       .map((p) => ({ photo: p, score: relevanceScore(tokens, p.alt ?? "") }))
-      .sort((a, b) => b.score - a.score)[0]
+      .sort((a, b) => b.score - a.score)
 
-    const photo = best.photo
-    const src = photo.src?.large2x || photo.src?.large || photo.src?.landscape
+    const top = ranked.slice(0, Math.min(5, ranked.length))
+    const photo = top[pickVariantIndex(top.length, query)]?.photo ?? ranked[0]?.photo
+    const src = photo?.src?.large2x || photo?.src?.large || photo?.src?.landscape
     if (!src) return null
 
     usedIds.add(`pexels-${photo.id}`)

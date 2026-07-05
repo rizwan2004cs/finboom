@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
-import { fetchTable, upsertRow, insertRow, updateRow } from "@/lib/offline"
+import { fetchTable, insertRow, updateRow } from "@/lib/offline"
 import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { useDeleteMutation } from "@/hooks/use-offline-mutation"
 import { useQueryClient } from "@tanstack/react-query"
@@ -109,19 +109,21 @@ export default function SnapshotsPage() {
       snapshot_date: todayStr,
     }
 
-    const { error } = await upsertRow("snapshots", payload, { columns: ["profile_id", "snapshot_date"] })
+    // Find-then-update/insert — never upsert first. Upsert needs a DB unique
+    // index on (profile_id, snapshot_date); without it Postgres errors and
+    // upsertRow fires a toast even if a fallback would succeed afterward.
+    const remoteToday = await fetchTable<Snapshot>("snapshots", user.id, {
+      filters: [pfFilter, { column: "snapshot_date", op: "eq", value: todayStr }],
+    })
+    const localToday = snapshots.filter(
+      (s) => s.profile_id === activeProfile.id && s.snapshot_date === todayStr,
+    )
+    const todayRow = remoteToday[0] ?? localToday[0]
 
-    // If the unique index hasn't been applied yet, fall back to find-then-update
-    // so same-day snapshots still work instead of erroring.
-    if (error?.includes("no unique or exclusion constraint")) {
-      const existingToday = await fetchTable<Snapshot>("snapshots", user.id, {
-        filters: [pfFilter, { column: "snapshot_date", op: "eq", value: todayStr }],
-      })
-      if (existingToday.length > 0) {
-        await updateRow("snapshots", existingToday[0].id, payload)
-      } else {
-        await insertRow("snapshots", payload)
-      }
+    if (todayRow) {
+      await updateRow("snapshots", todayRow.id, payload)
+    } else {
+      await insertRow("snapshots", payload)
     }
 
     setTaking(false)
