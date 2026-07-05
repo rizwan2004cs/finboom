@@ -1,6 +1,6 @@
-import { insertRow, deleteRow } from "@/lib/offline"
 import type { Sip, SipPayment, Transaction } from "@/lib/types"
 import { todayLocalISO } from "@/lib/utils"
+import { put, remove as idbRemove } from "@/lib/offline/db"
 
 export function sipExpenseDescription(sip: Sip): string {
   const label = sip.fund_name || sip.name
@@ -16,45 +16,69 @@ export function previousMonthKey(monthKey: string): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
 }
 
+function isOnline(): boolean {
+  return typeof navigator !== "undefined" ? navigator.onLine : true
+}
+
+async function cacheMarkResult(transaction: Transaction, payment: SipPayment) {
+  await put("transactions", transaction)
+  await put("sip_payments", payment)
+}
+
+async function cacheUnmarkResult(payment: SipPayment) {
+  if (payment.transaction_id) {
+    await idbRemove("transactions", payment.transaction_id)
+  }
+  await idbRemove("sip_payments", payment.id)
+}
+
 export async function markSipPaid(
-  userId: string,
+  _userId: string,
   sip: Sip,
   monthKey: string,
   paidDate: string = todayLocalISO(),
 ): Promise<{ ok: boolean; error?: string }> {
-  const amount = Number(sip.amount)
-  const { data: tx, error: txError } = await insertRow<Transaction>("transactions", {
-    user_id: userId,
-    profile_id: sip.profile_id,
-    type: "expense",
-    category: "investment",
-    amount,
-    description: sipExpenseDescription(sip),
-    date: paidDate,
-    currency: sip.currency || "INR",
-  })
-  if (txError || !tx) return { ok: false, error: txError ?? "Could not add expense" }
-
-  const { error: payError } = await insertRow("sip_payments", {
-    user_id: userId,
-    sip_id: sip.id,
-    month: monthKey,
-    paid_date: paidDate,
-    amount,
-    transaction_id: tx.id,
-  })
-  if (payError) {
-    await deleteRow("transactions", tx.id)
-    return { ok: false, error: payError }
+  if (!isOnline()) {
+    return { ok: false, error: "Go online to mark SIPs paid" }
   }
-  return { ok: true }
+
+  try {
+    const res = await fetch("/api/sip-payments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sipId: sip.id, monthKey, paidDate }),
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      return { ok: false, error: data.error ?? "Could not mark paid" }
+    }
+    await cacheMarkResult(data.transaction as Transaction, data.payment as SipPayment)
+    return { ok: true }
+  } catch {
+    return { ok: false, error: "Network error — try again" }
+  }
 }
 
-export async function unmarkSipPaid(payment: SipPayment): Promise<void> {
-  if (payment.transaction_id) {
-    await deleteRow("transactions", payment.transaction_id)
+export async function unmarkSipPaid(payment: SipPayment): Promise<{ ok: boolean; error?: string }> {
+  if (!isOnline()) {
+    return { ok: false, error: "Go online to undo" }
   }
-  await deleteRow("sip_payments", payment.id)
+
+  try {
+    const res = await fetch("/api/sip-payments", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paymentId: payment.id }),
+    })
+    const data = await res.json()
+    if (!res.ok) {
+      return { ok: false, error: data.error ?? "Could not undo" }
+    }
+    await cacheUnmarkResult(payment)
+    return { ok: true }
+  } catch {
+    return { ok: false, error: "Network error — try again" }
+  }
 }
 
 export async function markAllSipsPaid(
@@ -90,6 +114,7 @@ export async function ensureMonthCarryForward(
   )
   if (already) return false
 
+  const { insertRow } = await import("@/lib/offline")
   const firstDay = `${monthKey}-01`
 
   const { error } = await insertRow("transactions", {

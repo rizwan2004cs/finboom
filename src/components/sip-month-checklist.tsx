@@ -72,9 +72,21 @@ export function SipMonthChecklist({ sips, profileId, monthKey: monthKeyProp }: P
     try {
       if (isPaid) {
         const row = paymentBySipId.get(sip.id)
-        if (row) await unmarkSipPaid(row)
+        if (row) {
+          const result = await unmarkSipPaid(row)
+          if (!result.ok) {
+            window.dispatchEvent(
+              new CustomEvent("finboom:write-error", { detail: result.error ?? "Could not undo" }),
+            )
+          }
+        }
       } else {
-        await markSipPaid(user.id, sip, monthKey)
+        const result = await markSipPaid(user.id, sip, monthKey)
+        if (!result.ok) {
+          window.dispatchEvent(
+            new CustomEvent("finboom:write-error", { detail: result.error ?? "Could not mark paid" }),
+          )
+        }
       }
       invalidate()
     } finally {
@@ -86,7 +98,14 @@ export function SipMonthChecklist({ sips, profileId, monthKey: monthKeyProp }: P
     if (!user || busy || unpaid.length === 0) return
     setBusy(true)
     try {
-      await markAllSipsPaid(user.id, unpaid, monthKey)
+      const { marked, failed } = await markAllSipsPaid(user.id, unpaid, monthKey)
+      if (failed > 0) {
+        window.dispatchEvent(
+          new CustomEvent("finboom:write-error", {
+            detail: `Marked ${marked}, failed ${failed} — try again`,
+          }),
+        )
+      }
       invalidate()
     } finally {
       setBusy(false)
