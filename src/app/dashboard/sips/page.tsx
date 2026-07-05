@@ -11,6 +11,7 @@ import type { Sip } from "@/lib/types"
 import { useAppDialog } from "@/components/app-dialog"
 import { useCurrency } from "@/hooks/use-currency"
 import { AddSipModal } from "@/components/modals/add-sip-modal"
+import { SipMonthChecklist } from "@/components/sip-month-checklist"
 
 function ordinal(n: number): string {
   const v = n % 100
@@ -90,6 +91,8 @@ export default function SipsPage() {
           <span className="hidden sm:inline">Add SIP</span>
         </button>
       </div>
+
+      <SipMonthChecklist sips={sips} profileId={activeProfile?.id} />
 
       {/* SIP List */}
       {sips.length === 0 ? (

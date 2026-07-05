@@ -6,6 +6,7 @@ import {
   sumLiquidAssets,
   buildSnapshotBreakdown,
   isSnapshotMetaKey,
+  sipStatusForMonth,
 } from "./monthly-cashflow"
 import type { Asset, Sip, Transaction } from "@/lib/types"
 
@@ -75,5 +76,21 @@ describe("isSnapshotMetaKey", () => {
   it("flags underscore-prefixed keys", () => {
     expect(isSnapshotMetaKey("_monthly_income")).toBe(true)
     expect(isSnapshotMetaKey("mutual_funds")).toBe(false)
+  })
+})
+
+describe("sipStatusForMonth", () => {
+  it("splits paid and unpaid active SIPs for the month", () => {
+    const sips = [
+      { id: "a", active: true, amount: 1000 } as Sip,
+      { id: "b", active: true, amount: 2000 } as Sip,
+      { id: "c", active: false, amount: 500 } as Sip,
+    ]
+    const payments = [{ sip_id: "a", month: "2026-07" } as import("@/lib/types").SipPayment]
+    const status = sipStatusForMonth(sips, payments, "2026-07")
+    expect(status.unpaid).toHaveLength(1)
+    expect(status.unpaid[0].id).toBe("b")
+    expect(status.unpaidAmount).toBe(2000)
+    expect(status.paidAmount).toBe(1000)
   })
 })

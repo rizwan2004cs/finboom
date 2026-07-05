@@ -19,6 +19,7 @@ const OWNER_TABLES = [
   "party_transactions",
   "parties",
   "budgets",
+  "sip_payments",
   "sips",
   "health_checks",
   "notifications",

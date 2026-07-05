@@ -8,18 +8,19 @@ import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { useDeleteMutation } from "@/hooks/use-offline-mutation"
 import { useQueryClient } from "@tanstack/react-query"
 import { Camera, TrendingUp, TrendingDown, Trash2, Wallet, ArrowDownLeft, ArrowUpRight, Repeat } from "lucide-react"
-import type { Snapshot, Asset, Liability, Transaction, Sip } from "@/lib/types"
+import type { Snapshot, Asset, Liability, Transaction, Sip, SipPayment } from "@/lib/types"
 import { ASSET_CLASSES } from "@/lib/constants"
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
 import { useAppDialog } from "@/components/app-dialog"
 import { useCurrency } from "@/hooks/use-currency"
 import { subMonths, subYears, todayLocalISO } from "@/lib/utils"
+import { SipMonthChecklist } from "@/components/sip-month-checklist"
 import {
   buildSnapshotBreakdown,
   isSnapshotMetaKey,
   monthKeyFromDate,
   readSnapshotMeta,
-  sipsDueRestOfMonth,
+  sipStatusForMonth,
   sumCashflow,
   sumLiquidAssets,
   transactionsInMonth,
@@ -64,6 +65,9 @@ export default function SnapshotsPage() {
   const { data: sips = [] } = useOfflineQuery<Sip>(
     "sips", user?.id, { filters: pf, enabled: !!activeProfile }
   )
+  const { data: sipPayments = [] } = useOfflineQuery<SipPayment>(
+    "sip_payments", user?.id, { enabled: !!user }
+  )
   const deleteMut = useDeleteMutation("snapshots")
   const [timeRange, setTimeRange] = useState<TimeRange>("All")
 
@@ -73,10 +77,13 @@ export default function SnapshotsPage() {
     [transactions, monthKey],
   )
   const cashflow = useMemo(() => sumCashflow(monthTx), [monthTx])
-  const sipsDue = useMemo(() => sipsDueRestOfMonth(sips), [sips])
+  const sipMonth = useMemo(
+    () => sipStatusForMonth(sips, sipPayments, monthKey),
+    [sips, sipPayments, monthKey],
+  )
   const liquidAssets = useMemo(() => sumLiquidAssets(assets), [assets])
-  const liquidAfterSips = Math.max(0, liquidAssets - sipsDue.amount)
-  const availableThisMonth = cashflow.surplus - sipsDue.amount
+  const liquidAfterSips = Math.max(0, liquidAssets - sipMonth.unpaidAmount)
+  const availableThisMonth = cashflow.surplus - sipMonth.unpaidAmount
 
   async function takeSnapshot() {
     if (!user || !activeProfile) return
@@ -84,11 +91,12 @@ export default function SnapshotsPage() {
 
     const pfFilter = { column: "profile_id", op: "eq" as const, value: activeProfile.id }
     // Fetch current assets and liabilities
-    const [assetRows, liabilities, txRows, sipRows] = await Promise.all([
+    const [assetRows, liabilities, txRows, sipRows, paymentRows] = await Promise.all([
       fetchTable<Asset>("assets", user.id, { filters: [pfFilter] }),
       fetchTable<Liability>("liabilities", user.id, { filters: [pfFilter] }),
       fetchTable<Transaction>("transactions", user.id, { filters: [pfFilter] }),
       fetchTable<Sip>("sips", user.id, { filters: [pfFilter] }),
+      fetchTable<SipPayment>("sip_payments", user.id),
     ])
 
     const totalAssets = assetRows.reduce((sum, a) => sum + Number(a.current_value), 0)
@@ -96,7 +104,7 @@ export default function SnapshotsPage() {
     const netWorth = totalAssets - totalLiabilities
 
     const todayStr = todayLocalISO()
-    const breakdown = buildSnapshotBreakdown(assetRows, txRows, sipRows)
+    const breakdown = buildSnapshotBreakdown(assetRows, txRows, sipRows, new Date(), paymentRows)
 
     const payload = {
       user_id: user.id,
@@ -251,7 +259,7 @@ export default function SnapshotsPage() {
             <p className="text-[10px] text-[#86868b] mt-0.5">after SIPs due</p>
           </div>
         </div>
-        {(liquidAssets > 0 || sipsDue.amount > 0) && (
+        {(liquidAssets > 0 || sipMonth.unpaidAmount > 0) && (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1 border-t border-black/[0.04]">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-xl bg-white/60 flex items-center justify-center">
@@ -262,22 +270,26 @@ export default function SnapshotsPage() {
                 <p className="text-sm font-semibold text-[#1d1d1f]">{formatCurrency(liquidAssets)}</p>
               </div>
             </div>
-            {sipsDue.amount > 0 && (
+            {sipMonth.unpaid.length > 0 && (
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center">
                   <Repeat className="w-4 h-4 text-indigo-600" />
                 </div>
                 <div>
                   <p className="text-[11px] text-[#86868b]">
-                    SIPs remaining ({sipsDue.count}) · liquid after SIPs
+                    SIPs not marked paid ({sipMonth.unpaid.length}) · liquid after SIPs
                   </p>
                   <p className="text-sm font-semibold text-[#1d1d1f]">
-                    {formatCurrency(sipsDue.amount)} due · {formatCurrency(liquidAfterSips)} left
+                    {formatCurrency(sipMonth.unpaidAmount)} due · {formatCurrency(liquidAfterSips)} left
                   </p>
                 </div>
               </div>
             )}
           </div>
+        )}
+
+        {sips.some((s) => s.active) && activeProfile && (
+          <SipMonthChecklist sips={sips} profileId={activeProfile.id} compact />
         )}
       </div>
 

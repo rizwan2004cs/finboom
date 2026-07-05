@@ -1,4 +1,4 @@
-import type { Asset, Sip, Transaction } from "@/lib/types"
+import type { Asset, Sip, SipPayment, Transaction } from "@/lib/types"
 
 /** YYYY-MM for a calendar month. */
 export function monthKeyFromDate(date: Date = new Date()): string {
@@ -24,7 +24,11 @@ export function sumCashflow(transactions: Transaction[]): {
 }
 
 /** Active SIPs whose debit day is still ahead (or today) in the current month. */
-export function sipsDueRestOfMonth(sips: Sip[], now: Date = new Date()): {
+export function sipsDueRestOfMonth(
+  sips: Sip[],
+  now: Date = new Date(),
+  paidSipIds: Set<string> = new Set(),
+): {
   amount: number
   count: number
   nextDay: number
@@ -32,11 +36,40 @@ export function sipsDueRestOfMonth(sips: Sip[], now: Date = new Date()): {
   const todayDay = now.getDate()
   const lastDayThisMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
   const effectiveSipDay = (day: number) => Math.min(day, lastDayThisMonth)
-  const remaining = sips.filter((s) => s.active && effectiveSipDay(s.sip_day) >= todayDay)
+  const remaining = sips.filter(
+    (s) => s.active && !paidSipIds.has(s.id) && effectiveSipDay(s.sip_day) >= todayDay,
+  )
   return {
     amount: remaining.reduce((sum, s) => sum + Number(s.amount), 0),
     count: remaining.length,
     nextDay: remaining.length > 0 ? Math.min(...remaining.map((s) => effectiveSipDay(s.sip_day))) : 0,
+  }
+}
+
+/** Per-SIP paid / unpaid status for a calendar month. */
+export function sipStatusForMonth(
+  sips: Sip[],
+  payments: SipPayment[],
+  monthKey: string,
+): {
+  paidIds: Set<string>
+  unpaid: Sip[]
+  paid: Sip[]
+  unpaidAmount: number
+  paidAmount: number
+} {
+  const paidIds = new Set(
+    payments.filter((p) => p.month === monthKey).map((p) => p.sip_id),
+  )
+  const active = sips.filter((s) => s.active)
+  const unpaid = active.filter((s) => !paidIds.has(s.id))
+  const paid = active.filter((s) => paidIds.has(s.id))
+  return {
+    paidIds,
+    unpaid,
+    paid,
+    unpaidAmount: unpaid.reduce((sum, s) => sum + Number(s.amount), 0),
+    paidAmount: paid.reduce((sum, s) => sum + Number(s.amount), 0),
   }
 }
 
@@ -77,20 +110,21 @@ export function buildSnapshotBreakdown(
   transactions: Transaction[],
   sips: Sip[],
   now: Date = new Date(),
+  sipPayments: SipPayment[] = [],
 ): Record<string, number> {
   const monthKey = monthKeyFromDate(now)
   const { income, expense, surplus } = sumCashflow(transactionsInMonth(transactions, monthKey))
-  const sipsDue = sipsDueRestOfMonth(sips, now)
+  const { unpaidAmount, paidIds } = sipStatusForMonth(sips, sipPayments, monthKey)
   const liquid = sumLiquidAssets(assets)
-  const liquidAfterSips = Math.max(0, liquid - sipsDue.amount)
-  const availableThisMonth = surplus - sipsDue.amount
+  const liquidAfterSips = Math.max(0, liquid - unpaidAmount)
+  const availableThisMonth = surplus - unpaidAmount
 
   return {
     ...assetClassBreakdown(assets),
     [SNAPSHOT_META.monthlyIncome]: income,
     [SNAPSHOT_META.monthlyExpense]: expense,
     [SNAPSHOT_META.monthlySurplus]: surplus,
-    [SNAPSHOT_META.sipsRemainder]: sipsDue.amount,
+    [SNAPSHOT_META.sipsRemainder]: unpaidAmount,
     [SNAPSHOT_META.liquidAssets]: liquid,
     [SNAPSHOT_META.liquidAfterSips]: liquidAfterSips,
     [SNAPSHOT_META.availableThisMonth]: availableThisMonth,

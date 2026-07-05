@@ -87,6 +87,18 @@ export interface Sip {
   updated_at: string
 }
 
+/** Marks a single SIP as paid/fulfilled for a calendar month (YYYY-MM). */
+export interface SipPayment {
+  id: string
+  user_id: string
+  sip_id: string
+  month: string
+  paid_date: string
+  amount?: number | null
+  created_at: string
+  updated_at: string
+}
+
 export interface Snapshot {
   id: string
   user_id: string
