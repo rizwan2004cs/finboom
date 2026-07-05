@@ -94,6 +94,22 @@ describe("sipStatusForMonth", () => {
     expect(status.unpaidAmount).toBe(2000)
     expect(status.paidAmount).toBe(1000)
   })
+
+  it("treats matching investment expenses as paid when no sip_payment row", () => {
+    const sips = [{ id: "a", active: true, amount: 1000, fund_name: "ABC Fund" } as Sip]
+    const txs = [
+      {
+        type: "expense",
+        category: "investment",
+        amount: 1000,
+        date: "2026-07-05",
+        description: "SIP: ABC Fund",
+      } as Transaction,
+    ]
+    const status = sipStatusForMonth(sips, [], "2026-07", txs)
+    expect(status.unpaid).toHaveLength(0)
+    expect(status.paid).toHaveLength(1)
+  })
 })
 
 describe("availableAfterUnpaidSips", () => {

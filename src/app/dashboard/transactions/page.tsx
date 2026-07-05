@@ -330,6 +330,7 @@ function TransactionsPage() {
           sips={sips}
           profileId={activeProfile.id}
           monthKey={monthFilter}
+          transactions={transactions}
         />
       )}
 

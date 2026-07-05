@@ -37,13 +37,55 @@ export async function POST(request: Request) {
 
   const { data: existing } = await supabase
     .from("sip_payments")
-    .select("id")
+    .select("*")
     .eq("sip_id", sipId)
     .eq("month", monthKey)
     .maybeSingle()
 
   if (existing) {
-    return NextResponse.json({ error: "Already marked paid for this month" }, { status: 409 })
+    return NextResponse.json(
+      { error: "Already marked paid for this month", payment: existing },
+      { status: 409 },
+    )
+  }
+
+  const description = sipExpenseDescription(sip)
+  const monthStart = `${monthKey}-01`
+  const [y, m] = monthKey.split("-").map(Number)
+  const monthEnd = new Date(y, m, 0).toISOString().slice(0, 10)
+
+  const { data: existingTx } = await supabase
+    .from("transactions")
+    .select("*")
+    .eq("user_id", userId)
+    .eq("profile_id", sip.profile_id)
+    .eq("type", "expense")
+    .eq("category", "investment")
+    .eq("description", description)
+    .gte("date", monthStart)
+    .lte("date", monthEnd)
+    .order("date", { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (existingTx) {
+    const { data: payment, error: linkError } = await supabase
+      .from("sip_payments")
+      .insert({
+        user_id: userId,
+        sip_id: sipId,
+        month: monthKey,
+        paid_date: existingTx.date,
+        amount: Number(existingTx.amount),
+        transaction_id: existingTx.id,
+      })
+      .select()
+      .single()
+
+    if (linkError || !payment) {
+      return NextResponse.json({ error: linkError?.message ?? "Could not link existing expense" }, { status: 500 })
+    }
+    return NextResponse.json({ transaction: existingTx, payment, reconciled: true })
   }
 
   const amount = Number(sip.amount)

@@ -51,7 +51,7 @@ export async function markSipPaid(
   sip: Sip,
   monthKey: string,
   paidDate: string = todayLocalISO(),
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<{ ok: boolean; error?: string; payment?: SipPayment }> {
   if (!isOnline()) {
     return { ok: false, error: "Go online to mark SIPs paid" }
   }
@@ -64,18 +64,24 @@ export async function markSipPaid(
     })
     const data = await res.json()
 
-    // Already paid on server — sync local state instead of showing an error.
+    // Already paid on server — sync local + query cache instead of showing an error.
     if (res.status === 409) {
+      const payment = data.payment as SipPayment | undefined
+      if (payment) {
+        await put("sip_payments", payment)
+        return { ok: true, payment }
+      }
       const existing = await fetchSipPaymentFromApi(sip.id, monthKey)
-      if (existing) return { ok: true }
+      if (existing) return { ok: true, payment: existing }
       return { ok: false, error: data.error ?? "Already marked paid" }
     }
 
     if (!res.ok) {
       return { ok: false, error: data.error ?? "Could not mark paid" }
     }
-    await cacheMarkResult(data.transaction as Transaction, data.payment as SipPayment)
-    return { ok: true }
+    const payment = data.payment as SipPayment
+    await cacheMarkResult(data.transaction as Transaction, payment)
+    return { ok: true, payment }
   } catch {
     return { ok: false, error: "Network error — try again" }
   }
@@ -107,16 +113,19 @@ export async function markAllSipsPaid(
   userId: string,
   sips: Sip[],
   monthKey: string,
-): Promise<{ marked: number; failed: number }> {
+): Promise<{ marked: number; failed: number; payments: SipPayment[] }> {
   let marked = 0
   let failed = 0
+  const payments: SipPayment[] = []
   const paidDate = todayLocalISO()
   for (const sip of sips) {
     const result = await markSipPaid(userId, sip, monthKey, paidDate)
-    if (result.ok) marked++
-    else failed++
+    if (result.ok) {
+      marked++
+      if (result.payment) payments.push(result.payment)
+    } else failed++
   }
-  return { marked, failed }
+  return { marked, failed, payments }
 }
 
 /** Carry surplus left from the previous month into this month as income. */

@@ -1,4 +1,5 @@
 import type { Asset, Sip, SipPayment, Transaction } from "@/lib/types"
+import { sipExpenseDescription } from "@/lib/finance/sip-payments"
 
 /** YYYY-MM for a calendar month. */
 export function monthKeyFromDate(date: Date = new Date()): string {
@@ -51,6 +52,7 @@ export function sipStatusForMonth(
   sips: Sip[],
   payments: SipPayment[],
   monthKey: string,
+  transactions: Transaction[] = [],
 ): {
   paidIds: Set<string>
   unpaid: Sip[]
@@ -62,6 +64,18 @@ export function sipStatusForMonth(
     payments.filter((p) => p.month === monthKey).map((p) => p.sip_id),
   )
   const active = sips.filter((s) => s.active)
+  const monthTx = transactionsInMonth(transactions, monthKey)
+  for (const sip of active) {
+    if (paidIds.has(sip.id)) continue
+    const desc = sipExpenseDescription(sip)
+    const hasExpense = monthTx.some(
+      (t) =>
+        t.type === "expense" &&
+        t.category === "investment" &&
+        t.description === desc,
+    )
+    if (hasExpense) paidIds.add(sip.id)
+  }
   const unpaid = active.filter((s) => !paidIds.has(s.id))
   const paid = active.filter((s) => paidIds.has(s.id))
   return {

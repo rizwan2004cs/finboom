@@ -1,11 +1,11 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Check, Repeat } from "lucide-react"
+import { Repeat } from "lucide-react"
 import { useUser } from "@/hooks/use-auth"
-import { useSipPayments } from "@/hooks/use-sip-payments"
+import { useSipPayments, mergeSipPaymentInCache } from "@/hooks/use-sip-payments"
 import { useQueryClient } from "@tanstack/react-query"
-import type { Sip, SipPayment } from "@/lib/types"
+import type { Sip, SipPayment, Transaction } from "@/lib/types"
 import { monthKeyFromDate, sipStatusForMonth } from "@/lib/finance/monthly-cashflow"
 import { markSipPaid, unmarkSipPaid, markAllSipsPaid } from "@/lib/finance/sip-payments"
 import { useCurrency } from "@/hooks/use-currency"
@@ -26,9 +26,11 @@ interface Props {
   profileId?: string
   /** Defaults to current calendar month (YYYY-MM). */
   monthKey?: string
+  /** Used to detect SIP expenses already logged without a sip_payment row. */
+  transactions?: Transaction[]
 }
 
-export function SipMonthChecklist({ sips, profileId, monthKey: monthKeyProp }: Props) {
+export function SipMonthChecklist({ sips, profileId, monthKey: monthKeyProp, transactions = [] }: Props) {
   const { user } = useUser()
   const { formatCompact: formatCurrency } = useCurrency()
   const queryClient = useQueryClient()
@@ -43,9 +45,14 @@ export function SipMonthChecklist({ sips, profileId, monthKey: monthKeyProp }: P
   )
   const activeSips = scopedSips.filter((s) => s.active)
 
-  const { unpaid, paid, unpaidAmount, paidAmount } = useMemo(
-    () => sipStatusForMonth(activeSips, payments, monthKey),
-    [activeSips, payments, monthKey],
+  const scopedTx = useMemo(
+    () => (profileId ? transactions.filter((t) => t.profile_id === profileId) : transactions),
+    [transactions, profileId],
+  )
+
+  const { unpaid, paid } = useMemo(
+    () => sipStatusForMonth(activeSips, payments, monthKey, scopedTx),
+    [activeSips, payments, monthKey, scopedTx],
   )
 
   const paymentBySipId = useMemo(
@@ -55,12 +62,16 @@ export function SipMonthChecklist({ sips, profileId, monthKey: monthKeyProp }: P
     [payments, monthKey],
   )
 
-  if (activeSips.length === 0) return null
+  if (activeSips.length === 0 || unpaid.length === 0) return null
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ["sip_payments"] })
     queryClient.invalidateQueries({ queryKey: ["transactions"] })
     refetch()
+  }
+
+  function syncPayment(payment: SipPayment | undefined) {
+    if (payment) mergeSipPaymentInCache(queryClient, user?.id, payment)
   }
 
   async function togglePaid(sip: Sip, isPaid: boolean) {
@@ -79,6 +90,7 @@ export function SipMonthChecklist({ sips, profileId, monthKey: monthKeyProp }: P
         }
       } else {
         const result = await markSipPaid(user.id, sip, monthKey)
+        syncPayment(result.payment)
         if (!result.ok) {
           window.dispatchEvent(
             new CustomEvent("finboom:write-error", { detail: result.error ?? "Could not mark paid" }),
@@ -95,7 +107,8 @@ export function SipMonthChecklist({ sips, profileId, monthKey: monthKeyProp }: P
     if (!user || busy || unpaid.length === 0) return
     setBusy(true)
     try {
-      const { marked, failed } = await markAllSipsPaid(user.id, unpaid, monthKey)
+      const { marked, failed, payments: newPayments } = await markAllSipsPaid(user.id, unpaid, monthKey)
+      for (const p of newPayments) syncPayment(p)
       if (failed > 0) {
         window.dispatchEvent(
           new CustomEvent("finboom:write-error", {
@@ -139,50 +152,34 @@ export function SipMonthChecklist({ sips, profileId, monthKey: monthKeyProp }: P
       </div>
 
       <div className="space-y-2">
-        {activeSips.map((sip) => {
-          const isPaid = paid.some((p) => p.id === sip.id)
+        {unpaid.map((sip) => {
           const label = sip.fund_name || sip.name
           return (
             <button
               key={sip.id}
               type="button"
               disabled={busy}
-              onClick={() => togglePaid(sip, isPaid)}
-              className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all ${
-                isPaid
-                  ? "bg-green-50/80 dark:bg-green-500/10 border border-green-200/60 dark:border-green-500/20"
-                  : "bg-[#f5f5f7]/80 dark:bg-white/[0.04] border border-transparent hover:bg-[#ebebed] dark:hover:bg-white/[0.06]"
-              }`}
+              onClick={() => togglePaid(sip, false)}
+              className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all bg-[#f5f5f7]/80 dark:bg-white/[0.04] border border-transparent hover:bg-[#ebebed] dark:hover:bg-white/[0.06]"
             >
-              <span
-                className={`flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center ${
-                  isPaid ? "bg-green-600 text-white" : "bg-white dark:bg-white/10 text-[#86868b]"
-                }`}
-              >
-                {isPaid ? <Check className="w-4 h-4" /> : <Repeat className="w-4 h-4" />}
+              <span className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center bg-white dark:bg-white/10 text-[#86868b]">
+                <Repeat className="w-4 h-4" />
               </span>
               <span className="flex-1 min-w-0">
-                <span className={`block text-sm font-medium truncate ${isPaid ? "text-green-800 dark:text-green-300 line-through" : "text-[#1d1d1f] dark:text-white"}`}>
+                <span className="block text-sm font-medium truncate text-[#1d1d1f] dark:text-white">
                   {label}
                 </span>
                 <span className="text-[11px] text-[#86868b]">
                   {formatCurrency(Number(sip.amount))} · {ordinal(sip.sip_day)} of month
                 </span>
               </span>
-              <span className={`text-[11px] font-medium flex-shrink-0 ${isPaid ? "text-green-700" : "text-[#86868b]"}`}>
-                {isPaid ? "Paid" : "Mark paid"}
+              <span className="text-[11px] font-medium flex-shrink-0 text-[#86868b]">
+                Mark paid
               </span>
             </button>
           )
         })}
       </div>
-
-      {paidAmount > 0 && unpaidAmount === 0 && (
-        <p className="text-[11px] text-green-700 dark:text-green-400 flex items-center gap-1">
-          <Check className="w-3.5 h-3.5" />
-          All SIPs marked for {monthLabel}
-        </p>
-      )}
     </div>
   )
 }
