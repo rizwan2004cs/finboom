@@ -270,14 +270,11 @@ export function TransactionCategoryBreakdown({ transactions, periodLabel }: Prop
                   <tr className="text-[10px] uppercase tracking-wide text-[#86868b] border-b border-black/[0.06] dark:border-white/[0.08]">
                     <th className="text-left font-medium py-2 pr-2">Category</th>
                     <th className="text-right font-medium py-2 px-2 w-24">Income</th>
-                    <th className="text-right font-medium py-2 px-2 w-24">Expense</th>
-                    <th className="text-right font-medium py-2 pl-2 w-24">Balance</th>
+                    <th className="text-right font-medium py-2 pl-2 w-24">Expense</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {categorySummary.map((row, i) => {
-                    const balance = row.income - row.expense
-                    return (
+                  {categorySummary.map((row, i) => (
                       <tr
                         key={row.id}
                         className="border-b border-black/[0.03] dark:border-white/[0.04] last:border-0"
@@ -295,15 +292,11 @@ export function TransactionCategoryBreakdown({ transactions, periodLabel }: Prop
                         <td className="py-2.5 px-2 text-right tabular-nums text-green-700 dark:text-green-400">
                           {row.income > 0 ? formatCurrency(row.income) : "—"}
                         </td>
-                        <td className="py-2.5 px-2 text-right tabular-nums text-red-700 dark:text-red-400">
+                        <td className="py-2.5 pl-2 text-right tabular-nums text-red-700 dark:text-red-400">
                           {row.expense > 0 ? formatCurrency(row.expense) : "—"}
                         </td>
-                        <td className={`py-2.5 pl-2 text-right tabular-nums font-medium ${balanceClass(balance)}`}>
-                          {formatBalance(balance)}
-                        </td>
                       </tr>
-                    )
-                  })}
+                    ))}
                 </tbody>
                 <tfoot>
                   <tr className="border-t border-black/[0.08] dark:border-white/[0.1] font-semibold">
@@ -311,15 +304,18 @@ export function TransactionCategoryBreakdown({ transactions, periodLabel }: Prop
                     <td className="py-2.5 px-2 text-right tabular-nums text-green-700 dark:text-green-400">
                       {formatCurrency(incomeTotal)}
                     </td>
-                    <td className="py-2.5 px-2 text-right tabular-nums text-red-700 dark:text-red-400">
+                    <td className="py-2.5 pl-2 text-right tabular-nums text-red-700 dark:text-red-400">
                       {formatCurrency(expenseTotal)}
-                    </td>
-                    <td className={`py-2.5 pl-2 text-right tabular-nums ${balanceClass(netBalance)}`}>
-                      {formatBalance(netBalance)}
                     </td>
                   </tr>
                 </tfoot>
               </table>
+              <div className="flex items-center justify-between mt-3 pt-3 border-t border-black/[0.04] dark:border-white/[0.06]">
+                <span className="text-xs font-medium text-[#86868b]">Net balance</span>
+                <span className={`text-sm font-semibold tabular-nums ${balanceClass(netBalance)}`}>
+                  {formatBalance(netBalance)}
+                </span>
+              </div>
             </div>
           )}
         </div>
