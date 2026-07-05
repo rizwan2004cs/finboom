@@ -146,3 +146,15 @@ export function readSnapshotMeta(breakdown: Record<string, number>) {
     availableThisMonth: num(SNAPSHOT_META.availableThisMonth),
   }
 }
+
+/** Income − expenses − unpaid SIP amount for a month. */
+export function availableAfterUnpaidSips(
+  transactions: Transaction[],
+  sips: Sip[],
+  payments: SipPayment[],
+  monthKey: string,
+): number {
+  const { surplus } = sumCashflow(transactionsInMonth(transactions, monthKey))
+  const { unpaidAmount } = sipStatusForMonth(sips, payments, monthKey)
+  return surplus - unpaidAmount
+}

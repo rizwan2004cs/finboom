@@ -7,6 +7,7 @@ import {
   buildSnapshotBreakdown,
   isSnapshotMetaKey,
   sipStatusForMonth,
+  availableAfterUnpaidSips,
 } from "./monthly-cashflow"
 import type { Asset, Sip, Transaction } from "@/lib/types"
 
@@ -92,5 +93,17 @@ describe("sipStatusForMonth", () => {
     expect(status.unpaid[0].id).toBe("b")
     expect(status.unpaidAmount).toBe(2000)
     expect(status.paidAmount).toBe(1000)
+  })
+})
+
+describe("availableAfterUnpaidSips", () => {
+  it("subtracts unpaid SIP total from surplus", () => {
+    const txs = [
+      { type: "income", amount: 50000, date: "2026-07-01" } as Transaction,
+      { type: "expense", amount: 10000, date: "2026-07-05" } as Transaction,
+    ]
+    const sips = [{ id: "a", active: true, amount: 6000 } as Sip]
+    const left = availableAfterUnpaidSips(txs, sips, [], "2026-07")
+    expect(left).toBe(34000)
   })
 })

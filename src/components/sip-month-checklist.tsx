@@ -1,15 +1,14 @@
 "use client"
 
-import { useMemo } from "react"
+import { useMemo, useState } from "react"
 import { Check, Repeat } from "lucide-react"
 import { useUser } from "@/hooks/use-auth"
 import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { useQueryClient } from "@tanstack/react-query"
-import { insertRow, deleteRow } from "@/lib/offline"
 import type { Sip, SipPayment } from "@/lib/types"
 import { monthKeyFromDate, sipStatusForMonth } from "@/lib/finance/monthly-cashflow"
+import { markSipPaid, unmarkSipPaid, markAllSipsPaid } from "@/lib/finance/sip-payments"
 import { useCurrency } from "@/hooks/use-currency"
-import { todayLocalISO } from "@/lib/utils"
 
 function ordinal(n: number): string {
   const v = n % 100
@@ -24,22 +23,23 @@ function ordinal(n: number): string {
 
 interface Props {
   sips: Sip[]
-  /** When set, only SIPs for this profile are shown. */
   profileId?: string
-  compact?: boolean
+  /** Defaults to current calendar month (YYYY-MM). */
+  monthKey?: string
 }
 
-export function SipMonthChecklist({ sips, profileId, compact = false }: Props) {
+export function SipMonthChecklist({ sips, profileId, monthKey: monthKeyProp }: Props) {
   const { user } = useUser()
   const { formatCompact: formatCurrency } = useCurrency()
   const queryClient = useQueryClient()
-  const monthKey = monthKeyFromDate()
+  const monthKey = monthKeyProp ?? monthKeyFromDate()
 
   const { data: payments = [] } = useOfflineQuery<SipPayment>(
     "sip_payments",
     user?.id,
     { enabled: !!user },
   )
+  const [busy, setBusy] = useState(false)
 
   const scopedSips = useMemo(
     () => (profileId ? sips.filter((s) => s.profile_id === profileId) : sips),
@@ -52,47 +52,75 @@ export function SipMonthChecklist({ sips, profileId, compact = false }: Props) {
     [activeSips, payments, monthKey],
   )
 
-  if (activeSips.length === 0) return null
-
-  const paymentBySipId = new Map(
-    payments.filter((p) => p.month === monthKey).map((p) => [p.sip_id, p]),
+  const paymentBySipId = useMemo(
+    () => new Map(
+      payments.filter((p) => p.month === monthKey).map((p) => [p.sip_id, p]),
+    ),
+    [payments, monthKey],
   )
 
-  async function togglePaid(sip: Sip, isPaid: boolean) {
-    if (!user) return
-    if (isPaid) {
-      const row = paymentBySipId.get(sip.id)
-      if (row) await deleteRow("sip_payments", row.id)
-    } else {
-      await insertRow("sip_payments", {
-        user_id: user.id,
-        sip_id: sip.id,
-        month: monthKey,
-        paid_date: todayLocalISO(),
-        amount: Number(sip.amount),
-      })
-    }
+  if (activeSips.length === 0) return null
+
+  function invalidate() {
     queryClient.invalidateQueries({ queryKey: ["sip_payments"] })
+    queryClient.invalidateQueries({ queryKey: ["transactions"] })
   }
 
-  const monthLabel = new Date().toLocaleDateString("en-IN", { month: "long", year: "numeric" })
+  async function togglePaid(sip: Sip, isPaid: boolean) {
+    if (!user || busy) return
+    setBusy(true)
+    try {
+      if (isPaid) {
+        const row = paymentBySipId.get(sip.id)
+        if (row) await unmarkSipPaid(row)
+      } else {
+        await markSipPaid(user.id, sip, monthKey)
+      }
+      invalidate()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function markAllPaid() {
+    if (!user || busy || unpaid.length === 0) return
+    setBusy(true)
+    try {
+      await markAllSipsPaid(user.id, unpaid, monthKey)
+      invalidate()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const monthLabel = new Date(`${monthKey}-01`).toLocaleDateString("en-IN", {
+    month: "long",
+    year: "numeric",
+  })
 
   return (
-    <div className={compact ? "space-y-2" : "liquid-glass rounded-2xl p-4 space-y-3"}>
-      {!compact && (
-        <div className="flex items-center justify-between gap-2">
-          <div>
-            <h3 className="text-sm font-semibold text-[#1d1d1f]">SIPs this month</h3>
-            <p className="text-[11px] text-[#86868b]">{monthLabel} · tap to mark paid</p>
-          </div>
-          <p className="text-[11px] text-[#86868b] text-right">
-            {paid.length}/{activeSips.length} done
-            {unpaidAmount > 0 && (
-              <span className="block text-[#1d1d1f] font-medium">{formatCurrency(unpaidAmount)} left</span>
-            )}
-          </p>
+    <div className="liquid-glass rounded-2xl p-4 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-white">SIPs · {monthLabel}</h3>
+          <p className="text-[11px] text-[#86868b]">Mark paid to add Investment expenses</p>
         </div>
-      )}
+        <div className="text-right flex flex-col items-end gap-1">
+          <p className="text-[11px] text-[#86868b]">
+            {paid.length}/{activeSips.length} done
+          </p>
+          {unpaid.length > 0 && (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={markAllPaid}
+              className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-[#1d1d1f] text-white disabled:opacity-50"
+            >
+              Mark all paid
+            </button>
+          )}
+        </div>
+      </div>
 
       <div className="space-y-2">
         {activeSips.map((sip) => {
@@ -102,6 +130,7 @@ export function SipMonthChecklist({ sips, profileId, compact = false }: Props) {
             <button
               key={sip.id}
               type="button"
+              disabled={busy}
               onClick={() => togglePaid(sip, isPaid)}
               className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all ${
                 isPaid
@@ -132,10 +161,10 @@ export function SipMonthChecklist({ sips, profileId, compact = false }: Props) {
         })}
       </div>
 
-      {!compact && paidAmount > 0 && unpaidAmount === 0 && (
+      {paidAmount > 0 && unpaidAmount === 0 && (
         <p className="text-[11px] text-green-700 dark:text-green-400 flex items-center gap-1">
           <Check className="w-3.5 h-3.5" />
-          All SIPs marked complete for {monthLabel}
+          All SIPs marked for {monthLabel}
         </p>
       )}
     </div>

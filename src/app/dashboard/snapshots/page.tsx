@@ -7,23 +7,17 @@ import { fetchTable, insertRow, updateRow } from "@/lib/offline"
 import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { useDeleteMutation } from "@/hooks/use-offline-mutation"
 import { useQueryClient } from "@tanstack/react-query"
-import { Camera, TrendingUp, TrendingDown, Trash2, Wallet, ArrowDownLeft, ArrowUpRight, Repeat } from "lucide-react"
+import { Camera, TrendingUp, TrendingDown, Trash2 } from "lucide-react"
 import type { Snapshot, Asset, Liability, Transaction, Sip, SipPayment } from "@/lib/types"
 import { ASSET_CLASSES } from "@/lib/constants"
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
 import { useAppDialog } from "@/components/app-dialog"
 import { useCurrency } from "@/hooks/use-currency"
 import { subMonths, subYears, todayLocalISO } from "@/lib/utils"
-import { SipMonthChecklist } from "@/components/sip-month-checklist"
 import {
   buildSnapshotBreakdown,
   isSnapshotMetaKey,
-  monthKeyFromDate,
   readSnapshotMeta,
-  sipStatusForMonth,
-  sumCashflow,
-  sumLiquidAssets,
-  transactionsInMonth,
 } from "@/lib/finance/monthly-cashflow"
 
 type TimeRange = "1M" | "6M" | "1Y" | "3Y" | "5Y" | "All"
@@ -56,34 +50,8 @@ export default function SnapshotsPage() {
       enabled: !!activeProfile,
     }
   )
-  const { data: assets = [] } = useOfflineQuery<Asset>(
-    "assets", user?.id, { filters: pf, enabled: !!activeProfile }
-  )
-  const { data: transactions = [] } = useOfflineQuery<Transaction>(
-    "transactions", user?.id, { filters: pf, enabled: !!activeProfile }
-  )
-  const { data: sips = [] } = useOfflineQuery<Sip>(
-    "sips", user?.id, { filters: pf, enabled: !!activeProfile }
-  )
-  const { data: sipPayments = [] } = useOfflineQuery<SipPayment>(
-    "sip_payments", user?.id, { enabled: !!user }
-  )
   const deleteMut = useDeleteMutation("snapshots")
   const [timeRange, setTimeRange] = useState<TimeRange>("All")
-
-  const monthKey = monthKeyFromDate()
-  const monthTx = useMemo(
-    () => transactionsInMonth(transactions, monthKey),
-    [transactions, monthKey],
-  )
-  const cashflow = useMemo(() => sumCashflow(monthTx), [monthTx])
-  const sipMonth = useMemo(
-    () => sipStatusForMonth(sips, sipPayments, monthKey),
-    [sips, sipPayments, monthKey],
-  )
-  const liquidAssets = useMemo(() => sumLiquidAssets(assets), [assets])
-  const liquidAfterSips = Math.max(0, liquidAssets - sipMonth.unpaidAmount)
-  const availableThisMonth = cashflow.surplus - sipMonth.unpaidAmount
 
   async function takeSnapshot() {
     if (!user || !activeProfile) return
@@ -219,78 +187,6 @@ export default function SnapshotsPage() {
           <Camera className="w-4 h-4" />
           <span className="hidden sm:inline">{taking ? "Taking..." : "Take Snapshot"}</span>
         </button>
-      </div>
-
-      {/* This month — income, expenses, SIP remainder */}
-      <div className="liquid-glass rounded-2xl p-5 space-y-4">
-        <div>
-          <h3 className="font-semibold text-[#1d1d1f]">This month</h3>
-          <p className="text-xs text-[#86868b] mt-0.5">
-            {new Date().toLocaleDateString("en-IN", { month: "long", year: "numeric" })}
-          </p>
-        </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div className="bg-[#f5f5f7] rounded-xl p-3">
-            <div className="flex items-center gap-1.5 mb-1">
-              <ArrowDownLeft className="w-3.5 h-3.5 text-green-600" />
-              <p className="text-[10px] text-[#86868b] font-medium">Income</p>
-            </div>
-            <p className="text-sm font-semibold text-green-700">{formatCurrency(cashflow.income)}</p>
-          </div>
-          <div className="bg-[#f5f5f7] rounded-xl p-3">
-            <div className="flex items-center gap-1.5 mb-1">
-              <ArrowUpRight className="w-3.5 h-3.5 text-red-600" />
-              <p className="text-[10px] text-[#86868b] font-medium">Expenses</p>
-            </div>
-            <p className="text-sm font-semibold text-red-700">{formatCurrency(cashflow.expense)}</p>
-          </div>
-          <div className="bg-[#f5f5f7] rounded-xl p-3">
-            <p className="text-[10px] text-[#86868b] font-medium mb-1">Surplus</p>
-            <p className={`text-sm font-semibold ${cashflow.surplus >= 0 ? "text-[#1d1d1f]" : "text-red-700"}`}>
-              {formatCurrency(cashflow.surplus)}
-            </p>
-            <p className="text-[10px] text-[#86868b] mt-0.5">income − expenses</p>
-          </div>
-          <div className="bg-[#f5f5f7] rounded-xl p-3">
-            <p className="text-[10px] text-[#86868b] font-medium mb-1">Left this month</p>
-            <p className={`text-sm font-semibold ${availableThisMonth >= 0 ? "text-[#1d1d1f]" : "text-red-700"}`}>
-              {formatCurrency(availableThisMonth)}
-            </p>
-            <p className="text-[10px] text-[#86868b] mt-0.5">after SIPs due</p>
-          </div>
-        </div>
-        {(liquidAssets > 0 || sipMonth.unpaidAmount > 0) && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1 border-t border-black/[0.04]">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-white/60 flex items-center justify-center">
-                <Wallet className="w-4 h-4 text-[#1d1d1f]" />
-              </div>
-              <div>
-                <p className="text-[11px] text-[#86868b]">Liquid assets (cash + savings)</p>
-                <p className="text-sm font-semibold text-[#1d1d1f]">{formatCurrency(liquidAssets)}</p>
-              </div>
-            </div>
-            {sipMonth.unpaid.length > 0 && (
-              <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center">
-                  <Repeat className="w-4 h-4 text-indigo-600" />
-                </div>
-                <div>
-                  <p className="text-[11px] text-[#86868b]">
-                    SIPs not marked paid ({sipMonth.unpaid.length}) · liquid after SIPs
-                  </p>
-                  <p className="text-sm font-semibold text-[#1d1d1f]">
-                    {formatCurrency(sipMonth.unpaidAmount)} due · {formatCurrency(liquidAfterSips)} left
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {sips.some((s) => s.active) && activeProfile && (
-          <SipMonthChecklist sips={sips} profileId={activeProfile.id} compact />
-        )}
       </div>
 
       {/* Chart */}

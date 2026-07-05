@@ -8,13 +8,16 @@ import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { deleteRow, fetchTable } from "@/lib/offline"
 import { useQueryClient } from "@tanstack/react-query"
 import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Edit2, Receipt, User } from "lucide-react"
-import type { Transaction, Party, PartyTransaction } from "@/lib/types"
+import type { Transaction, Party, PartyTransaction, Sip, SipPayment } from "@/lib/types"
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/constants"
 import { CategoryIcon } from "@/components/category-icon"
 import { AddTransactionModal } from "@/components/modals/add-transaction-modal"
+import { SipMonthChecklist } from "@/components/sip-month-checklist"
 import { useAppDialog } from "@/components/app-dialog"
 import { useCurrency } from "@/hooks/use-currency"
 import { formatDueDate } from "@/lib/utils"
+import { availableAfterUnpaidSips } from "@/lib/finance/monthly-cashflow"
+import { ensureMonthCarryForward, previousMonthKey } from "@/lib/finance/sip-payments"
 
 export default function TransactionsPageWrapper() {
   return (
@@ -66,6 +69,83 @@ function TransactionsPage() {
   const { data: parties = [] } = useOfflineQuery<Party>(
     "parties", user?.id, { enabled: !!user }
   )
+
+  const pf = activeProfile
+    ? [{ column: "profile_id", op: "eq" as const, value: activeProfile.id }]
+    : undefined
+
+  const { data: sips = [] } = useOfflineQuery<Sip>(
+    "sips", user?.id, { filters: pf, enabled: !!activeProfile }
+  )
+  const { data: sipPayments = [] } = useOfflineQuery<SipPayment>(
+    "sip_payments", user?.id, { enabled: !!user }
+  )
+
+  const prevMonthKey = useMemo(() => previousMonthKey(monthFilter), [monthFilter])
+  const prevStartDate = `${prevMonthKey}-01`
+  const prevLastDay = new Date(
+    parseInt(prevMonthKey.slice(0, 4)),
+    parseInt(prevMonthKey.slice(5, 7)),
+    0,
+  ).getDate()
+  const prevEndDate = `${prevMonthKey}-${String(prevLastDay).padStart(2, "0")}`
+
+  const { data: prevMonthTransactions = [] } = useOfflineQuery<Transaction>(
+    "transactions", user?.id, {
+      filters: [
+        { column: "profile_id", op: "eq", value: activeProfile?.id ?? "" },
+        { column: "date", op: "gte", value: prevStartDate },
+        { column: "date", op: "lte", value: prevEndDate },
+      ],
+      enabled: !!activeProfile,
+      queryKey: [`prev-${prevMonthKey}`],
+    }
+  )
+
+  const leftAfterSips = useMemo(
+    () => availableAfterUnpaidSips(transactions, sips, sipPayments, monthFilter),
+    [transactions, sips, sipPayments, monthFilter],
+  )
+
+  const currentCalendarMonth = new Date().toISOString().slice(0, 7)
+
+  useEffect(() => {
+    if (!user || !activeProfile || monthFilter !== currentCalendarMonth) return
+    const prevLeft = availableAfterUnpaidSips(
+      prevMonthTransactions,
+      sips,
+      sipPayments,
+      prevMonthKey,
+    )
+    if (prevLeft <= 0) return
+
+    let cancelled = false
+    ;(async () => {
+      const created = await ensureMonthCarryForward(
+        user.id,
+        activeProfile.id,
+        monthFilter,
+        prevLeft,
+        transactions,
+      )
+      if (!cancelled && created) {
+        queryClient.invalidateQueries({ queryKey: ["transactions"] })
+      }
+    })()
+
+    return () => { cancelled = true }
+  }, [
+    user,
+    activeProfile,
+    monthFilter,
+    currentCalendarMonth,
+    prevMonthKey,
+    prevMonthTransactions,
+    sips,
+    sipPayments,
+    transactions,
+    queryClient,
+  ])
 
   const partyLinkByTxId = useMemo(() => {
     const partyName = new Map(parties.map(p => [p.id, p.name]))
@@ -189,6 +269,9 @@ function TransactionsPage() {
           <p className="text-lg font-bold text-[#1d1d1f] dark:text-white">
             {savingsRate.toFixed(0)}%
           </p>
+          <p className="text-[10px] text-[#86868b] mt-1">
+            Left {formatCurrency(leftAfterSips)}
+          </p>
         </div>
       </div>
 
@@ -216,6 +299,14 @@ function TransactionsPage() {
           ))}
         </div>
       </div>
+
+      {sips.some((s) => s.active) && (
+        <SipMonthChecklist
+          sips={sips}
+          profileId={activeProfile.id}
+          monthKey={monthFilter}
+        />
+      )}
 
       {/* Transaction List */}
       {Object.keys(grouped).length === 0 ? (

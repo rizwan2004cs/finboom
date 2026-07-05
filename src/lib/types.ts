@@ -95,6 +95,7 @@ export interface SipPayment {
   month: string
   paid_date: string
   amount?: number | null
+  transaction_id?: string | null
   created_at: string
   updated_at: string
 }
