@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
+import { ChevronDown, PieChart as PieChartIcon } from "lucide-react"
 import { useCurrency } from "@/hooks/use-currency"
 import type { Transaction } from "@/lib/types"
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/constants"
@@ -33,8 +34,30 @@ function sumByCategory(txs: Transaction[]): Map<string, number> {
   return map
 }
 
+function ViewToggle({ view, onChange }: { view: View; onChange: (v: View) => void }) {
+  return (
+    <div className="flex bg-[#f5f5f7] dark:bg-[#2c2c2e] rounded-xl p-0.5">
+      {(["expense", "income"] as const).map((v) => (
+        <button
+          key={v}
+          type="button"
+          onClick={() => onChange(v)}
+          className={`px-2.5 py-1 rounded-lg text-[11px] font-medium transition-all ${
+            view === v
+              ? "bg-white dark:bg-[#3a3a3c] text-[#1d1d1f] dark:text-white shadow-sm"
+              : "text-[#86868b]"
+          }`}
+        >
+          {v === "expense" ? "Expenses" : "Income"}
+        </button>
+      ))}
+    </div>
+  )
+}
+
 export function TransactionCategoryBreakdown({ transactions, periodLabel }: Props) {
   const { formatCompact: formatCurrency } = useCurrency()
+  const [open, setOpen] = useState(false)
   const [view, setView] = useState<View>("expense")
   const [mounted, setMounted] = useState(false)
 
@@ -91,159 +114,171 @@ export function TransactionCategoryBreakdown({ transactions, periodLabel }: Prop
   if (transactions.length === 0) return null
 
   return (
-    <div className="liquid-glass rounded-2xl p-4 space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
-        <div>
-          <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-white">By category</h3>
-          <p className="text-[11px] text-[#86868b]">{periodLabel}</p>
+    <div className="liquid-glass rounded-2xl overflow-hidden">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-3 p-4 text-left hover:bg-[#f5f5f7]/50 dark:hover:bg-white/[0.03] transition-colors"
+      >
+        <div className="w-9 h-9 rounded-xl bg-[#f5f5f7] dark:bg-white/[0.06] flex items-center justify-center flex-shrink-0">
+          <PieChartIcon className="w-4 h-4 text-[#1d1d1f] dark:text-white" />
         </div>
-        <div className="flex bg-[#f5f5f7] dark:bg-[#2c2c2e] rounded-xl p-0.5 self-start">
-          {(["expense", "income"] as const).map((v) => (
-            <button
-              key={v}
-              type="button"
-              onClick={() => setView(v)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                view === v
-                  ? "bg-white dark:bg-[#3a3a3c] text-[#1d1d1f] dark:text-white shadow-sm"
-                  : "text-[#86868b]"
-              }`}
-            >
-              {v === "expense" ? "Expenses" : "Income"}
-            </button>
-          ))}
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-white">Cashflow analysis</p>
+          <p className="text-[11px] text-[#86868b] truncate">{periodLabel}</p>
         </div>
-      </div>
+        <div className="text-right flex-shrink-0 mr-1">
+          <p className={`text-sm font-semibold tabular-nums ${balanceClass(netBalance)}`}>
+            {formatBalance(netBalance)}
+          </p>
+          <p className="text-[10px] text-[#86868b]">net</p>
+        </div>
+        <ChevronDown
+          className={`w-4 h-4 text-[#86868b] flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
+        />
+      </button>
 
-      <div className="grid grid-cols-2 gap-2">
-        <div className="bg-green-50/80 dark:bg-green-500/10 rounded-xl p-3">
-          <p className="text-[10px] text-[#86868b] uppercase tracking-wide">Income</p>
-          <p className="text-lg font-semibold text-green-700 dark:text-green-400">{formatCurrency(incomeTotal)}</p>
-        </div>
-        <div className="bg-red-50/80 dark:bg-red-500/10 rounded-xl p-3">
-          <p className="text-[10px] text-[#86868b] uppercase tracking-wide">Expenses</p>
-          <p className="text-lg font-semibold text-red-700 dark:text-red-400">{formatCurrency(expenseTotal)}</p>
-        </div>
-      </div>
+      {open && (
+        <div className="px-4 pb-4 space-y-4 border-t border-black/[0.04] dark:border-white/[0.06] pt-4">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="bg-green-50/80 dark:bg-green-500/10 rounded-xl p-3">
+              <p className="text-[10px] text-[#86868b] uppercase tracking-wide">Income</p>
+              <p className="text-lg font-semibold text-green-700 dark:text-green-400">{formatCurrency(incomeTotal)}</p>
+            </div>
+            <div className="bg-red-50/80 dark:bg-red-500/10 rounded-xl p-3">
+              <p className="text-[10px] text-[#86868b] uppercase tracking-wide">Expenses</p>
+              <p className="text-lg font-semibold text-red-700 dark:text-red-400">{formatCurrency(expenseTotal)}</p>
+            </div>
+          </div>
 
-      {categorySummary.length > 0 && (
-        <div className="overflow-x-auto -mx-1 px-1">
-          <table className="w-full text-xs border-collapse">
-            <thead>
-              <tr className="text-[10px] uppercase tracking-wide text-[#86868b] border-b border-black/[0.06] dark:border-white/[0.08]">
-                <th className="text-left font-medium py-2 pr-2">Category</th>
-                <th className="text-right font-medium py-2 px-2 w-24">Income</th>
-                <th className="text-right font-medium py-2 px-2 w-24">Expense</th>
-                <th className="text-right font-medium py-2 pl-2 w-24">Balance</th>
-              </tr>
-            </thead>
-            <tbody>
-              {categorySummary.map((row, i) => {
-                const balance = row.income - row.expense
-                return (
-                  <tr
-                    key={row.id}
-                    className="border-b border-black/[0.03] dark:border-white/[0.04] last:border-0"
-                  >
-                    <td className="py-2.5 pr-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span
-                          className="w-2 h-2 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: COLORS[i % COLORS.length] }}
-                        />
-                        <CategoryIcon name={row.icon} className="w-3.5 h-3.5 text-[#86868b] flex-shrink-0" />
-                        <span className="truncate text-[#1d1d1f] dark:text-white font-medium">{row.label}</span>
-                      </div>
-                    </td>
+          {chartRows.length > 0 && mounted ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <div className="flex items-center justify-between gap-2 mb-2">
+                  <p className="text-[11px] text-[#86868b] uppercase tracking-wide">Distribution</p>
+                  <ViewToggle view={view} onChange={setView} />
+                </div>
+                <div className="h-44">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={chartRows}
+                        dataKey="value"
+                        nameKey="name"
+                        cx="50%"
+                        cy="50%"
+                        innerRadius="45%"
+                        outerRadius="75%"
+                        paddingAngle={chartRows.length > 1 ? 2 : 0}
+                        stroke="none"
+                      >
+                        {chartRows.map((row, i) => (
+                          <Cell key={row.id} fill={COLORS[i % COLORS.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(v) => formatCurrency(Number(v))} />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+              <div>
+                <p className="text-[11px] text-[#86868b] uppercase tracking-wide mb-2">By category</p>
+                <div className="h-44">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={chartRows} layout="vertical" margin={{ left: 4, right: 8, top: 0, bottom: 0 }}>
+                      <XAxis type="number" hide tickFormatter={(v) => formatCurrency(v)} />
+                      <YAxis
+                        type="category"
+                        dataKey="name"
+                        width={72}
+                        tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
+                        axisLine={false}
+                        tickLine={false}
+                      />
+                      <Tooltip formatter={(v) => formatCurrency(Number(v))} />
+                      <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={14}>
+                        {chartRows.map((row, i) => (
+                          <Cell key={row.id} fill={COLORS[i % COLORS.length]} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p className="text-sm text-[#86868b] text-center py-4">
+              No {view === "expense" ? "expenses" : "income"} in this period
+            </p>
+          )}
+
+          {chartTotal > 0 && (
+            <p className="text-[11px] text-[#86868b] text-right">
+              {view === "expense" ? "Total spent" : "Total earned"}: {formatCurrency(chartTotal)}
+            </p>
+          )}
+
+          {categorySummary.length > 0 && (
+            <div className="overflow-x-auto -mx-1 px-1 pt-1 border-t border-black/[0.04] dark:border-white/[0.06]">
+              <p className="text-[10px] text-[#86868b] uppercase tracking-wide py-2">Category breakdown</p>
+              <table className="w-full text-xs border-collapse">
+                <thead>
+                  <tr className="text-[10px] uppercase tracking-wide text-[#86868b] border-b border-black/[0.06] dark:border-white/[0.08]">
+                    <th className="text-left font-medium py-2 pr-2">Category</th>
+                    <th className="text-right font-medium py-2 px-2 w-24">Income</th>
+                    <th className="text-right font-medium py-2 px-2 w-24">Expense</th>
+                    <th className="text-right font-medium py-2 pl-2 w-24">Balance</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {categorySummary.map((row, i) => {
+                    const balance = row.income - row.expense
+                    return (
+                      <tr
+                        key={row.id}
+                        className="border-b border-black/[0.03] dark:border-white/[0.04] last:border-0"
+                      >
+                        <td className="py-2.5 pr-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span
+                              className="w-2 h-2 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: COLORS[i % COLORS.length] }}
+                            />
+                            <CategoryIcon name={row.icon} className="w-3.5 h-3.5 text-[#86868b] flex-shrink-0" />
+                            <span className="truncate text-[#1d1d1f] dark:text-white font-medium">{row.label}</span>
+                          </div>
+                        </td>
+                        <td className="py-2.5 px-2 text-right tabular-nums text-green-700 dark:text-green-400">
+                          {row.income > 0 ? formatCurrency(row.income) : "—"}
+                        </td>
+                        <td className="py-2.5 px-2 text-right tabular-nums text-red-700 dark:text-red-400">
+                          {row.expense > 0 ? formatCurrency(row.expense) : "—"}
+                        </td>
+                        <td className={`py-2.5 pl-2 text-right tabular-nums font-medium ${balanceClass(balance)}`}>
+                          {formatBalance(balance)}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-black/[0.08] dark:border-white/[0.1] font-semibold">
+                    <td className="py-2.5 pr-2 text-[#1d1d1f] dark:text-white">Total</td>
                     <td className="py-2.5 px-2 text-right tabular-nums text-green-700 dark:text-green-400">
-                      {row.income > 0 ? formatCurrency(row.income) : "—"}
+                      {formatCurrency(incomeTotal)}
                     </td>
                     <td className="py-2.5 px-2 text-right tabular-nums text-red-700 dark:text-red-400">
-                      {row.expense > 0 ? formatCurrency(row.expense) : "—"}
+                      {formatCurrency(expenseTotal)}
                     </td>
-                    <td className={`py-2.5 pl-2 text-right tabular-nums font-medium ${balanceClass(balance)}`}>
-                      {formatBalance(balance)}
+                    <td className={`py-2.5 pl-2 text-right tabular-nums ${balanceClass(netBalance)}`}>
+                      {formatBalance(netBalance)}
                     </td>
                   </tr>
-                )
-              })}
-            </tbody>
-            <tfoot>
-              <tr className="border-t border-black/[0.08] dark:border-white/[0.1] font-semibold">
-                <td className="py-2.5 pr-2 text-[#1d1d1f] dark:text-white">Total</td>
-                <td className="py-2.5 px-2 text-right tabular-nums text-green-700 dark:text-green-400">
-                  {formatCurrency(incomeTotal)}
-                </td>
-                <td className="py-2.5 px-2 text-right tabular-nums text-red-700 dark:text-red-400">
-                  {formatCurrency(expenseTotal)}
-                </td>
-                <td className={`py-2.5 pl-2 text-right tabular-nums ${balanceClass(netBalance)}`}>
-                  {formatBalance(netBalance)}
-                </td>
-              </tr>
-            </tfoot>
-          </table>
+                </tfoot>
+              </table>
+            </div>
+          )}
         </div>
-      )}
-
-      {chartRows.length > 0 && mounted && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="h-44">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={chartRows}
-                  dataKey="value"
-                  nameKey="name"
-                  cx="50%"
-                  cy="50%"
-                  innerRadius="45%"
-                  outerRadius="75%"
-                  paddingAngle={chartRows.length > 1 ? 2 : 0}
-                  stroke="none"
-                >
-                  {chartRows.map((_, i) => (
-                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                  ))}
-                </Pie>
-                <Tooltip formatter={(v) => formatCurrency(Number(v))} />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="h-44">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={chartRows} layout="vertical" margin={{ left: 4, right: 8, top: 0, bottom: 0 }}>
-                <XAxis type="number" hide tickFormatter={(v) => formatCurrency(v)} />
-                <YAxis
-                  type="category"
-                  dataKey="name"
-                  width={72}
-                  tick={{ fontSize: 10, fill: "var(--muted-foreground)" }}
-                  axisLine={false}
-                  tickLine={false}
-                />
-                <Tooltip formatter={(v) => formatCurrency(Number(v))} />
-                <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={14}>
-                  {chartRows.map((_, i) => (
-                    <Cell key={i} fill={COLORS[i % COLORS.length]} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-      )}
-
-      {chartRows.length === 0 && (
-        <p className="text-sm text-[#86868b] text-center py-4">
-          No {view === "expense" ? "expenses" : "income"} in this period
-        </p>
-      )}
-
-      {chartTotal > 0 && (
-        <p className="text-[11px] text-[#86868b] text-right">
-          {view === "expense" ? "Total spent" : "Total earned"}: {formatCurrency(chartTotal)}
-        </p>
       )}
     </div>
   )

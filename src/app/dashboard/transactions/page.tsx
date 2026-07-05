@@ -295,11 +295,6 @@ function TransactionsPage() {
         </div>
       </div>
 
-      <TransactionCategoryBreakdown
-        transactions={tillDateTransactions}
-        periodLabel={periodLabel}
-      />
-
       {/* Filters */}
       <div className="flex gap-2 overflow-x-auto pb-1">
         <input
@@ -410,6 +405,11 @@ function TransactionsPage() {
           ))}
         </div>
       )}
+
+      <TransactionCategoryBreakdown
+        transactions={tillDateTransactions}
+        periodLabel={periodLabel}
+      />
 
       {(showAddModal || editTransaction) && (
         <AddTransactionModal
