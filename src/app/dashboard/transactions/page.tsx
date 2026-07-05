@@ -406,10 +406,15 @@ function TransactionsPage() {
         </div>
       )}
 
-      <TransactionCategoryBreakdown
-        transactions={tillDateTransactions}
-        periodLabel={periodLabel}
-      />
+      <div className="pt-5 mt-3 border-t border-dashed border-[#d1d1d6]/80 dark:border-white/10">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-[#86868b] mb-3 px-1">
+          Insights
+        </p>
+        <TransactionCategoryBreakdown
+          transactions={tillDateTransactions}
+          periodLabel={periodLabel}
+        />
+      </div>
 
       {(showAddModal || editTransaction) && (
         <AddTransactionModal

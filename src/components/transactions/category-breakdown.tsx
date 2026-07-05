@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
-import { ChevronDown, PieChart as PieChartIcon } from "lucide-react"
+import { ChevronDown, PieChart as PieChartIcon, TrendingUp } from "lucide-react"
 import { useCurrency } from "@/hooks/use-currency"
 import type { Transaction } from "@/lib/types"
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/constants"
@@ -114,32 +114,76 @@ export function TransactionCategoryBreakdown({ transactions, periodLabel }: Prop
   if (transactions.length === 0) return null
 
   return (
-    <div className="liquid-glass rounded-2xl overflow-hidden">
+    <div
+      className={`relative overflow-hidden rounded-2xl border transition-all duration-300 ${
+        open
+          ? "border-indigo-300/60 dark:border-indigo-500/30 shadow-lg shadow-indigo-500/10"
+          : "border-indigo-200/50 dark:border-indigo-500/20 shadow-md shadow-indigo-500/5"
+      } bg-gradient-to-br from-indigo-50/90 via-white to-violet-50/70 dark:from-indigo-950/50 dark:via-[#1c1c1e] dark:to-violet-950/30`}
+    >
+      {/* decorative blobs */}
+      <div className="pointer-events-none absolute -top-10 -right-10 h-32 w-32 rounded-full bg-indigo-400/10 blur-2xl" />
+      <div className="pointer-events-none absolute -bottom-8 -left-8 h-24 w-24 rounded-full bg-violet-400/10 blur-2xl" />
+
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-3 p-4 text-left hover:bg-[#f5f5f7]/50 dark:hover:bg-white/[0.03] transition-colors"
+        className="relative w-full text-left p-4 sm:p-5 hover:bg-indigo-500/[0.03] dark:hover:bg-indigo-400/[0.04] transition-colors"
       >
-        <div className="w-9 h-9 rounded-xl bg-[#f5f5f7] dark:bg-white/[0.06] flex items-center justify-center flex-shrink-0">
-          <PieChartIcon className="w-4 h-4 text-[#1d1d1f] dark:text-white" />
+        <div className="flex items-start gap-3 sm:gap-4">
+          <div className="flex-shrink-0 w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-md shadow-indigo-500/25">
+            <PieChartIcon className="w-5 h-5 text-white" />
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap mb-0.5">
+              <p className="text-[15px] font-semibold text-[#1d1d1f] dark:text-white tracking-tight">
+                Cashflow analysis
+              </p>
+              <span className="text-[9px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-md bg-indigo-500/10 text-indigo-700 dark:bg-indigo-400/15 dark:text-indigo-300">
+                Analytics
+              </span>
+            </div>
+            <p className="text-[11px] text-[#86868b]">{periodLabel}</p>
+
+            <div className="flex flex-wrap gap-2 mt-3">
+              <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/70 dark:bg-white/[0.06] border border-green-200/60 dark:border-green-500/20 px-2.5 py-1.5 text-[11px]">
+                <span className="text-[#86868b]">In</span>
+                <span className="font-semibold tabular-nums text-green-700 dark:text-green-400">
+                  {formatCurrency(incomeTotal)}
+                </span>
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/70 dark:bg-white/[0.06] border border-red-200/60 dark:border-red-500/20 px-2.5 py-1.5 text-[11px]">
+                <span className="text-[#86868b]">Out</span>
+                <span className="font-semibold tabular-nums text-red-700 dark:text-red-400">
+                  {formatCurrency(expenseTotal)}
+                </span>
+              </span>
+              <span className="inline-flex items-center gap-1.5 rounded-lg bg-white/80 dark:bg-white/[0.08] border border-indigo-200/70 dark:border-indigo-500/25 px-2.5 py-1.5 text-[11px]">
+                <TrendingUp className={`w-3 h-3 ${balanceClass(netBalance)}`} />
+                <span className="text-[#86868b]">Net</span>
+                <span className={`font-semibold tabular-nums ${balanceClass(netBalance)}`}>
+                  {formatBalance(netBalance)}
+                </span>
+              </span>
+            </div>
+          </div>
+
+          <div className="flex flex-col items-center gap-1 flex-shrink-0 pt-1">
+            <span className="text-[10px] font-medium text-indigo-600/80 dark:text-indigo-400/80">
+              {open ? "Hide" : "View"}
+            </span>
+            <div className="w-8 h-8 rounded-full bg-white/80 dark:bg-white/10 border border-indigo-200/50 dark:border-indigo-500/20 flex items-center justify-center">
+              <ChevronDown
+                className={`w-4 h-4 text-indigo-600 dark:text-indigo-400 transition-transform duration-300 ${open ? "rotate-180" : ""}`}
+              />
+            </div>
+          </div>
         </div>
-        <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-[#1d1d1f] dark:text-white">Cashflow analysis</p>
-          <p className="text-[11px] text-[#86868b] truncate">{periodLabel}</p>
-        </div>
-        <div className="text-right flex-shrink-0 mr-1">
-          <p className={`text-sm font-semibold tabular-nums ${balanceClass(netBalance)}`}>
-            {formatBalance(netBalance)}
-          </p>
-          <p className="text-[10px] text-[#86868b]">net</p>
-        </div>
-        <ChevronDown
-          className={`w-4 h-4 text-[#86868b] flex-shrink-0 transition-transform ${open ? "rotate-180" : ""}`}
-        />
       </button>
 
       {open && (
-        <div className="px-4 pb-4 space-y-4 border-t border-black/[0.04] dark:border-white/[0.06] pt-4">
+        <div className="relative px-4 sm:px-5 pb-5 space-y-4 border-t border-indigo-200/40 dark:border-indigo-500/15 pt-4 bg-white/40 dark:bg-black/20">
           <div className="grid grid-cols-2 gap-2">
             <div className="bg-green-50/80 dark:bg-green-500/10 rounded-xl p-3">
               <p className="text-[10px] text-[#86868b] uppercase tracking-wide">Income</p>
