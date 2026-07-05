@@ -3,17 +3,27 @@
 import { useMemo, useState } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
-import { fetchTable, upsertRow } from "@/lib/offline"
+import { fetchTable, upsertRow, insertRow, updateRow } from "@/lib/offline"
 import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { useDeleteMutation } from "@/hooks/use-offline-mutation"
 import { useQueryClient } from "@tanstack/react-query"
-import { Camera, TrendingUp, TrendingDown, Trash2 } from "lucide-react"
-import type { Snapshot, Asset, Liability } from "@/lib/types"
+import { Camera, TrendingUp, TrendingDown, Trash2, Wallet, ArrowDownLeft, ArrowUpRight, Repeat } from "lucide-react"
+import type { Snapshot, Asset, Liability, Transaction, Sip } from "@/lib/types"
 import { ASSET_CLASSES } from "@/lib/constants"
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
 import { useAppDialog } from "@/components/app-dialog"
 import { useCurrency } from "@/hooks/use-currency"
 import { subMonths, subYears, todayLocalISO } from "@/lib/utils"
+import {
+  buildSnapshotBreakdown,
+  isSnapshotMetaKey,
+  monthKeyFromDate,
+  readSnapshotMeta,
+  sipsDueRestOfMonth,
+  sumCashflow,
+  sumLiquidAssets,
+  transactionsInMonth,
+} from "@/lib/finance/monthly-cashflow"
 
 type TimeRange = "1M" | "6M" | "1Y" | "3Y" | "5Y" | "All"
 
@@ -45,39 +55,50 @@ export default function SnapshotsPage() {
       enabled: !!activeProfile,
     }
   )
+  const { data: assets = [] } = useOfflineQuery<Asset>(
+    "assets", user?.id, { filters: pf, enabled: !!activeProfile }
+  )
+  const { data: transactions = [] } = useOfflineQuery<Transaction>(
+    "transactions", user?.id, { filters: pf, enabled: !!activeProfile }
+  )
+  const { data: sips = [] } = useOfflineQuery<Sip>(
+    "sips", user?.id, { filters: pf, enabled: !!activeProfile }
+  )
   const deleteMut = useDeleteMutation("snapshots")
   const [timeRange, setTimeRange] = useState<TimeRange>("All")
+
+  const monthKey = monthKeyFromDate()
+  const monthTx = useMemo(
+    () => transactionsInMonth(transactions, monthKey),
+    [transactions, monthKey],
+  )
+  const cashflow = useMemo(() => sumCashflow(monthTx), [monthTx])
+  const sipsDue = useMemo(() => sipsDueRestOfMonth(sips), [sips])
+  const liquidAssets = useMemo(() => sumLiquidAssets(assets), [assets])
+  const liquidAfterSips = Math.max(0, liquidAssets - sipsDue.amount)
+  const availableThisMonth = cashflow.surplus - sipsDue.amount
 
   async function takeSnapshot() {
     if (!user || !activeProfile) return
     setTaking(true)
 
-    const pf = { column: "profile_id", op: "eq" as const, value: activeProfile.id }
+    const pfFilter = { column: "profile_id", op: "eq" as const, value: activeProfile.id }
     // Fetch current assets and liabilities
-    const [assets, liabilities] = await Promise.all([
-      fetchTable<Asset>("assets", user.id, { filters: [pf] }),
-      fetchTable<Liability>("liabilities", user.id, { filters: [pf] }),
+    const [assetRows, liabilities, txRows, sipRows] = await Promise.all([
+      fetchTable<Asset>("assets", user.id, { filters: [pfFilter] }),
+      fetchTable<Liability>("liabilities", user.id, { filters: [pfFilter] }),
+      fetchTable<Transaction>("transactions", user.id, { filters: [pfFilter] }),
+      fetchTable<Sip>("sips", user.id, { filters: [pfFilter] }),
     ])
 
-    const totalAssets = assets.reduce((sum, a) => sum + Number(a.current_value), 0)
+    const totalAssets = assetRows.reduce((sum, a) => sum + Number(a.current_value), 0)
     const totalLiabilities = liabilities.reduce((sum, l) => sum + Number(l.outstanding_amount), 0)
     const netWorth = totalAssets - totalLiabilities
 
-    // Build asset breakdown
-    const breakdown: Record<string, number> = {}
-    assets.forEach(a => {
-      if (!breakdown[a.asset_class]) breakdown[a.asset_class] = 0
-      breakdown[a.asset_class] += Number(a.current_value)
-    })
-
-    // Local calendar date (toISOString() is UTC and can name the wrong day in IST).
     const todayStr = todayLocalISO()
+    const breakdown = buildSnapshotBreakdown(assetRows, txRows, sipRows)
 
-    // Upsert on (profile_id, snapshot_date): a second snapshot on the same day
-    // overwrites the first atomically instead of stacking a duplicate — and it
-    // does not depend on the (possibly stale) snapshots list from React-query,
-    // which is what caused same-day snapshots to silently keep the first value.
-    await upsertRow("snapshots", {
+    const payload = {
       user_id: user.id,
       profile_id: activeProfile.id,
       total_assets: totalAssets,
@@ -86,7 +107,22 @@ export default function SnapshotsPage() {
       asset_breakdown: breakdown,
       currency: "INR",
       snapshot_date: todayStr,
-    }, { columns: ["profile_id", "snapshot_date"] })
+    }
+
+    const { error } = await upsertRow("snapshots", payload, { columns: ["profile_id", "snapshot_date"] })
+
+    // If the unique index hasn't been applied yet, fall back to find-then-update
+    // so same-day snapshots still work instead of erroring.
+    if (error?.includes("no unique or exclusion constraint")) {
+      const existingToday = await fetchTable<Snapshot>("snapshots", user.id, {
+        filters: [pfFilter, { column: "snapshot_date", op: "eq", value: todayStr }],
+      })
+      if (existingToday.length > 0) {
+        await updateRow("snapshots", existingToday[0].id, payload)
+      } else {
+        await insertRow("snapshots", payload)
+      }
+    }
 
     setTaking(false)
     queryClient.invalidateQueries({ queryKey: ["snapshots"] })
@@ -173,6 +209,74 @@ export default function SnapshotsPage() {
           <Camera className="w-4 h-4" />
           <span className="hidden sm:inline">{taking ? "Taking..." : "Take Snapshot"}</span>
         </button>
+      </div>
+
+      {/* This month — income, expenses, SIP remainder */}
+      <div className="liquid-glass rounded-2xl p-5 space-y-4">
+        <div>
+          <h3 className="font-semibold text-[#1d1d1f]">This month</h3>
+          <p className="text-xs text-[#86868b] mt-0.5">
+            {new Date().toLocaleDateString("en-IN", { month: "long", year: "numeric" })}
+          </p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="bg-[#f5f5f7] rounded-xl p-3">
+            <div className="flex items-center gap-1.5 mb-1">
+              <ArrowDownLeft className="w-3.5 h-3.5 text-green-600" />
+              <p className="text-[10px] text-[#86868b] font-medium">Income</p>
+            </div>
+            <p className="text-sm font-semibold text-green-700">{formatCurrency(cashflow.income)}</p>
+          </div>
+          <div className="bg-[#f5f5f7] rounded-xl p-3">
+            <div className="flex items-center gap-1.5 mb-1">
+              <ArrowUpRight className="w-3.5 h-3.5 text-red-600" />
+              <p className="text-[10px] text-[#86868b] font-medium">Expenses</p>
+            </div>
+            <p className="text-sm font-semibold text-red-700">{formatCurrency(cashflow.expense)}</p>
+          </div>
+          <div className="bg-[#f5f5f7] rounded-xl p-3">
+            <p className="text-[10px] text-[#86868b] font-medium mb-1">Surplus</p>
+            <p className={`text-sm font-semibold ${cashflow.surplus >= 0 ? "text-[#1d1d1f]" : "text-red-700"}`}>
+              {formatCurrency(cashflow.surplus)}
+            </p>
+            <p className="text-[10px] text-[#86868b] mt-0.5">income − expenses</p>
+          </div>
+          <div className="bg-[#f5f5f7] rounded-xl p-3">
+            <p className="text-[10px] text-[#86868b] font-medium mb-1">Left this month</p>
+            <p className={`text-sm font-semibold ${availableThisMonth >= 0 ? "text-[#1d1d1f]" : "text-red-700"}`}>
+              {formatCurrency(availableThisMonth)}
+            </p>
+            <p className="text-[10px] text-[#86868b] mt-0.5">after SIPs due</p>
+          </div>
+        </div>
+        {(liquidAssets > 0 || sipsDue.amount > 0) && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1 border-t border-black/[0.04]">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-white/60 flex items-center justify-center">
+                <Wallet className="w-4 h-4 text-[#1d1d1f]" />
+              </div>
+              <div>
+                <p className="text-[11px] text-[#86868b]">Liquid assets (cash + savings)</p>
+                <p className="text-sm font-semibold text-[#1d1d1f]">{formatCurrency(liquidAssets)}</p>
+              </div>
+            </div>
+            {sipsDue.amount > 0 && (
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center">
+                  <Repeat className="w-4 h-4 text-indigo-600" />
+                </div>
+                <div>
+                  <p className="text-[11px] text-[#86868b]">
+                    SIPs remaining ({sipsDue.count}) · liquid after SIPs
+                  </p>
+                  <p className="text-sm font-semibold text-[#1d1d1f]">
+                    {formatCurrency(sipsDue.amount)} due · {formatCurrency(liquidAfterSips)} left
+                  </p>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Chart */}
@@ -275,7 +379,9 @@ export default function SnapshotsPage() {
               : 0
 
             const breakdown = snapshot.asset_breakdown as Record<string, number>
+            const meta = readSnapshotMeta(breakdown)
             const topClasses = Object.entries(breakdown)
+              .filter(([classId]) => !isSnapshotMetaKey(classId))
               .sort(([, a], [, b]) => b - a)
               .slice(0, 3)
 
@@ -323,6 +429,35 @@ export default function SnapshotsPage() {
                     <p className="text-sm font-semibold text-[#6e6e73]">{formatCurrency(Number(snapshot.total_liabilities))}</p>
                   </div>
                 </div>
+
+                {(meta.monthlyIncome != null || meta.availableThisMonth != null) && (
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
+                    {meta.monthlyIncome != null && (
+                      <div className="bg-green-50/80 rounded-xl p-2.5">
+                        <p className="text-[10px] text-[#86868b]">Income</p>
+                        <p className="text-xs font-semibold text-green-700">{formatCurrency(meta.monthlyIncome)}</p>
+                      </div>
+                    )}
+                    {meta.monthlyExpense != null && (
+                      <div className="bg-red-50/80 rounded-xl p-2.5">
+                        <p className="text-[10px] text-[#86868b]">Expenses</p>
+                        <p className="text-xs font-semibold text-red-700">{formatCurrency(meta.monthlyExpense)}</p>
+                      </div>
+                    )}
+                    {meta.monthlySurplus != null && (
+                      <div className="bg-[#f5f5f7] rounded-xl p-2.5">
+                        <p className="text-[10px] text-[#86868b]">Surplus</p>
+                        <p className="text-xs font-semibold text-[#1d1d1f]">{formatCurrency(meta.monthlySurplus)}</p>
+                      </div>
+                    )}
+                    {meta.availableThisMonth != null && (
+                      <div className="bg-[#f5f5f7] rounded-xl p-2.5">
+                        <p className="text-[10px] text-[#86868b]">Left after SIPs</p>
+                        <p className="text-xs font-semibold text-[#1d1d1f]">{formatCurrency(meta.availableThisMonth)}</p>
+                      </div>
+                    )}
+                  </div>
+                )}
 
                 {/* Top asset classes */}
                 {topClasses.length > 0 && (
