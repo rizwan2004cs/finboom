@@ -17,10 +17,12 @@ import { subMonths, subYears, todayLocalISO } from "@/lib/utils"
 import {
   buildSnapshotBreakdown,
   isSnapshotMetaKey,
-  readSnapshotMeta,
 } from "@/lib/finance/monthly-cashflow"
 
 type TimeRange = "1M" | "6M" | "1Y" | "3Y" | "5Y" | "All"
+type ChartSeries = "net_worth" | "assets" | "liabilities" | string
+
+const CHART_COLORS = ["#1d1d1f", "#0071e3", "#34c759", "#ff9500", "#af52de", "#ff2d55", "#5856d6"]
 
 function getSmartDateLabel(d: Date, diffDays: number): string {
   if (diffDays <= 60) {
@@ -52,6 +54,7 @@ export default function SnapshotsPage() {
   )
   const deleteMut = useDeleteMutation("snapshots")
   const [timeRange, setTimeRange] = useState<TimeRange>("All")
+  const [chartSeries, setChartSeries] = useState<ChartSeries>("net_worth")
 
   async function takeSnapshot() {
     if (!user || !activeProfile) return
@@ -59,13 +62,17 @@ export default function SnapshotsPage() {
 
     const pfFilter = { column: "profile_id", op: "eq" as const, value: activeProfile.id }
     // Fetch current assets and liabilities
-    const [assetRows, liabilities, txRows, sipRows, paymentRows] = await Promise.all([
+    const [assetRows, liabilities, txRows, sipRows, paymentRes] = await Promise.all([
       fetchTable<Asset>("assets", user.id, { filters: [pfFilter] }),
       fetchTable<Liability>("liabilities", user.id, { filters: [pfFilter] }),
       fetchTable<Transaction>("transactions", user.id, { filters: [pfFilter] }),
       fetchTable<Sip>("sips", user.id, { filters: [pfFilter] }),
-      fetchTable<SipPayment>("sip_payments", user.id),
+      fetch("/api/sip-payments").then(async (r) => {
+        const j = await r.json()
+        return (j.payments ?? []) as SipPayment[]
+      }).catch(() => [] as SipPayment[]),
     ])
+    const paymentRows = paymentRes
 
     const totalAssets = assetRows.reduce((sum, a) => sum + Number(a.current_value), 0)
     const totalLiabilities = liabilities.reduce((sum, l) => sum + Number(l.outstanding_amount), 0)
@@ -129,6 +136,21 @@ export default function SnapshotsPage() {
     return sortedSnapshots.filter(s => new Date(s.snapshot_date) >= cutoff)
   }, [sortedSnapshots, timeRange, rangeMonths])
 
+  const assetClassIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const s of filteredSnapshots) {
+      const breakdown = s.asset_breakdown as Record<string, number>
+      for (const key of Object.keys(breakdown)) {
+        if (!isSnapshotMetaKey(key) && (breakdown[key] ?? 0) > 0) ids.add(key)
+      }
+    }
+    return [...ids].sort((a, b) => {
+      const latest = filteredSnapshots[filteredSnapshots.length - 1]
+      const bd = (latest?.asset_breakdown ?? {}) as Record<string, number>
+      return (bd[b] ?? 0) - (bd[a] ?? 0)
+    })
+  }, [filteredSnapshots])
+
   const chartData = useMemo(() => {
     if (filteredSnapshots.length === 0) return []
     const dates = filteredSnapshots.map(s => new Date(s.snapshot_date))
@@ -137,14 +159,36 @@ export default function SnapshotsPage() {
     const diffDays = (newest.getTime() - oldest.getTime()) / (1000 * 60 * 60 * 24)
     return filteredSnapshots.map(s => {
       const d = new Date(s.snapshot_date)
-      return {
+      const breakdown = s.asset_breakdown as Record<string, number>
+      const row: Record<string, string | number> = {
         date: getSmartDateLabel(d, diffDays),
         netWorth: Number(s.net_worth),
         assets: Number(s.total_assets),
         liabilities: Number(s.total_liabilities),
       }
+      for (const classId of assetClassIds) {
+        row[classId] = breakdown[classId] ?? 0
+      }
+      return row
     })
-  }, [filteredSnapshots])
+  }, [filteredSnapshots, assetClassIds])
+
+  const chartSeriesOptions = useMemo(() => {
+    const opts: { id: ChartSeries; label: string }[] = [
+      { id: "net_worth", label: "Net worth" },
+      { id: "assets", label: "Total assets" },
+    ]
+    for (const classId of assetClassIds) {
+      const cls = ASSET_CLASSES.find(c => c.id === classId)
+      opts.push({ id: classId, label: cls?.label ?? classId })
+    }
+    return opts
+  }, [assetClassIds])
+
+  const activeChartKey = chartSeries
+  const activeChartLabel =
+    chartSeriesOptions.find(o => o.id === chartSeries)?.label ?? "Net worth"
+  const activeChartColor = CHART_COLORS[chartSeriesOptions.findIndex(o => o.id === chartSeries) % CHART_COLORS.length]
 
   if (loading || !user || !activeProfile) {
     return (
@@ -192,20 +236,37 @@ export default function SnapshotsPage() {
       {/* Chart */}
       {chartData.length > 1 && (
         <div className="liquid-glass rounded-2xl p-5">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="font-semibold text-[#1d1d1f]">Net Worth Over Time</h3>
-            <div className="flex gap-1">
-              {(["1M", "6M", "1Y", "3Y", "5Y", "All"] as TimeRange[]).map(range => (
+          <div className="flex flex-col gap-3 mb-4">
+            <div className="flex items-center justify-between gap-2">
+              <h3 className="font-semibold text-[#1d1d1f]">{activeChartLabel} over time</h3>
+              <div className="flex gap-1 flex-shrink-0">
+                {(["1M", "6M", "1Y", "3Y", "5Y", "All"] as TimeRange[]).map(range => (
+                  <button
+                    key={range}
+                    onClick={() => setTimeRange(range)}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
+                      timeRange === range
+                        ? "bg-[#1d1d1f] text-white"
+                        : "text-[#86868b] hover:bg-[#f5f5f7]"
+                    }`}
+                  >
+                    {range}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex gap-1.5 overflow-x-auto pb-0.5">
+              {chartSeriesOptions.map(opt => (
                 <button
-                  key={range}
-                  onClick={() => setTimeRange(range)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all ${
-                    timeRange === range
-                      ? "bg-[#1d1d1f] text-white"
+                  key={opt.id}
+                  onClick={() => setChartSeries(opt.id)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
+                    chartSeries === opt.id
+                      ? "bg-[#f5f5f7] text-[#1d1d1f] ring-1 ring-black/[0.06]"
                       : "text-[#86868b] hover:bg-[#f5f5f7]"
                   }`}
                 >
-                  {range}
+                  {opt.label}
                 </button>
               ))}
             </div>
@@ -215,8 +276,8 @@ export default function SnapshotsPage() {
                 <AreaChart data={chartData} margin={{ top: 5, right: 5, left: 5, bottom: 5 }}>
                 <defs>
                   <linearGradient id="snapshotGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="currentColor" stopOpacity={0.1} />
-                    <stop offset="95%" stopColor="currentColor" stopOpacity={0} />
+                    <stop offset="5%" stopColor={activeChartColor} stopOpacity={0.15} />
+                    <stop offset="95%" stopColor={activeChartColor} stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <XAxis
@@ -243,16 +304,16 @@ export default function SnapshotsPage() {
                     fontSize: 12,
                     color: "var(--foreground)",
                   }}
-                  formatter={(value) => [formatCurrency(Number(value)), ""]}
+                  formatter={(value) => [formatCurrency(Number(value)), activeChartLabel]}
                 />
                 <Area
                   type="monotone"
-                  dataKey="netWorth"
-                  stroke="var(--foreground)"
+                  dataKey={activeChartKey === "net_worth" ? "netWorth" : activeChartKey}
+                  stroke={activeChartColor}
                   strokeWidth={2.5}
                   fill="url(#snapshotGrad)"
                   dot={false}
-                  activeDot={{ r: 4, fill: "var(--foreground)" }}
+                  activeDot={{ r: 4, fill: activeChartColor }}
                 />
               </AreaChart>
             </ResponsiveContainer>
@@ -289,11 +350,10 @@ export default function SnapshotsPage() {
               : 0
 
             const breakdown = snapshot.asset_breakdown as Record<string, number>
-            const meta = readSnapshotMeta(breakdown)
-            const topClasses = Object.entries(breakdown)
+            const assetClasses = Object.entries(breakdown)
               .filter(([classId]) => !isSnapshotMetaKey(classId))
               .sort(([, a], [, b]) => b - a)
-              .slice(0, 3)
+            const totalAssetValue = assetClasses.reduce((sum, [, v]) => sum + v, 0)
 
             return (
               <div key={snapshot.id} className="liquid-glass rounded-2xl p-5">
@@ -340,46 +400,36 @@ export default function SnapshotsPage() {
                   </div>
                 </div>
 
-                {(meta.monthlyIncome != null || meta.availableThisMonth != null) && (
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-3">
-                    {meta.monthlyIncome != null && (
-                      <div className="bg-green-50/80 rounded-xl p-2.5">
-                        <p className="text-[10px] text-[#86868b]">Income</p>
-                        <p className="text-xs font-semibold text-green-700">{formatCurrency(meta.monthlyIncome)}</p>
-                      </div>
-                    )}
-                    {meta.monthlyExpense != null && (
-                      <div className="bg-red-50/80 rounded-xl p-2.5">
-                        <p className="text-[10px] text-[#86868b]">Expenses</p>
-                        <p className="text-xs font-semibold text-red-700">{formatCurrency(meta.monthlyExpense)}</p>
-                      </div>
-                    )}
-                    {meta.monthlySurplus != null && (
-                      <div className="bg-[#f5f5f7] rounded-xl p-2.5">
-                        <p className="text-[10px] text-[#86868b]">Surplus</p>
-                        <p className="text-xs font-semibold text-[#1d1d1f]">{formatCurrency(meta.monthlySurplus)}</p>
-                      </div>
-                    )}
-                    {meta.availableThisMonth != null && (
-                      <div className="bg-[#f5f5f7] rounded-xl p-2.5">
-                        <p className="text-[10px] text-[#86868b]">Left after SIPs</p>
-                        <p className="text-xs font-semibold text-[#1d1d1f]">{formatCurrency(meta.availableThisMonth)}</p>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Top asset classes */}
-                {topClasses.length > 0 && (
-                  <div className="flex gap-2 flex-wrap">
-                    {topClasses.map(([classId, value]) => {
-                      const cls = ASSET_CLASSES.find(c => c.id === classId)
-                      return (
-                        <span key={classId} className="text-[11px] px-2 py-0.5 bg-[#f5f5f7] rounded-lg text-[#6e6e73]">
-                          {cls?.label}: {formatCurrency(value)}
-                        </span>
-                      )
-                    })}
+                {assetClasses.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-[10px] text-[#86868b] font-medium uppercase tracking-wide">Asset split</p>
+                    <div className="flex h-2 rounded-full overflow-hidden bg-[#f5f5f7]">
+                      {assetClasses.map(([classId, value], i) => (
+                        <div
+                          key={classId}
+                          className="h-full"
+                          style={{
+                            width: `${totalAssetValue > 0 ? (value / totalAssetValue) * 100 : 0}%`,
+                            backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
+                          }}
+                          title={`${ASSET_CLASSES.find(c => c.id === classId)?.label ?? classId}: ${formatCurrency(value)}`}
+                        />
+                      ))}
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      {assetClasses.map(([classId, value], i) => {
+                        const cls = ASSET_CLASSES.find(c => c.id === classId)
+                        return (
+                          <span key={classId} className="text-[11px] px-2 py-0.5 bg-[#f5f5f7] rounded-lg text-[#6e6e73] inline-flex items-center gap-1.5">
+                            <span
+                              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                              style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }}
+                            />
+                            {cls?.label}: {formatCurrency(value)}
+                          </span>
+                        )
+                      })}
+                    </div>
                   </div>
                 )}
               </div>

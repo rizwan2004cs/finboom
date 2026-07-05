@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react"
 import { Check, Repeat } from "lucide-react"
 import { useUser } from "@/hooks/use-auth"
-import { useOfflineQuery } from "@/hooks/use-offline-query"
+import { useSipPayments } from "@/hooks/use-sip-payments"
 import { useQueryClient } from "@tanstack/react-query"
 import type { Sip, SipPayment } from "@/lib/types"
 import { monthKeyFromDate, sipStatusForMonth } from "@/lib/finance/monthly-cashflow"
@@ -34,11 +34,7 @@ export function SipMonthChecklist({ sips, profileId, monthKey: monthKeyProp }: P
   const queryClient = useQueryClient()
   const monthKey = monthKeyProp ?? monthKeyFromDate()
 
-  const { data: payments = [] } = useOfflineQuery<SipPayment>(
-    "sip_payments",
-    user?.id,
-    { enabled: !!user },
-  )
+  const { data: payments = [], refetch } = useSipPayments(user?.id)
   const [busy, setBusy] = useState(false)
 
   const scopedSips = useMemo(
@@ -64,6 +60,7 @@ export function SipMonthChecklist({ sips, profileId, monthKey: monthKeyProp }: P
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ["sip_payments"] })
     queryClient.invalidateQueries({ queryKey: ["transactions"] })
+    refetch()
   }
 
   async function togglePaid(sip: Sip, isPaid: boolean) {

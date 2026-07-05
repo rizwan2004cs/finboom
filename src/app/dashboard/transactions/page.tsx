@@ -8,14 +8,16 @@ import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { deleteRow, fetchTable } from "@/lib/offline"
 import { useQueryClient } from "@tanstack/react-query"
 import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Edit2, Receipt, User } from "lucide-react"
-import type { Transaction, Party, PartyTransaction, Sip, SipPayment } from "@/lib/types"
+import type { Transaction, Party, PartyTransaction, Sip } from "@/lib/types"
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/constants"
 import { CategoryIcon } from "@/components/category-icon"
 import { AddTransactionModal } from "@/components/modals/add-transaction-modal"
 import { SipMonthChecklist } from "@/components/sip-month-checklist"
+import { useSipPayments } from "@/hooks/use-sip-payments"
 import { useAppDialog } from "@/components/app-dialog"
 import { useCurrency } from "@/hooks/use-currency"
-import { formatDueDate } from "@/lib/utils"
+import { formatDueDate, todayLocalISO } from "@/lib/utils"
+import { TransactionCategoryBreakdown } from "@/components/transactions/category-breakdown"
 import { availableAfterUnpaidSips } from "@/lib/finance/monthly-cashflow"
 import { ensureMonthCarryForward, previousMonthKey } from "@/lib/finance/sip-payments"
 
@@ -77,9 +79,7 @@ function TransactionsPage() {
   const { data: sips = [] } = useOfflineQuery<Sip>(
     "sips", user?.id, { filters: pf, enabled: !!activeProfile }
   )
-  const { data: sipPayments = [] } = useOfflineQuery<SipPayment>(
-    "sip_payments", user?.id, { enabled: !!user }
-  )
+  const { data: sipPayments = [] } = useSipPayments(user?.id)
 
   const prevMonthKey = useMemo(() => previousMonthKey(monthFilter), [monthFilter])
   const prevStartDate = `${prevMonthKey}-01`
@@ -192,11 +192,29 @@ function TransactionsPage() {
   }
 
   const filtered = transactions.filter(t => typeFilter === "all" || t.type === typeFilter)
+
+  const todayStr = todayLocalISO()
+
+  /** Month-to-date for current month; full month for past months. */
+  const tillDateTransactions = useMemo(() => {
+    if (monthFilter !== currentCalendarMonth) return transactions
+    return transactions.filter((t) => t.date <= todayStr)
+  }, [transactions, monthFilter, currentCalendarMonth, todayStr])
+
+  const periodLabel = useMemo(() => {
+    const [y, m] = monthFilter.split("-").map(Number)
+    const monthName = new Date(y, m - 1, 1).toLocaleDateString("en-IN", { month: "long", year: "numeric" })
+    if (monthFilter === currentCalendarMonth) {
+      const day = new Date().getDate()
+      return `1–${day} ${monthName}`
+    }
+    return monthName
+  }, [monthFilter, currentCalendarMonth])
   
-  const totalIncome = transactions
+  const totalIncome = tillDateTransactions
     .filter(t => t.type === "income")
     .reduce((sum, t) => sum + Number(t.amount), 0)
-  const totalExpense = transactions
+  const totalExpense = tillDateTransactions
     .filter(t => t.type === "expense")
     .reduce((sum, t) => sum + Number(t.amount), 0)
   const savings = totalIncome - totalExpense
@@ -256,6 +274,7 @@ function TransactionsPage() {
             <p className="text-[10px] uppercase tracking-wider text-[#86868b]">Income</p>
           </div>
           <p className="text-lg font-bold text-[#1d1d1f] dark:text-white">{formatCurrency(totalIncome)}</p>
+          <p className="text-[10px] text-[#86868b] mt-0.5">{periodLabel}</p>
         </div>
         <div className="liquid-glass rounded-2xl p-3">
           <div className="flex items-center gap-1.5 mb-1">
@@ -263,6 +282,7 @@ function TransactionsPage() {
             <p className="text-[10px] uppercase tracking-wider text-[#86868b]">Expense</p>
           </div>
           <p className="text-lg font-bold text-[#1d1d1f] dark:text-white">{formatCurrency(totalExpense)}</p>
+          <p className="text-[10px] text-[#86868b] mt-0.5">{periodLabel}</p>
         </div>
         <div className="liquid-glass rounded-2xl p-3">
           <p className="text-[10px] uppercase tracking-wider text-[#86868b] mb-1">Savings Rate</p>
@@ -274,6 +294,11 @@ function TransactionsPage() {
           </p>
         </div>
       </div>
+
+      <TransactionCategoryBreakdown
+        transactions={tillDateTransactions}
+        periodLabel={periodLabel}
+      />
 
       {/* Filters */}
       <div className="flex gap-2 overflow-x-auto pb-1">

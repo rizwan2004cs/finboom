@@ -35,9 +35,9 @@ Next.js 16 (App Router) · React 19 · TypeScript · Tailwind CSS 4 · Clerk (au
 ## Getting Started
 
 ```bash
-npm install
+yarn install
 cp .env.example .env.local   # then fill in the values (see below)
-npm run dev
+yarn dev
 ```
 
 Open http://localhost:3000.
@@ -50,13 +50,13 @@ See [`DOCUMENTATION.md` → Environment Variables](./DOCUMENTATION.md#15-environ
 
 | Script | Purpose |
 |--------|---------|
-| `npm run dev` | Start the dev server |
-| `npm run build` | Production build (stamps the service worker, then `next build`) |
-| `npm run start` | Serve the production build |
-| `npm run lint` | ESLint |
-| `npm run blog:new [topic]` | Generate and publish one new blog post |
-| `npm run blog:update [count\|all\|<slugs>]` | Regenerate existing auto-posts into the latest format |
-| `npm run blog:regen` | Update the latest auto-post **and** generate a new one |
+| `yarn dev` | Start the dev server |
+| `yarn build` | Production build (stamps the service worker, then `next build`) |
+| `yarn start` | Serve the production build |
+| `yarn lint` | ESLint |
+| `yarn blog:new [topic]` | Generate and publish one new blog post |
+| `yarn blog:update [count\|all\|<slugs>]` | Regenerate existing auto-posts into the latest format |
+| `yarn blog:regen` | Update the latest auto-post **and** generate a new one |
 
 > The `blog:*` scripts need AI + Sanity write keys in `.env.local` (`GEMINI_API_KEY`/`GROQ_API_KEY`/`OPENAI_API_KEY`, `SANITY_EDITOR_TOKEN`, `NEXT_PUBLIC_SANITY_PROJECT_ID`, `NEXT_PUBLIC_SANITY_DATASET`).
 
@@ -74,7 +74,7 @@ Auto-deploys to **Vercel** on push to `master`. Cron jobs (notifications, exchan
 
 Contributions are welcome and appreciated! 🙌 Whether it's code, docs, design, or bug reports — start with the **[Contributing Guide](./CONTRIBUTING.md)**.
 
-- Good first issues: clearing the new React Compiler lint findings (`npm run lint`) and the "Quick Wins" in the [Roadmap](./ROADMAP.md).
+- Good first issues: clearing the new React Compiler lint findings (`yarn lint`) and the "Quick Wins" in the [Roadmap](./ROADMAP.md).
 - Be kind — we follow a [Code of Conduct](./CODE_OF_CONDUCT.md).
 - Found a security issue? See the [Security Policy](./SECURITY.md).
 

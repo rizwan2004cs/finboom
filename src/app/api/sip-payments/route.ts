@@ -88,6 +88,29 @@ export async function POST(request: Request) {
   return NextResponse.json({ transaction: tx, payment })
 }
 
+/** List SIP payments for the signed-in user (bypasses client RLS). */
+export async function GET(request: Request) {
+  const { userId } = await auth()
+  if (!userId) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
+  }
+
+  const month = new URL(request.url).searchParams.get("month")
+  const sipId = new URL(request.url).searchParams.get("sipId")
+
+  const supabase = createAdminClient()
+  let query = supabase.from("sip_payments").select("*").eq("user_id", userId)
+  if (month) query = query.eq("month", month)
+  if (sipId) query = query.eq("sip_id", sipId)
+
+  const { data, error } = await query.order("paid_date", { ascending: false })
+  if (error) {
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+
+  return NextResponse.json({ payments: data ?? [] })
+}
+
 /** Unmark a SIP payment — removes linked expense too. */
 export async function DELETE(request: Request) {
   const { userId } = await auth()

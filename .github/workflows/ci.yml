@@ -18,20 +18,20 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 24
-          cache: npm
+          cache: yarn
 
       - name: Install dependencies
-        run: npm ci
+        run: yarn install --frozen-lockfile
 
       - name: Type check
-        run: npm run typecheck
+        run: yarn typecheck
 
       - name: Test
-        run: npm test
+        run: yarn test
 
       # Lint currently has known findings from the new React Compiler rules
       # (see CONTRIBUTING.md → "good first issues"). It is reported but does not
       # fail the build yet — remove `continue-on-error` once the backlog is cleared.
       - name: Lint
-        run: npm run lint
+        run: yarn lint
         continue-on-error: true

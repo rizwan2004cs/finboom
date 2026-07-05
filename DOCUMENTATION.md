@@ -589,7 +589,7 @@ Posts can be authored manually or generated automatically. The pipeline lives in
 - **Cron**: `/api/cron/blog-post` (daily, 08:00 UTC) auto-publishes one post.
 - **Admin API**: `/api/blog/generate` (on-demand) and `/api/admin/blog-automation/{status,topics,trigger}` (queue health, add/skip topics, manual run), gated by `requireEditorRole()` (`admin-auth.ts`).
 - **Admin UI**: `/blog/automation` dashboard.
-- **CLI**: `npm run blog:new` (one new post), `npm run blog:update` (regenerate existing auto-posts into the latest format), `npm run blog:regen` (update latest + generate new). Topics are seeded with `scripts/seed-blog-topics.ts` and reconciled with `scripts/sync-blog-topics-with-sanity.ts`.
+- **CLI**: `yarn blog:new` (one new post), `yarn blog:update` (regenerate existing auto-posts into the latest format), `yarn blog:regen` (update latest + generate new). Topics are seeded with `scripts/seed-blog-topics.ts` and reconciled with `scripts/sync-blog-topics-with-sanity.ts`.
 
 ---
 
@@ -648,7 +648,7 @@ Posts can be authored manually or generated automatically. The pipeline lives in
   - `/api/cron/weekly-summary` — Mondays at 3:00 AM UTC (net worth push summary)
   - `/api/cron/monthly-snapshot` — 1st of month at 12:00 AM UTC (capture net worth snapshot)
   - All cron endpoints are protected by the `CRON_SECRET` bearer token
-- **Build**: `npm run build` (runs `stamp-sw.mjs` prebuild → `next build`)
+- **Build**: `yarn build` (runs `stamp-sw.mjs` prebuild → `next build`)
 - **Domain**: `finboom-cyan.vercel.app`
 
 ---

@@ -11,7 +11,7 @@ A practical playbook for taking FinBoom public, attracting contributors, and get
   git log -p | grep -iE "sk_|service_role|VAPID_PRIVATE|_SECRET|TOKEN" || echo "clean"
   ```
   If anything leaked, **rotate those keys** (Clerk, Supabase, Sanity, VAPID, AI) and scrub history with `git filter-repo` before publishing.
-- [ ] Confirm the app still builds: `npm run typecheck && npm run build`.
+- [ ] Confirm the app still builds: `yarn typecheck && yarn build`.
 - [ ] These community files are in place: `LICENSE`, `README.md`, `CONTRIBUTING.md`, `CODE_OF_CONDUCT.md`, `SECURITY.md`, `.github/` templates, `.env.example`.
 - [ ] Make the repo **Public** (Settings → General → Danger Zone → Change visibility).
 
@@ -68,7 +68,7 @@ First impressions happen on the repo page — optimize it:
 
 FinBoom already ships an organic-growth flywheel — lean on it:
 
-- **Free calculators (`/tools`)** and the **blog** are SEO-optimized and public. Keep publishing (the daily blog cron + `npm run blog:new`) to grow search traffic, which funnels to signups and GitHub.
+- **Free calculators (`/tools`)** and the **blog** are SEO-optimized and public. Keep publishing (the daily blog cron + `yarn blog:new`) to grow search traffic, which funnels to signups and GitHub.
 - Make sure `sitemap.xml`, `robots.txt`, and `/feed.xml` are submitted to **Google Search Console**.
 - Each blog post and calculator is a shareable artifact — link the repo from them.
 

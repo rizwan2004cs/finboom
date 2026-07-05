@@ -16,8 +16,8 @@ Closes #
 
 ## Checklist
 
-- [ ] `npm run typecheck` passes
-- [ ] I ran `npm run lint` and didn't introduce new findings
+- [ ] `yarn typecheck` passes
+- [ ] I ran `yarn lint` and didn't introduce new findings
 - [ ] The change is focused and reasonably small
 - [ ] I updated docs (`DOCUMENTATION.md` / `PRODUCT.md` / `README.md`) if behavior changed
 - [ ] I followed the [Contributing guide](../blob/master/CONTRIBUTING.md) and Conventional Commits

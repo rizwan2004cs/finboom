@@ -347,20 +347,56 @@ function PartiesPageInner() {
 
       {/* Overdue alerts */}
       {overdue.length > 0 && (
-        <div className="liquid-glass rounded-2xl p-4 border border-red-200 dark:border-red-500/20 bg-red-50/50 dark:bg-red-500/5">
-          <div className="flex items-center gap-2 mb-2">
-            <AlertCircle className="w-4 h-4 text-red-600" />
-            <p className="text-sm font-medium text-red-800 dark:text-red-400">Overdue ({overdue.length})</p>
+        <div className="liquid-glass rounded-2xl p-4 border border-red-200/80 dark:border-red-500/20 bg-red-50/40 dark:bg-red-500/5">
+          <div className="flex items-center gap-2 mb-3">
+            <div className="w-8 h-8 rounded-full bg-red-100 dark:bg-red-500/15 flex items-center justify-center">
+              <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-red-800 dark:text-red-400">Overdue</p>
+              <p className="text-[11px] text-red-600/80 dark:text-red-400/80">{overdue.length} {overdue.length === 1 ? "entry" : "entries"} past due date</p>
+            </div>
           </div>
-          <div className="space-y-1">
-            {overdue.slice(0, 3).map(tx => (
-              <p key={tx.id} className="text-[12px] text-red-700 dark:text-red-400">
-                {tx.party?.name} — {formatCurrency(Number(tx.amount))} (due {formatDueDate(tx.due_date!)})
-              </p>
-            ))}
-            {overdue.length > 3 && (
-              <p className="text-[12px] text-red-600 dark:text-red-400">+{overdue.length - 3} more</p>
-            )}
+          <div className="space-y-2">
+            {overdue.map(tx => {
+              const balance = balanceByParty.get(tx.party_id) ?? 0
+              const due = new Date(tx.due_date!)
+              due.setHours(0, 0, 0, 0)
+              const now = new Date()
+              now.setHours(0, 0, 0, 0)
+              const daysLate = Math.floor((now.getTime() - due.getTime()) / 86400000)
+              const isReceivable = tx.type === "lent"
+              return (
+                <div
+                  key={tx.id}
+                  className="flex items-center gap-3 p-3 rounded-xl bg-white/60 dark:bg-white/[0.04] border border-red-100 dark:border-red-500/10"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-medium text-[#1d1d1f] dark:text-white truncate">
+                        {tx.party?.name ?? "Unknown"}
+                      </p>
+                      <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md bg-red-100 dark:bg-red-500/15 text-red-700 dark:text-red-400">
+                        {daysLate}d late
+                      </span>
+                    </div>
+                    <p className="text-[12px] text-[#86868b] mt-0.5">
+                      {isReceivable ? "They owe you" : "You owe"} · due {formatDueDate(tx.due_date!)}
+                    </p>
+                  </div>
+                  <p className="text-sm font-semibold text-red-700 dark:text-red-400 tabular-nums">
+                    {formatCurrency(Number(tx.amount))}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => handleSettle(tx.party_id, balance)}
+                    className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#1d1d1f] dark:bg-white text-white dark:text-[#1d1d1f] hover:opacity-90 transition-opacity"
+                  >
+                    Settle
+                  </button>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}

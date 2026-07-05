@@ -267,8 +267,8 @@ export default function DashboardPage() {
       {/* Spending This Month */}
       <div className="liquid-glass rounded-2xl p-5">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-[17px] font-semibold text-[#1d1d1f]">Spending This Month</h3>
-          <Link href="/dashboard/transactions" className="text-[12px] text-[#86868b] flex items-center gap-1 hover:text-[#1d1d1f] transition-colors">
+          <h3 className="text-[17px] font-semibold text-[#1d1d1f] dark:text-white">Spending This Month</h3>
+          <Link href="/dashboard/transactions" className="text-[12px] text-[#86868b] flex items-center gap-1 hover:text-[#1d1d1f] dark:hover:text-white transition-colors">
             All transactions <ArrowUpRight className="w-3 h-3" />
           </Link>
         </div>

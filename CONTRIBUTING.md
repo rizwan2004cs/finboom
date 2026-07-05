@@ -19,7 +19,7 @@ By participating, you agree to abide by our [Code of Conduct](./CODE_OF_CONDUCT.
 
 New here? Great starting points:
 
-1. **React Compiler lint cleanup.** `npm run lint` currently reports findings from the new `react-hooks/*` rules (`set-state-in-effect`, `purity`, `immutability`, `refs`). The app works today, but each is a small, self-contained fix — perfect for a first PR. Fix one file at a time.
+1. **React Compiler lint cleanup.** `yarn lint` currently reports findings from the new `react-hooks/*` rules (`set-state-in-effect`, `purity`, `immutability`, `refs`). The app works today, but each is a small, self-contained fix — perfect for a first PR. Fix one file at a time.
 2. **Roadmap items** — see [`ROADMAP.md`](./ROADMAP.md); the "Phase 1 — Quick Wins" items are scoped and low-effort.
 3. **Docs** — anything unclear in setup is fair game.
 
@@ -29,7 +29,7 @@ If an issue isn't assigned, comment that you'd like to take it so we avoid dupli
 
 ## Local setup
 
-**Prerequisites:** Node.js 24+, npm, and a Git client. The app uses Clerk (auth), Supabase (database), and optionally Sanity + an AI provider (blog).
+**Prerequisites:** Node.js 24+, Yarn 1.x, and a Git client. The app uses Clerk (auth), Supabase (database), and optionally Sanity + an AI provider (blog).
 
 ```bash
 # 1. Fork the repo on GitHub, then clone your fork
@@ -37,13 +37,13 @@ git clone https://github.com/<your-username>/finboom.git
 cd finboom
 
 # 2. Install dependencies
-npm install
+yarn install
 
 # 3. Set up environment variables
 cp .env.example .env.local      # then fill in the values (see comments in the file)
 
 # 4. Run the dev server
-npm run dev                     # http://localhost:3000
+yarn dev                     # http://localhost:3000
 ```
 
 > You don't need every service to work on most things. Clerk + Supabase get the dashboard running; Sanity + an AI key are only needed for the blog. UI/calculator/docs work needs little or no backend.
@@ -61,9 +61,9 @@ A tour of the codebase lives in [`DOCUMENTATION.md`](./DOCUMENTATION.md#3-projec
 2. **Make focused changes.** Keep PRs small and single-purpose — it makes review faster and friendlier.
 3. **Check your work before pushing:**
    ```bash
-   npm run typecheck   # must pass — this is the CI gate
-   npm run lint        # for awareness (see "good first issues" about existing findings)
-   npm run build       # optional, but a good final check
+   yarn typecheck   # must pass — this is the CI gate
+   yarn lint        # for awareness (see "good first issues" about existing findings)
+   yarn build       # optional, but a good final check
    ```
 4. **Commit** using [Conventional Commits](https://www.conventionalcommits.org/):
    - `feat: add SIP step-up frequency option`

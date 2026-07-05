@@ -32,6 +32,20 @@ async function cacheUnmarkResult(payment: SipPayment) {
   await idbRemove("sip_payments", payment.id)
 }
 
+async function fetchSipPaymentFromApi(
+  sipId: string,
+  monthKey: string,
+): Promise<SipPayment | null> {
+  const res = await fetch(
+    `/api/sip-payments?${new URLSearchParams({ sipId, month: monthKey })}`,
+  )
+  const data = await res.json()
+  if (!res.ok) return null
+  const payment = (data.payments as SipPayment[] | undefined)?.[0]
+  if (payment) await put("sip_payments", payment)
+  return payment ?? null
+}
+
 export async function markSipPaid(
   _userId: string,
   sip: Sip,
@@ -49,6 +63,14 @@ export async function markSipPaid(
       body: JSON.stringify({ sipId: sip.id, monthKey, paidDate }),
     })
     const data = await res.json()
+
+    // Already paid on server — sync local state instead of showing an error.
+    if (res.status === 409) {
+      const existing = await fetchSipPaymentFromApi(sip.id, monthKey)
+      if (existing) return { ok: true }
+      return { ok: false, error: data.error ?? "Already marked paid" }
+    }
+
     if (!res.ok) {
       return { ok: false, error: data.error ?? "Could not mark paid" }
     }
