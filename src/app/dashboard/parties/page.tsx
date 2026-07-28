@@ -213,13 +213,51 @@ function PartiesPageInner() {
     .filter(p => p.balance < 0)
     .reduce((sum, p) => sum + Math.abs(p.balance), 0)
 
-  // Net outstanding per party, to skip obligations that are already settled.
+  // Net outstanding per party (used for summary cards and settle actions).
   const balanceByParty = new Map(partyBalances.map(p => [p.party.id, p.balance]))
+
+  // Remaining outstanding per individual obligation. Repayments (received_back /
+  // paid_back) aren't linked to specific lent/borrowed entries, so allocate them
+  // FIFO — oldest obligation first — to decide which entries are still open. This
+  // lets a fully-repaid entry drop off the overdue list even when the party still
+  // has other open obligations.
+  const outstandingByTx = useMemo(() => {
+    const remaining = new Map<string, number>()
+    const byParty = new Map<string, PartyTransaction[]>()
+    for (const tx of transactions) {
+      const list = byParty.get(tx.party_id)
+      if (list) list.push(tx)
+      else byParty.set(tx.party_id, [tx])
+    }
+    const allocate = (txs: PartyTransaction[], obligation: string, repayment: string) => {
+      let pool = txs
+        .filter(t => t.type === repayment)
+        .reduce((s, t) => s + Number(t.amount), 0)
+      const obligations = txs
+        .filter(t => t.type === obligation)
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      for (const ob of obligations) {
+        const amt = Number(ob.amount)
+        if (pool >= amt) {
+          pool -= amt
+          remaining.set(ob.id, 0)
+        } else {
+          remaining.set(ob.id, amt - pool)
+          pool = 0
+        }
+      }
+    }
+    for (const txs of byParty.values()) {
+      allocate(txs, "lent", "received_back")
+      allocate(txs, "borrowed", "paid_back")
+    }
+    return remaining
+  }, [transactions])
+
+  // An obligation is unsettled while it still has an outstanding remainder.
   const isUnsettled = (tx: PartyTransaction) => {
-    const bal = balanceByParty.get(tx.party_id) ?? 0
-    if (tx.type === "lent") return bal > 0      // still owed to you
-    if (tx.type === "borrowed") return bal < 0  // you still owe
-    return false
+    if (tx.type !== "lent" && tx.type !== "borrowed") return false
+    return (outstandingByTx.get(tx.id) ?? Number(tx.amount)) > 0
   }
 
   // Due within 30 days — sum the individual due-dated entries (NOT the whole
@@ -234,12 +272,8 @@ function PartiesPageInner() {
     const d = new Date(tx.due_date)
     return d >= today && d <= in30Days
   })
-  const dueSoonGrossByParty = new Map<string, number>()
-  for (const tx of dueSoon) {
-    dueSoonGrossByParty.set(tx.party_id, (dueSoonGrossByParty.get(tx.party_id) ?? 0) + Number(tx.amount))
-  }
-  const dueSoonAmount = Array.from(dueSoonGrossByParty.entries()).reduce(
-    (sum, [pid, gross]) => sum + Math.min(gross, Math.abs(balanceByParty.get(pid) ?? 0)),
+  const dueSoonAmount = dueSoon.reduce(
+    (sum, tx) => sum + (outstandingByTx.get(tx.id) ?? Number(tx.amount)),
     0,
   )
 
@@ -385,7 +419,7 @@ function PartiesPageInner() {
                     </p>
                   </div>
                   <p className="text-sm font-semibold text-red-700 dark:text-red-400 tabular-nums">
-                    {formatCurrency(Number(tx.amount))}
+                    {formatCurrency(outstandingByTx.get(tx.id) ?? Number(tx.amount))}
                   </p>
                   <button
                     type="button"
@@ -464,7 +498,7 @@ function PartiesPageInner() {
                   {filteredTransactions.map(tx => {
                     const config = typeConfig[tx.type]
                     const Icon = config.icon
-                    const isOverdue = tx.due_date && new Date(tx.due_date) < today && (tx.type === "lent" || tx.type === "borrowed")
+                    const isOverdue = tx.due_date && new Date(tx.due_date) < today && isUnsettled(tx)
                     return (
                       <div key={tx.id} className="liquid-glass rounded-2xl p-4 flex items-center gap-3">
                         <div className={`w-10 h-10 rounded-xl ${config.bg} flex items-center justify-center flex-shrink-0`}>
@@ -647,7 +681,7 @@ function PartiesPageInner() {
                   partyTxs.map(tx => {
                     const config = typeConfig[tx.type]
                     const Icon = config.icon
-                    const isOverdue = tx.due_date && new Date(tx.due_date) < today && (tx.type === "lent" || tx.type === "borrowed")
+                    const isOverdue = tx.due_date && new Date(tx.due_date) < today && isUnsettled(tx)
                     return (
                       <div key={tx.id} className="liquid-glass rounded-2xl p-4 flex items-center gap-3">
                         <div className={`w-9 h-9 rounded-xl ${config.bg} flex items-center justify-center flex-shrink-0`}>
