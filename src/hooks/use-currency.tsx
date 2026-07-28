@@ -123,20 +123,16 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
   const currencyInfo = CURRENCIES.find((c) => c.code === currency) || CURRENCIES[0]
   const symbol = currencyInfo.symbol
 
+  // Historically produced abbreviated notation (K, L, Cr / K, M, B), but the app
+  // now shows full numbers everywhere an amount appears. Kept as a named alias so
+  // existing call sites don't need to change.
   const formatCompact = useCallback(
     (amount: number) => {
       const converted = amount * rate
       if (currency === "INR") {
-        if (converted >= 10000000) return `${symbol}${(converted / 10000000).toFixed(2)} Cr`
-        if (converted >= 100000) return `${symbol}${(converted / 100000).toFixed(2)} L`
-        if (converted >= 1000) return `${symbol}${(converted / 1000).toFixed(1)}K`
-        return `${symbol}${converted.toLocaleString("en-IN")}`
+        return `${symbol}${converted.toLocaleString("en-IN", { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`
       }
-      // Western notation for other currencies
-      if (Math.abs(converted) >= 1_000_000_000) return `${symbol}${(converted / 1_000_000_000).toFixed(2)}B`
-      if (Math.abs(converted) >= 1_000_000) return `${symbol}${(converted / 1_000_000).toFixed(2)}M`
-      if (Math.abs(converted) >= 1_000) return `${symbol}${(converted / 1_000).toFixed(1)}K`
-      return `${symbol}${converted.toLocaleString("en-US", { minimumFractionDigits: 0, maximumFractionDigits: 2 })}`
+      return new Intl.NumberFormat("en-US", { style: "currency", currency }).format(converted)
     },
     [rate, currency, symbol]
   )

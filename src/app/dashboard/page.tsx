@@ -14,7 +14,7 @@ import { goalProgressPct } from "@/lib/finance/goals"
 import { useCurrency } from "@/hooks/use-currency"
 
 export default function DashboardPage() {
-  const { formatCompact: formatCurrency } = useCurrency()
+  const { formatCurrency } = useCurrency()
   const { user } = useUser()
   const { activeProfile } = useProfile()
 

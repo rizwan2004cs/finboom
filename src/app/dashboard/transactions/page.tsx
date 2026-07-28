@@ -30,7 +30,7 @@ export default function TransactionsPageWrapper() {
 }
 
 function TransactionsPage() {
-  const { formatCompact: formatCurrency, symbol: currencySymbol } = useCurrency()
+  const { formatCurrency, symbol: currencySymbol } = useCurrency()
   const { user } = useUser()
   const { activeProfile } = useProfile()
   const searchParams = useSearchParams()
