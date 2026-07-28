@@ -6,7 +6,7 @@ import { useUser } from "@/hooks/use-auth"
 import { useSipPayments, mergeSipPaymentInCache } from "@/hooks/use-sip-payments"
 import { useQueryClient } from "@tanstack/react-query"
 import type { Sip, SipPayment, Transaction } from "@/lib/types"
-import { monthKeyFromDate, sipStatusForMonth } from "@/lib/finance/monthly-cashflow"
+import { monthKeyFromDate, sipStatusForMonth, sipAppliesToMonth } from "@/lib/finance/monthly-cashflow"
 import { markSipPaid, unmarkSipPaid, markAllSipsPaid } from "@/lib/finance/sip-payments"
 import { useCurrency } from "@/hooks/use-currency"
 
@@ -43,7 +43,7 @@ export function SipMonthChecklist({ sips, profileId, monthKey: monthKeyProp, tra
     () => (profileId ? sips.filter((s) => s.profile_id === profileId) : sips),
     [sips, profileId],
   )
-  const activeSips = scopedSips.filter((s) => s.active)
+  const activeSips = scopedSips.filter((s) => s.active && sipAppliesToMonth(s, monthKey))
 
   const scopedTx = useMemo(
     () => (profileId ? transactions.filter((t) => t.profile_id === profileId) : transactions),

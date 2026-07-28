@@ -13,10 +13,17 @@ export async function POST(request: Request) {
   const body = await request.json()
   const sipId = body.sipId as string | undefined
   const monthKey = body.monthKey as string | undefined
-  const paidDate = (body.paidDate as string | undefined) ?? new Date().toISOString().slice(0, 10)
 
   if (!sipId || !monthKey || !/^\d{4}-\d{2}$/.test(monthKey)) {
     return NextResponse.json({ error: "Invalid sipId or monthKey" }, { status: 400 })
+  }
+
+  // The payment date must fall inside the month being marked — otherwise the
+  // expense lands in the wrong month's cashflow. Clamp anything else to the
+  // month's first day (client normally sends a correct in-month date).
+  let paidDate = (body.paidDate as string | undefined) ?? new Date().toISOString().slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(paidDate) || !paidDate.startsWith(monthKey)) {
+    paidDate = `${monthKey}-01`
   }
 
   const supabase = createAdminClient()
@@ -51,8 +58,11 @@ export async function POST(request: Request) {
 
   const description = sipExpenseDescription(sip)
   const monthStart = `${monthKey}-01`
+  // Build from local date parts — toISOString() is UTC and drops the month's
+  // last day on UTC+ servers, shrinking the reconciliation window.
   const [y, m] = monthKey.split("-").map(Number)
-  const monthEnd = new Date(y, m, 0).toISOString().slice(0, 10)
+  const lastDay = new Date(y, m, 0).getDate()
+  const monthEnd = `${monthKey}-${String(lastDay).padStart(2, "0")}`
 
   const { data: existingTx } = await supabase
     .from("transactions")

@@ -11,6 +11,7 @@ import { SpendingChart } from "@/components/charts/spending-chart"
 import type { Asset, Liability, Goal, Snapshot, PartyTransaction, Transaction, Sip } from "@/lib/types"
 import { ASSET_CLASSES } from "@/lib/constants"
 import { goalProgressPct } from "@/lib/finance/goals"
+import { todayLocalISO } from "@/lib/utils"
 import { useCurrency } from "@/hooks/use-currency"
 
 export default function DashboardPage() {
@@ -77,15 +78,23 @@ export default function DashboardPage() {
   const today = new Date()
   const in30Days = new Date(today)
   in30Days.setDate(in30Days.getDate() + 30)
-  const receivableIn30 = partyTransactions
-    .filter(tx =>
-      tx.type === "lent" &&
-      tx.due_date &&
-      (partyBalanceMap.get(tx.party_id) || 0) > 0 && // skip parties already settled
-      new Date(tx.due_date) >= today &&
-      new Date(tx.due_date) <= in30Days
-    )
-    .reduce((s, tx) => s + Number(tx.amount), 0)
+  // Compare YYYY-MM-DD strings in local time (Date-parsing a bare date string
+  // is UTC midnight, which dropped entries due today), and cap each party's
+  // contribution at its outstanding balance so partial repayments aren't
+  // re-counted — otherwise this card could exceed Total Receivable beside it.
+  const todayStr = todayLocalISO()
+  const plus30Str = `${in30Days.getFullYear()}-${String(in30Days.getMonth() + 1).padStart(2, "0")}-${String(in30Days.getDate()).padStart(2, "0")}`
+  const upcomingByParty = new Map<string, number>()
+  for (const tx of partyTransactions) {
+    if (tx.type !== "lent" || !tx.due_date) continue
+    if (tx.due_date < todayStr || tx.due_date > plus30Str) continue
+    if ((partyBalanceMap.get(tx.party_id) || 0) <= 0) continue // party already settled
+    upcomingByParty.set(tx.party_id, (upcomingByParty.get(tx.party_id) || 0) + Number(tx.amount))
+  }
+  const receivableIn30 = Array.from(upcomingByParty.entries()).reduce(
+    (s, [pid, gross]) => s + Math.min(gross, partyBalanceMap.get(pid) || 0),
+    0,
+  )
 
   // SIPs still due in the remainder of this month (active only). A SIP scheduled
   // for a day beyond this month's length (e.g. 31 in April) debits on the last

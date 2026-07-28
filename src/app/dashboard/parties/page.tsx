@@ -3,8 +3,7 @@
 import { Suspense } from "react"
 import { useEffect, useMemo, useState } from "react"
 import { useUser } from "@/hooks/use-auth"
-import { createClient } from "@/utils/supabase/client"
-import { deleteRow } from "@/lib/offline"
+import { deleteRow, fetchTable } from "@/lib/offline"
 import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { useQueryClient } from "@tanstack/react-query"
 import { useSearchParams } from "next/navigation"
@@ -23,12 +22,12 @@ import {
   HandCoins,
   ChevronLeft,
 } from "lucide-react"
-import type { Party, PartyTransaction } from "@/lib/types"
+import type { Party, PartyTransaction, Transaction } from "@/lib/types"
 import { AddPartyTransactionModal } from "@/components/modals/add-party-transaction-modal"
 import { AddPartyModal } from "@/components/modals/add-party-modal"
 import { EditPartyModal } from "@/components/modals/edit-party-modal"
 import { useCurrency } from "@/hooks/use-currency"
-import { formatDueDate } from "@/lib/utils"
+import { formatDueDate, todayLocalISO } from "@/lib/utils"
 
 const typeConfig = {
   lent: { label: "Gave", icon: ArrowUpRight, color: "text-red-600", bg: "bg-red-50 dark:bg-red-500/10" },
@@ -103,37 +102,57 @@ function PartiesPageInner() {
     if (searchParams.get("action") === "add") setShowAddTransaction(true)
   }, [searchParams])
 
+  // Legacy entries (no linked_transaction_id) get their auto-created transaction
+  // matched by description/amount/date. Goes through the offline data layer so
+  // the cached list is searched when the network is down, and re-verifies the
+  // match locally because fetchTable's failure fallback returns the unfiltered
+  // cache. Returns false when the lookup itself failed — callers must then keep
+  // the ledger entry rather than silently orphaning the linked transaction.
+  async function deleteLegacyLinkedTransaction(ptx: PartyTransaction & { party?: Party }): Promise<boolean> {
+    const partyName = ptx.party?.name || ""
+    const descMap: Record<string, { type: string; desc: string }> = {
+      lent: { type: "expense", desc: `Lent to ${partyName}` },
+      received_back: { type: "income", desc: `Received back from ${partyName}` },
+      borrowed: { type: "income", desc: `Borrowed from ${partyName}` },
+      paid_back: { type: "expense", desc: `Paid back to ${partyName}` },
+    }
+    const expected = descMap[ptx.type]
+    if (!expected || !partyName) return true
+    try {
+      const rows = await fetchTable<Transaction>("transactions", ptx.user_id, {
+        filters: [
+          { column: "type", op: "eq", value: expected.type },
+          { column: "description", op: "eq", value: expected.desc },
+          { column: "date", op: "eq", value: ptx.date },
+        ],
+      })
+      const linked = rows.find(
+        t =>
+          t.type === expected.type &&
+          t.description === expected.desc &&
+          t.date === ptx.date &&
+          Number(t.amount) === Number(ptx.amount),
+      )
+      if (linked) await deleteRow("transactions", linked.id)
+      return true
+    } catch {
+      return false
+    }
+  }
+
   async function handleDelete(id: string) {
     const ptx = transactions.find(tx => tx.id === id)
     if (ptx) {
       if (ptx.linked_transaction_id) {
         // Direct link exists
         await deleteRow("transactions", ptx.linked_transaction_id)
-      } else {
-        // Fallback: match auto-created transaction by description pattern
-        const partyName = ptx.party?.name || ""
-        const descMap: Record<string, { type: string; desc: string }> = {
-          lent: { type: "expense", desc: `Lent to ${partyName}` },
-          received_back: { type: "income", desc: `Received back from ${partyName}` },
-          borrowed: { type: "income", desc: `Borrowed from ${partyName}` },
-          paid_back: { type: "expense", desc: `Paid back to ${partyName}` },
-        }
-        const match = descMap[ptx.type]
-        if (match && partyName) {
-          const supabase = createClient()
-          const { data: linked } = await supabase
-            .from("transactions")
-            .select("id")
-            .eq("user_id", ptx.user_id)
-            .eq("type", match.type)
-            .eq("description", match.desc)
-            .eq("amount", ptx.amount)
-            .eq("date", ptx.date)
-            .limit(1)
-          if (linked && linked.length > 0) {
-            await deleteRow("transactions", linked[0].id)
-          }
-        }
+      } else if (!(await deleteLegacyLinkedTransaction(ptx))) {
+        window.dispatchEvent(
+          new CustomEvent("finboom:write-error", {
+            detail: "Couldn't reach the linked transaction — nothing was deleted. Try again.",
+          }),
+        )
+        return
       }
     }
     await deleteRow("party_transactions", id)
@@ -146,30 +165,14 @@ function PartiesPageInner() {
     for (const ptx of partyTxs) {
       if (ptx.linked_transaction_id) {
         await deleteRow("transactions", ptx.linked_transaction_id)
-      } else {
-        const partyName = ptx.party?.name || ""
-        const descMap: Record<string, { type: string; desc: string }> = {
-          lent: { type: "expense", desc: `Lent to ${partyName}` },
-          received_back: { type: "income", desc: `Received back from ${partyName}` },
-          borrowed: { type: "income", desc: `Borrowed from ${partyName}` },
-          paid_back: { type: "expense", desc: `Paid back to ${partyName}` },
-        }
-        const match = descMap[ptx.type]
-        if (match && partyName) {
-          const supabase = createClient()
-          const { data: linked } = await supabase
-            .from("transactions")
-            .select("id")
-            .eq("user_id", ptx.user_id)
-            .eq("type", match.type)
-            .eq("description", match.desc)
-            .eq("amount", ptx.amount)
-            .eq("date", ptx.date)
-            .limit(1)
-          if (linked && linked.length > 0) {
-            await deleteRow("transactions", linked[0].id)
-          }
-        }
+      } else if (!(await deleteLegacyLinkedTransaction(ptx))) {
+        window.dispatchEvent(
+          new CustomEvent("finboom:write-error", {
+            detail: "Couldn't reach linked transactions — party not deleted. Try again.",
+          }),
+        )
+        setDeletingPartyId(null)
+        return
       }
     }
     await deleteRow("parties", id)
@@ -264,13 +267,16 @@ function PartiesPageInner() {
   // party net balance), so setting a due date on one transaction doesn't pull
   // the entire party balance into this card. Cap each party's contribution at
   // its net outstanding so a partial repayment can't overstate what's due.
-  const today = new Date()
-  const in30Days = new Date(today)
+  // Compare YYYY-MM-DD strings in local time. `new Date("YYYY-MM-DD")` parses
+  // as UTC midnight, which made entries due *today* read as overdue from
+  // 05:30 IST and simultaneously drop out of the due-soon window.
+  const todayStr = todayLocalISO()
+  const in30Days = new Date()
   in30Days.setDate(in30Days.getDate() + 30)
+  const plus30Str = `${in30Days.getFullYear()}-${String(in30Days.getMonth() + 1).padStart(2, "0")}-${String(in30Days.getDate()).padStart(2, "0")}`
   const dueSoon = transactions.filter(tx => {
     if (!tx.due_date || !isUnsettled(tx)) return false
-    const d = new Date(tx.due_date)
-    return d >= today && d <= in30Days
+    return tx.due_date >= todayStr && tx.due_date <= plus30Str
   })
   const dueSoonAmount = dueSoon.reduce(
     (sum, tx) => sum + (outstandingByTx.get(tx.id) ?? Number(tx.amount)),
@@ -280,7 +286,7 @@ function PartiesPageInner() {
   // Overdue items — still-outstanding receivables and payables past their due date.
   const overdue = transactions.filter(tx => {
     if (!tx.due_date || !isUnsettled(tx)) return false
-    return new Date(tx.due_date) < today
+    return tx.due_date < todayStr
   })
 
   function handleSettle(partyId: string, balance: number) {
@@ -394,7 +400,8 @@ function PartiesPageInner() {
           <div className="space-y-2">
             {overdue.map(tx => {
               const balance = balanceByParty.get(tx.party_id) ?? 0
-              const due = new Date(tx.due_date!)
+              // "T00:00:00" forces local-time parsing; a bare date string is UTC.
+              const due = new Date(`${tx.due_date!}T00:00:00`)
               due.setHours(0, 0, 0, 0)
               const now = new Date()
               now.setHours(0, 0, 0, 0)
@@ -421,9 +428,12 @@ function PartiesPageInner() {
                   <p className="text-sm font-semibold text-red-700 dark:text-red-400 tabular-nums">
                     {formatCurrency(outstandingByTx.get(tx.id) ?? Number(tx.amount))}
                   </p>
+                  {/* Direction comes from the entry being settled, not the
+                      party's net balance — with mixed lent+borrowed entries
+                      the net sign can point the repayment the wrong way. */}
                   <button
                     type="button"
-                    onClick={() => handleSettle(tx.party_id, balance)}
+                    onClick={() => handleSettle(tx.party_id, tx.type === "lent" ? 1 : -1)}
                     className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#1d1d1f] dark:bg-white text-white dark:text-[#1d1d1f] hover:opacity-90 transition-opacity"
                   >
                     Settle
@@ -498,7 +508,7 @@ function PartiesPageInner() {
                   {filteredTransactions.map(tx => {
                     const config = typeConfig[tx.type]
                     const Icon = config.icon
-                    const isOverdue = tx.due_date && new Date(tx.due_date) < today && isUnsettled(tx)
+                    const isOverdue = tx.due_date && tx.due_date < todayStr && isUnsettled(tx)
                     return (
                       <div key={tx.id} className="liquid-glass rounded-2xl p-4 flex items-center gap-3">
                         <div className={`w-10 h-10 rounded-xl ${config.bg} flex items-center justify-center flex-shrink-0`}>
@@ -681,7 +691,7 @@ function PartiesPageInner() {
                   partyTxs.map(tx => {
                     const config = typeConfig[tx.type]
                     const Icon = config.icon
-                    const isOverdue = tx.due_date && new Date(tx.due_date) < today && isUnsettled(tx)
+                    const isOverdue = tx.due_date && tx.due_date < todayStr && isUnsettled(tx)
                     return (
                       <div key={tx.id} className="liquid-glass rounded-2xl p-4 flex items-center gap-3">
                         <div className={`w-9 h-9 rounded-xl ${config.bg} flex items-center justify-center flex-shrink-0`}>

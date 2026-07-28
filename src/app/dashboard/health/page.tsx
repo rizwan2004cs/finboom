@@ -12,7 +12,11 @@ import { useCurrency } from "@/hooks/use-currency"
 
 export default function HealthPage() {
   const { user } = useUser()
-  const { formatCompact, symbol: currencySymbol } = useCurrency()
+  // Amounts are stored in INR (the app-wide canonical currency) while the
+  // inputs are labeled in the display currency — so convert() on the way into
+  // the field and toINR() on the way out. Identity when display currency is INR.
+  const { formatCompact, symbol: currencySymbol, currency, toINR, convert } = useCurrency()
+  const displayAmount = (inr: number) => (inr ? Math.round(convert(inr) * 100) / 100 : "")
   const [health, setHealth] = useState<HealthCheck & { id?: string }>({
     has_term_insurance: false,
     term_insurance_cover: 0,
@@ -231,8 +235,8 @@ export default function HealthPage() {
                 <label className="text-xs text-[#86868b]">Cover Amount ({currencySymbol})</label>
                 <input
                   type="number"
-                  value={health.term_insurance_cover || ""}
-                  onChange={(e) => setHealth(prev => ({ ...prev, term_insurance_cover: Number(e.target.value) }))}
+                  value={displayAmount(health.term_insurance_cover)}
+                  onChange={(e) => setHealth(prev => ({ ...prev, term_insurance_cover: toINR(Number(e.target.value), currency) }))}
                   placeholder="e.g. 10000000"
                   className="mt-1 w-full px-4 py-2.5 rounded-xl bg-[#f5f5f7] border-0 text-sm text-[#1d1d1f] placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
                 />
@@ -279,8 +283,8 @@ export default function HealthPage() {
                 <label className="text-xs text-[#86868b]">Cover Amount ({currencySymbol})</label>
                 <input
                   type="number"
-                  value={health.health_insurance_cover || ""}
-                  onChange={(e) => setHealth(prev => ({ ...prev, health_insurance_cover: Number(e.target.value) }))}
+                  value={displayAmount(health.health_insurance_cover)}
+                  onChange={(e) => setHealth(prev => ({ ...prev, health_insurance_cover: toINR(Number(e.target.value), currency) }))}
                   placeholder="e.g. 500000"
                   className="mt-1 w-full px-4 py-2.5 rounded-xl bg-[#f5f5f7] border-0 text-sm text-[#1d1d1f] placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
                 />
@@ -312,8 +316,8 @@ export default function HealthPage() {
                 <label className="text-xs text-[#86868b]">Monthly Expenses ({currencySymbol})</label>
                 <input
                   type="number"
-                  value={health.monthly_expenses || ""}
-                  onChange={(e) => setHealth(prev => ({ ...prev, monthly_expenses: Number(e.target.value) }))}
+                  value={displayAmount(health.monthly_expenses)}
+                  onChange={(e) => setHealth(prev => ({ ...prev, monthly_expenses: toINR(Number(e.target.value), currency) }))}
                   placeholder="e.g. 50000"
                   className="mt-1 w-full px-4 py-2.5 rounded-xl bg-[#f5f5f7] border-0 text-sm text-[#1d1d1f] placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
                 />

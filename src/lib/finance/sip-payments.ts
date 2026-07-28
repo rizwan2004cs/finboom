@@ -50,17 +50,28 @@ export async function markSipPaid(
   _userId: string,
   sip: Sip,
   monthKey: string,
-  paidDate: string = todayLocalISO(),
+  paidDate?: string,
 ): Promise<{ ok: boolean; error?: string; payment?: SipPayment }> {
   if (!isOnline()) {
     return { ok: false, error: "Go online to mark SIPs paid" }
+  }
+
+  // The expense must land inside the month being marked. Today's date is only
+  // valid for the current month — when marking a past month, use the SIP's
+  // debit day clamped to that month's length, otherwise the expense would hit
+  // this month's cashflow and block the current month's real payment.
+  let effectiveDate = paidDate ?? todayLocalISO()
+  if (!effectiveDate.startsWith(monthKey)) {
+    const [y, m] = monthKey.split("-").map(Number)
+    const lastDay = new Date(y, m, 0).getDate()
+    effectiveDate = `${monthKey}-${String(Math.min(sip.sip_day, lastDay)).padStart(2, "0")}`
   }
 
   try {
     const res = await fetch("/api/sip-payments", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sipId: sip.id, monthKey, paidDate }),
+      body: JSON.stringify({ sipId: sip.id, monthKey, paidDate: effectiveDate }),
     })
     const data = await res.json()
 
@@ -117,9 +128,9 @@ export async function markAllSipsPaid(
   let marked = 0
   let failed = 0
   const payments: SipPayment[] = []
-  const paidDate = todayLocalISO()
   for (const sip of sips) {
-    const result = await markSipPaid(userId, sip, monthKey, paidDate)
+    // Let markSipPaid pick the date so past months clamp per-SIP correctly.
+    const result = await markSipPaid(userId, sip, monthKey)
     if (result.ok) {
       marked++
       if (result.payment) payments.push(result.payment)
@@ -137,13 +148,31 @@ export async function ensureMonthCarryForward(
   existingTransactions: Transaction[],
 ): Promise<boolean> {
   if (amount <= 0) return false
-  const already = existingTransactions.some(
-    (t) =>
-      t.type === "income" &&
-      t.description === MONTH_FORWARD_DESCRIPTION &&
-      (t.date || "").startsWith(monthKey),
-  )
-  if (already) return false
+  const isForward = (t: Pick<Transaction, "type" | "description" | "date">) =>
+    t.type === "income" &&
+    t.description === MONTH_FORWARD_DESCRIPTION &&
+    (t.date || "").startsWith(monthKey)
+  if (existingTransactions.some(isForward)) return false
+
+  // The caller's list can be stale (React-query state mid-refetch), so re-check
+  // against the server right before writing. If the check itself fails (offline),
+  // fall back to the local-list verdict above rather than blocking the insert.
+  try {
+    const { createClient } = await import("@/utils/supabase/client")
+    const { data: existing, error: checkError } = await createClient()
+      .from("transactions")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("profile_id", profileId)
+      .eq("type", "income")
+      .eq("description", MONTH_FORWARD_DESCRIPTION)
+      .gte("date", `${monthKey}-01`)
+      .lte("date", `${monthKey}-31`)
+      .limit(1)
+    if (!checkError && existing && existing.length > 0) return false
+  } catch {
+    // Network failure — proceed on the local check only.
+  }
 
   const { insertRow } = await import("@/lib/offline")
   const firstDay = `${monthKey}-01`

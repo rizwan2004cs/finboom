@@ -27,7 +27,7 @@ interface Props {
 
 export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
   const isEditing = !!transaction
-  const { symbol } = useCurrency()
+  const { symbol, currency, toINR, convert } = useCurrency()
   const { user } = useUser()
   const { activeProfile } = useProfile()
   const [saving, setSaving] = useState(false)
@@ -39,7 +39,11 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
   const [form, setForm] = useState({
     type: (transaction?.type || "expense") as "income" | "expense",
     category: transaction?.category || "",
-    amount: transaction?.amount?.toString() || "",
+    // Stored amounts are INR; the field is labeled in the display currency, so
+    // prefill the converted value when editing (round-trips through toINR on save).
+    amount: transaction?.amount != null
+      ? String(Math.round(convert(Number(transaction.amount)) * 100) / 100)
+      : "",
     description: transaction?.description || "",
     date: transaction?.date || todayLocalISO(),
     spent_for_party_id: "",
@@ -98,11 +102,15 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
     setError("")
     setSaving(true)
 
+    // The field is labeled in the display currency — normalise to INR for
+    // storage (the whole app aggregates in INR). No-op when currency is INR.
+    const amountInr = Math.round(toINR(amount, currency) * 100) / 100
+
     if (isEditing) {
       await updateRow("transactions", transaction.id, {
         type: form.type,
         category: form.category || categories[0].id,
-        amount,
+        amount: amountInr,
         description: form.description || null,
         date: form.date,
       })
@@ -113,7 +121,7 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
         "party_transactions", user.id
       )).filter((pt) => pt.linked_transaction_id === transaction.id)
       for (const pt of linked) {
-        await updateRow("party_transactions", pt.id, { amount, date: form.date })
+        await updateRow("party_transactions", pt.id, { amount: amountInr, date: form.date })
       }
     } else {
       const { data: txData } = await insertRow("transactions", {
@@ -121,7 +129,7 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
         profile_id: activeProfile!.id,
         type: form.type,
         category: form.category || categories[0].id,
-        amount,
+        amount: amountInr,
         description: form.description || null,
         date: form.date,
         currency: "INR",
@@ -133,7 +141,7 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
           user_id: user.id,
           party_id: form.spent_for_party_id,
           type: "lent",
-          amount,
+          amount: amountInr,
           currency: "INR",
           date: form.date,
           due_date: form.due_date || null,

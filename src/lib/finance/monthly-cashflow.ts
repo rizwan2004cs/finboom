@@ -47,6 +47,20 @@ export function sipsDueRestOfMonth(
   }
 }
 
+/** The YYYY-MM a SIP was set up — its first applicable month. */
+export function sipStartMonthKey(sip: Sip): string {
+  return (sip.created_at || "").slice(0, 7)
+}
+
+/**
+ * A SIP only counts for a month from the month it was set up onward, so paging
+ * back to months before the SIP existed doesn't surface it as due.
+ */
+export function sipAppliesToMonth(sip: Sip, monthKey: string): boolean {
+  const start = sipStartMonthKey(sip)
+  return !start || monthKey >= start
+}
+
 /** Per-SIP paid / unpaid status for a calendar month. */
 export function sipStatusForMonth(
   sips: Sip[],
@@ -63,7 +77,7 @@ export function sipStatusForMonth(
   const paidIds = new Set(
     payments.filter((p) => p.month === monthKey).map((p) => p.sip_id),
   )
-  const active = sips.filter((s) => s.active)
+  const active = sips.filter((s) => s.active && sipAppliesToMonth(s, monthKey))
   const monthTx = transactionsInMonth(transactions, monthKey)
   for (const sip of active) {
     if (paidIds.has(sip.id)) continue
@@ -128,7 +142,9 @@ export function buildSnapshotBreakdown(
 ): Record<string, number> {
   const monthKey = monthKeyFromDate(now)
   const { income, expense, surplus } = sumCashflow(transactionsInMonth(transactions, monthKey))
-  const { unpaidAmount, paidIds } = sipStatusForMonth(sips, sipPayments, monthKey)
+  // Pass transactions so SIPs already logged as investment expenses count as paid
+  // (otherwise they'd be subtracted twice: once in surplus, once in unpaidAmount).
+  const { unpaidAmount, paidIds } = sipStatusForMonth(sips, sipPayments, monthKey, transactions)
   const liquid = sumLiquidAssets(assets)
   const liquidAfterSips = Math.max(0, liquid - unpaidAmount)
   const availableThisMonth = surplus - unpaidAmount
@@ -169,6 +185,7 @@ export function availableAfterUnpaidSips(
   monthKey: string,
 ): number {
   const { surplus } = sumCashflow(transactionsInMonth(transactions, monthKey))
-  const { unpaidAmount } = sipStatusForMonth(sips, payments, monthKey)
+  // Pass transactions so manually-logged SIP expenses aren't double-subtracted.
+  const { unpaidAmount } = sipStatusForMonth(sips, payments, monthKey, transactions)
   return surplus - unpaidAmount
 }

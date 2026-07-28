@@ -1,6 +1,6 @@
 "use client"
 
-import { Suspense, useEffect, useMemo, useState } from "react"
+import { Suspense, useEffect, useMemo, useRef, useState } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
 import { useSearchParams } from "next/navigation"
@@ -18,7 +18,7 @@ import { useAppDialog } from "@/components/app-dialog"
 import { useCurrency } from "@/hooks/use-currency"
 import { formatDueDate, todayLocalISO } from "@/lib/utils"
 import { TransactionCategoryBreakdown } from "@/components/transactions/category-breakdown"
-import { availableAfterUnpaidSips } from "@/lib/finance/monthly-cashflow"
+import { availableAfterUnpaidSips, monthKeyFromDate } from "@/lib/finance/monthly-cashflow"
 import { ensureMonthCarryForward, previousMonthKey } from "@/lib/finance/sip-payments"
 
 export default function TransactionsPageWrapper() {
@@ -39,7 +39,9 @@ function TransactionsPage() {
   const [editTransaction, setEditTransaction] = useState<Transaction | null>(null)
   const [typeFilter, setTypeFilter] = useState<"all" | "income" | "expense">("all")
   const [monthFilter, setMonthFilter] = useState(
-    new Date().toISOString().slice(0, 7) // YYYY-MM
+    // Local month key — toISOString() is UTC and shows the previous month to
+    // IST users between midnight and 05:30 on the 1st.
+    monthKeyFromDate() // YYYY-MM
   )
 
   const startDate = `${monthFilter}-01`
@@ -107,10 +109,19 @@ function TransactionsPage() {
     [transactions, sips, sipPayments, monthFilter],
   )
 
-  const currentCalendarMonth = new Date().toISOString().slice(0, 7)
+  const currentCalendarMonth = monthKeyFromDate()
+
+  // One carry-forward attempt per profile+month. The effect's deps resolve at
+  // different times (transactions can still be [] while prevMonthTransactions
+  // has data), and ensureMonthCarryForward's dedupe scans the passed-in array —
+  // so re-runs against a stale/empty list inserted duplicate income rows.
+  const carryForwardKeyRef = useRef<string | null>(null)
 
   useEffect(() => {
-    if (!user || !activeProfile || monthFilter !== currentCalendarMonth) return
+    // `loading` gates on the current month's transactions actually being
+    // fetched, so the dedupe check inside ensureMonthCarryForward sees the
+    // real list (including an already-existing carry-forward row).
+    if (!user || !activeProfile || loading || monthFilter !== currentCalendarMonth) return
     const prevLeft = availableAfterUnpaidSips(
       prevMonthTransactions,
       sips,
@@ -118,6 +129,10 @@ function TransactionsPage() {
       prevMonthKey,
     )
     if (prevLeft <= 0) return
+
+    const runKey = `${activeProfile.id}:${monthFilter}`
+    if (carryForwardKeyRef.current === runKey) return
+    carryForwardKeyRef.current = runKey
 
     let cancelled = false
     ;(async () => {
@@ -137,6 +152,7 @@ function TransactionsPage() {
   }, [
     user,
     activeProfile,
+    loading,
     monthFilter,
     currentCalendarMonth,
     prevMonthKey,

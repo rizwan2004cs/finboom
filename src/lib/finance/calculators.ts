@@ -183,9 +183,19 @@ export interface RegimeBreakdown {
 export function computeNewRegimeTax(grossIncome: number, isSalaried = true): RegimeBreakdown {
   const taxable = Math.max(0, grossIncome - (isSalaried ? NEW_STANDARD_DEDUCTION : 0))
   const baseTax = taxFromSlabs(taxable, NEW_REGIME_SLABS)
-  // 87A rebate: taxable income up to 12L pays no tax.
-  const rebate = taxable <= 1200000 ? baseTax : 0
-  const afterRebate = Math.max(0, baseTax - rebate)
+  // 87A rebate: taxable income up to 12L pays no tax. Just above 12L, marginal
+  // relief (Finance Act 2025) caps the tax at the income exceeding 12L so an
+  // extra rupee earned can never cost more than a rupee of tax — without it,
+  // taxable 12,05,000 would owe ~63k instead of 5k.
+  let rebate: number
+  let afterRebate: number
+  if (taxable <= 1200000) {
+    rebate = baseTax
+    afterRebate = 0
+  } else {
+    afterRebate = Math.min(baseTax, taxable - 1200000)
+    rebate = baseTax - afterRebate
+  }
   const cess = afterRebate * CESS
   return {
     regime: "new",

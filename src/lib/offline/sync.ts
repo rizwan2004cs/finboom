@@ -31,8 +31,13 @@ function notify(status: "syncing" | "synced" | "error" | "offline" | "online") {
   listeners.forEach(fn => fn(status))
 }
 
-/** Replay a single queued mutation against Supabase */
-async function replayMutation(m: QueuedMutation): Promise<boolean> {
+/** Replay a single queued mutation against Supabase.
+ *  "rejected" = the server actively refused it (PostgREST error with a code);
+ *  "network" = the request never got a real answer (offline, captive portal).
+ *  The distinction matters: only rejections may count toward dropping the
+ *  mutation as poison — a flaky network must never destroy queued writes.
+ */
+async function replayMutation(m: QueuedMutation): Promise<"ok" | "rejected" | "network"> {
   const supabase = createClient()
   try {
     let query
@@ -57,12 +62,15 @@ async function replayMutation(m: QueuedMutation): Promise<boolean> {
       const { error } = await query
       if (error) {
         console.error(`[sync] Failed to replay ${m.operation} on ${m.table}:`, error)
-        return false
+        // PostgREST rejections carry a non-empty string code; fetch failures
+        // surfaced as error objects don't (mirrors isPermanentError in data.ts).
+        const code = (error as { code?: unknown }).code
+        return typeof code === "string" && code.length > 0 ? "rejected" : "network"
       }
     }
-    return true
+    return "ok"
   } catch {
-    return false
+    return "network"
   }
 }
 
@@ -80,19 +88,34 @@ export async function replayQueue(): Promise<{ success: number; failed: number; 
   let dropped = 0
 
   for (const mutation of queue) {
-    const ok = await replayMutation(mutation)
-    if (ok) {
+    const result = await replayMutation(mutation)
+    if (result === "ok") {
       await dequeue(mutation.queue_id)
       success++
       continue
     }
 
+    if (result === "network") {
+      // Connectivity problem, not a rejection — never counts toward poison.
+      // Stop (preserving order) and let the next sync retry the whole queue.
+      failed++
+      break
+    }
+
     const attempts = (mutation.retries ?? 0) + 1
     if (attempts >= MAX_REPLAY_ATTEMPTS) {
       // Poison mutation: the server keeps rejecting it. Drop it and move on so
-      // the rest of the queue can sync instead of being blocked indefinitely.
-      console.warn(`[sync] Dropping mutation after ${attempts} failed attempts:`, mutation)
+      // the rest of the queue can sync instead of being blocked indefinitely —
+      // but tell the user their change was discarded instead of doing it silently.
+      console.warn(`[sync] Dropping mutation after ${attempts} rejected attempts:`, mutation)
       await dequeue(mutation.queue_id)
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("finboom:write-error", {
+            detail: `An offline change to ${mutation.table} kept being rejected and was discarded`,
+          }),
+        )
+      }
       dropped++
       continue
     }
