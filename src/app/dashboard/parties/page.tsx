@@ -1,7 +1,7 @@
 "use client"
 
 import { Suspense } from "react"
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { deleteRow, fetchTable } from "@/lib/offline"
 import { useOfflineQuery } from "@/hooks/use-offline-query"
@@ -140,45 +140,62 @@ function PartiesPageInner() {
     }
   }
 
+  // In-flight guard: a double-click re-enters before the cache invalidates,
+  // and the legacy description-match could then delete a *twin* entry's
+  // linked transaction while the first delete is still settling.
+  const deleteInFlightRef = useRef(false)
+
   async function handleDelete(id: string) {
-    const ptx = transactions.find(tx => tx.id === id)
-    if (ptx) {
-      if (ptx.linked_transaction_id) {
-        // Direct link exists
-        await deleteRow("transactions", ptx.linked_transaction_id)
-      } else if (!(await deleteLegacyLinkedTransaction(ptx))) {
-        window.dispatchEvent(
-          new CustomEvent("finboom:write-error", {
-            detail: "Couldn't reach the linked transaction — nothing was deleted. Try again.",
-          }),
-        )
-        return
+    if (deleteInFlightRef.current) return
+    deleteInFlightRef.current = true
+    try {
+      const ptx = transactions.find(tx => tx.id === id)
+      if (ptx) {
+        if (ptx.linked_transaction_id) {
+          // Direct link exists
+          await deleteRow("transactions", ptx.linked_transaction_id)
+        } else if (!(await deleteLegacyLinkedTransaction(ptx))) {
+          window.dispatchEvent(
+            new CustomEvent("finboom:write-error", {
+              detail: "Couldn't reach the linked transaction — nothing was deleted. Try again.",
+            }),
+          )
+          return
+        }
       }
+      await deleteRow("party_transactions", id)
+      invalidateParties()
+    } finally {
+      deleteInFlightRef.current = false
     }
-    await deleteRow("party_transactions", id)
-    invalidateParties()
   }
 
   async function handleDeleteParty(id: string) {
-    // Delete linked transactions for all party_transactions of this party
-    const partyTxs = transactions.filter(tx => tx.party_id === id)
-    for (const ptx of partyTxs) {
-      if (ptx.linked_transaction_id) {
-        await deleteRow("transactions", ptx.linked_transaction_id)
-      } else if (!(await deleteLegacyLinkedTransaction(ptx))) {
-        window.dispatchEvent(
-          new CustomEvent("finboom:write-error", {
-            detail: "Couldn't reach linked transactions — party not deleted. Try again.",
-          }),
-        )
-        setDeletingPartyId(null)
-        return
+    if (deleteInFlightRef.current) return
+    deleteInFlightRef.current = true
+    try {
+      // Delete linked transactions for all party_transactions of this party
+      const partyTxs = transactions.filter(tx => tx.party_id === id)
+      for (const ptx of partyTxs) {
+        if (ptx.linked_transaction_id) {
+          await deleteRow("transactions", ptx.linked_transaction_id)
+        } else if (!(await deleteLegacyLinkedTransaction(ptx))) {
+          window.dispatchEvent(
+            new CustomEvent("finboom:write-error", {
+              detail: "Couldn't reach linked transactions — party not deleted. Try again.",
+            }),
+          )
+          setDeletingPartyId(null)
+          return
+        }
       }
+      await deleteRow("parties", id)
+      setDeletingPartyId(null)
+      setSelectedPartyId(null)
+      invalidateParties()
+    } finally {
+      deleteInFlightRef.current = false
     }
-    await deleteRow("parties", id)
-    setDeletingPartyId(null)
-    setSelectedPartyId(null)
-    invalidateParties()
   }
 
   // Calculate net balance per party

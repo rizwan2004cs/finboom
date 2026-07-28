@@ -193,6 +193,15 @@ export async function DELETE(request: Request) {
   }
 
   if (payment.transaction_id) {
+    // Cascade any party link first — a reconciled SIP expense can be a
+    // "spent for" transaction backing a receivable; deleting only the
+    // transaction would leave the party balance overstated (the Transactions
+    // page delete cascades the same way).
+    await supabase
+      .from("party_transactions")
+      .delete()
+      .eq("linked_transaction_id", payment.transaction_id)
+      .eq("user_id", userId)
     await supabase
       .from("transactions")
       .delete()

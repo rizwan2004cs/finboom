@@ -242,7 +242,11 @@ function GoalFormModal({ goal, assets, onClose, onSave }: {
       target_amount: targetAmount,
       current_amount: parseFloat(form.current_amount) || 0,
       target_date: form.target_date,
-      inflation_rate: parseFloat(form.inflation_rate) || 6,
+      // Explicit 0 is a valid choice (fixed-price goals); only blank/garbage
+      // falls back to the 6% default. `|| 6` silently coerced 0 → 6.
+      inflation_rate: Number.isFinite(parseFloat(form.inflation_rate))
+        ? Math.max(0, parseFloat(form.inflation_rate))
+        : 6,
       linked_assets: form.linked_assets,
       notes: form.notes || null,
       currency: "INR",

@@ -113,7 +113,10 @@ export default function BudgetPage() {
   const now = new Date()
   const currentMonth = formatMonthKey(now)
   const daysInMonth = new Date(parseInt(month.slice(0, 4)), parseInt(month.slice(5, 7)), 0).getDate()
-  const currentDay = month === currentMonth ? now.getDate() : daysInMonth
+  // Past months are fully elapsed, future months haven't started (YYYY-MM
+  // strings compare lexicographically) — showing "Day 31 of 31" for a future
+  // month implied it was already over.
+  const currentDay = month === currentMonth ? now.getDate() : month < currentMonth ? daysInMonth : 0
   const overallPct = totalBudget > 0 ? Math.min((budgetedSpent / totalBudget) * 100, 100) : 0
 
   // Categories already budgeted

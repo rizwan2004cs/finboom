@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
-import { fetchTable, insertRow, updateRow } from "@/lib/offline"
+import { deleteRow, fetchTable, insertRow, updateRow } from "@/lib/offline"
 import {
   sanitizePhone,
   isValidPhone,
@@ -116,12 +116,17 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
       })
       // Keep any linked party receivable/payable in sync with the edited amount
       // and date, so editing a "spent for someone" expense doesn't leave a stale
-      // party balance behind.
+      // party balance behind. If the transaction was flipped to income it can no
+      // longer back a receivable — remove the link instead of updating it.
       const linked = (await fetchTable<{ id: string; linked_transaction_id?: string }>(
         "party_transactions", user.id
       )).filter((pt) => pt.linked_transaction_id === transaction.id)
       for (const pt of linked) {
-        await updateRow("party_transactions", pt.id, { amount: amountInr, date: form.date })
+        if (form.type === "income") {
+          await deleteRow("party_transactions", pt.id)
+        } else {
+          await updateRow("party_transactions", pt.id, { amount: amountInr, date: form.date })
+        }
       }
     } else {
       const { data: txData } = await insertRow("transactions", {
@@ -257,8 +262,10 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
             />
           </div>
 
-          {/* Spent For (expense only) */}
-          {form.type === "expense" && (
+          {/* Spent For — new expenses only. In edit mode the selection was
+              silently discarded on save (no link is created on update), so
+              don't offer it there rather than break the promise in the hint. */}
+          {!isEditing && form.type === "expense" && (
             <div>
               <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">Spent for (optional)</label>
               <p className="text-[11px] text-[#86868b] mt-0.5">If spent for someone else, it will be tracked as receivable</p>

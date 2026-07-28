@@ -133,7 +133,11 @@ export default function SnapshotsPage() {
     const cutoff = rangeMonths <= 12
       ? subMonths(new Date(), rangeMonths)
       : subYears(new Date(), rangeMonths / 12)
-    return sortedSnapshots.filter(s => new Date(s.snapshot_date) >= cutoff)
+    // Compare local calendar dates as strings — Date-parsing snapshot_date is
+    // UTC midnight, which dropped the boundary snapshot depending on the time
+    // of day the page was opened.
+    const cutoffStr = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, "0")}-${String(cutoff.getDate()).padStart(2, "0")}`
+    return sortedSnapshots.filter(s => s.snapshot_date >= cutoffStr)
   }, [sortedSnapshots, timeRange, rangeMonths])
 
   const assetClassIds = useMemo(() => {
@@ -185,10 +189,17 @@ export default function SnapshotsPage() {
     return opts
   }, [assetClassIds])
 
-  const activeChartKey = chartSeries
+  // A selected series can disappear when the time range shrinks (e.g. gold
+  // only exists in old snapshots) — fall back to net worth instead of
+  // rendering an empty, mislabeled, colorless chart.
+  const effectiveSeries: ChartSeries = chartSeriesOptions.some(o => o.id === chartSeries)
+    ? chartSeries
+    : "net_worth"
+  const activeChartKey = effectiveSeries
   const activeChartLabel =
-    chartSeriesOptions.find(o => o.id === chartSeries)?.label ?? "Net worth"
-  const activeChartColor = CHART_COLORS[chartSeriesOptions.findIndex(o => o.id === chartSeries) % CHART_COLORS.length]
+    chartSeriesOptions.find(o => o.id === effectiveSeries)?.label ?? "Net worth"
+  const activeChartColor =
+    CHART_COLORS[Math.max(0, chartSeriesOptions.findIndex(o => o.id === effectiveSeries)) % CHART_COLORS.length]
 
   if (loading || !user || !activeProfile) {
     return (
@@ -261,7 +272,7 @@ export default function SnapshotsPage() {
                   key={opt.id}
                   onClick={() => setChartSeries(opt.id)}
                   className={`px-2.5 py-1 rounded-lg text-xs font-medium whitespace-nowrap transition-all ${
-                    chartSeries === opt.id
+                    effectiveSeries === opt.id
                       ? "bg-[#f5f5f7] text-[#1d1d1f] ring-1 ring-black/[0.06]"
                       : "text-[#86868b] hover:bg-[#f5f5f7]"
                   }`}
@@ -372,12 +383,17 @@ export default function SnapshotsPage() {
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    {change !== 0 && (
+                    {change !== 0 && prev && (
                       <div className={`flex items-center gap-0.5 px-2 py-1 rounded-lg text-xs font-medium ${
                         change >= 0 ? "bg-[#f5f5f7] text-[#1d1d1f]" : "bg-[#f5f5f7] text-[#6e6e73]"
                       }`}>
                         {change >= 0 ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-                        {Math.abs(changePercent).toFixed(1)}%
+                        {/* A zero/negative baseline makes a percentage
+                            meaningless — show the absolute change instead
+                            of a bogus "0.0%". */}
+                        {Number(prev.net_worth) > 0
+                          ? `${Math.abs(changePercent).toFixed(1)}%`
+                          : formatCurrency(Math.abs(change))}
                       </div>
                     )}
                     <button

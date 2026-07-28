@@ -36,6 +36,25 @@ describe("parseAmount", () => {
     expect(parseAmount(Number.POSITIVE_INFINITY)).toBe(0)
     expect(parseAmount(null)).toBe(0)
   })
+
+  it("expands crore suffixes", () => {
+    expect(parseAmount("1.2 Cr")).toBe(12000000)
+    expect(parseAmount("1.2 Crore")).toBe(12000000)
+    expect(parseAmount("2 crores")).toBe(20000000)
+    expect(parseAmount("1.2crore")).toBe(12000000)
+  })
+
+  it("expands lakh suffixes", () => {
+    expect(parseAmount("45 Lakh")).toBe(4500000)
+    expect(parseAmount("1.5 lac")).toBe(150000)
+    expect(parseAmount("2 L")).toBe(200000)
+    expect(parseAmount("3 lakhs")).toBe(300000)
+  })
+
+  it("keeps no-space cr as a plain credit marker, not crore", () => {
+    expect(parseAmount("1,234cr")).toBe(1234)
+    expect(parseAmount("1,234dr")).toBe(-1234)
+  })
 })
 
 describe("looksNumeric", () => {

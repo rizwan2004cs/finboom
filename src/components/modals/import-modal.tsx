@@ -176,7 +176,10 @@ export function ImportModal({ onClose, onImport }: Props) {
     })
   }, [])
 
-  // Names already in the portfolio (any active profile query) for de-duplication.
+  // Names already in the ACTIVE profile's portfolio for de-duplication. The
+  // cache holds asset queries for every profile (prefix match on ["assets"]),
+  // so filter by profile_id — otherwise a holding owned by another profile
+  // wrongly skips the row being imported into this one.
   const existingNames = useMemo(() => {
     const names = new Set<string>()
     const cached = queryClient.getQueriesData({ queryKey: ["assets"] }) as Array<
@@ -185,12 +188,12 @@ export function ImportModal({ onClose, onImport }: Props) {
     for (const [, data] of cached) {
       if (Array.isArray(data)) {
         for (const a of data) {
-          if (a?.name) names.add(a.name.toLowerCase().trim())
+          if (a?.name && a.profile_id === activeProfile?.id) names.add(a.name.toLowerCase().trim())
         }
       }
     }
     return names
-  }, [queryClient])
+  }, [queryClient, activeProfile?.id])
 
   const previewRows = useMemo<PreviewRow[]>(() => {
     if (!table) return []
@@ -265,7 +268,7 @@ export function ImportModal({ onClose, onImport }: Props) {
     for (const r of importableRows) {
       // Normalise to INR — the app aggregates assuming INR, so a USD/EUR import
       // must be converted before storage rather than kept in its source currency.
-      await insertRow("assets", {
+      const { error } = await insertRow("assets", {
         user_id: user.id,
         profile_id: activeProfile.id,
         name: r.name,
@@ -276,7 +279,9 @@ export function ImportModal({ onClose, onImport }: Props) {
         currency: "INR",
         ...(r.isin ? { notes: `ISIN: ${r.isin}` } : {}),
       })
-      count += 1
+      // Only count real successes — a server-rejected insert (RLS, constraint)
+      // otherwise still showed up in "N assets added successfully".
+      if (!error) count += 1
     }
     setImportedCount(count)
     setImporting(false)
@@ -470,7 +475,7 @@ export function ImportModal({ onClose, onImport }: Props) {
                         {row.units ? <span className="text-xs text-[#86868b]">· {row.units} u</span> : null}
                       </div>
                     </div>
-                    <p className="text-sm font-semibold text-[#1d1d1f] dark:text-white shrink-0">{formatCompact(row.current_value)}</p>
+                    <p className="text-sm font-semibold text-[#1d1d1f] dark:text-white shrink-0">{formatCompact(toINR(row.current_value, row.currency))}</p>
                     <button
                       onClick={() => toggleExcluded(row.index)}
                       aria-label={`Exclude ${row.name}`}

@@ -181,7 +181,9 @@ export default function LiabilitiesPage() {
                 <div className="flex justify-between mt-1">
                   <span className="text-[10px] text-[#86868b]">{progress.toFixed(0)}% paid</span>
                   <span className="text-[10px] text-[#86868b]">
-                    {liability.end_date ? `Due ${new Date(liability.end_date).toLocaleDateString("en-IN", { month: "short", year: "numeric" })}` : ""}
+                    {/* Local parse — a bare date string is UTC and shifts the
+                        due month back a day/month for users behind UTC. */}
+                    {liability.end_date ? `Due ${new Date(`${liability.end_date}T00:00:00`).toLocaleDateString("en-IN", { month: "short", year: "numeric" })}` : ""}
                   </span>
                 </div>
               </div>
@@ -220,10 +222,13 @@ function LoanInsights({
   formatCurrency: (amount: number) => string
 }>) {
   // Average monthly income across the months with income data in the last 6 months.
+  // Compare YYYY-MM-DD strings — Date-parsing t.date is UTC midnight and drops
+  // window-start-day income for users behind UTC.
   const now = new Date()
-  const windowStart = new Date(now.getFullYear(), now.getMonth() - 5, 1)
+  const ws = new Date(now.getFullYear(), now.getMonth() - 5, 1)
+  const windowStartStr = `${ws.getFullYear()}-${String(ws.getMonth() + 1).padStart(2, "0")}-01`
   const incomeTx = transactions.filter(
-    (t) => t.type === "income" && new Date(t.date) >= windowStart
+    (t) => t.type === "income" && t.date >= windowStartStr
   )
   const incomeMonths = new Set(incomeTx.map((t) => t.date.slice(0, 7)))
   const totalIncome = incomeTx.reduce((s, t) => s + Number(t.amount), 0)

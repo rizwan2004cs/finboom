@@ -13,6 +13,7 @@ import { ASSET_CLASSES } from "@/lib/constants"
 import { goalProgressPct } from "@/lib/finance/goals"
 import { todayLocalISO } from "@/lib/utils"
 import { useCurrency } from "@/hooks/use-currency"
+import { useSipPayments } from "@/hooks/use-sip-payments"
 
 export default function DashboardPage() {
   const { formatCurrency } = useCurrency()
@@ -49,6 +50,7 @@ export default function DashboardPage() {
   const { data: sips = [] } = useOfflineQuery<Sip>(
     "sips", user?.id, { filters: pf, enabled: !!activeProfile }
   )
+  const { data: sipPayments = [] } = useSipPayments(user?.id)
 
   const loading = loadingAssets || loadingLiabilities || loadingGoals || !user || !activeProfile
 
@@ -58,11 +60,14 @@ export default function DashboardPage() {
   
   // Snapshots arrive newest-first; present oldest→newest for the chart.
   const orderedSnapshots = [...snapshots].reverse()
-  // Compare current net worth against the snapshot before the most recent one
-  // ("last month"), guarding against a zero baseline.
-  const prevSnapshot = orderedSnapshots.length > 1 ? orderedSnapshots[orderedSnapshots.length - 2] : null
+  // "Last month" baseline = the most recent snapshot dated before the current
+  // month (skipping-the-latest-by-position used the wrong baseline whenever no
+  // snapshot existed for this month yet). Divide by |prev| so an improving
+  // negative net worth doesn't render as a decline.
+  const currentMonthKey = todayLocalISO().slice(0, 7)
+  const prevSnapshot = snapshots.find(s => (s.snapshot_date || "").slice(0, 7) < currentMonthKey) ?? null
   const prevNetWorth = prevSnapshot ? Number(prevSnapshot.net_worth) : 0
-  const netWorthChange = prevNetWorth !== 0 ? ((netWorth - prevNetWorth) / prevNetWorth) * 100 : 0
+  const netWorthChange = prevNetWorth !== 0 ? ((netWorth - prevNetWorth) / Math.abs(prevNetWorth)) * 100 : 0
 
   // Party balances — receivable vs payable
   const partyBalanceMap = new Map<string, number>()
@@ -102,7 +107,14 @@ export default function DashboardPage() {
   const todayDay = today.getDate()
   const lastDayThisMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
   const effectiveSipDay = (day: number) => Math.min(day, lastDayThisMonth)
-  const upcomingSips = sips.filter(s => s.active && effectiveSipDay(s.sip_day) >= todayDay)
+  // Exclude SIPs already marked paid this month — they're settled obligations,
+  // not upcoming dues.
+  const paidSipIds = new Set(
+    sipPayments.filter(p => p.month === currentMonthKey).map(p => p.sip_id)
+  )
+  const upcomingSips = sips.filter(
+    s => s.active && !paidSipIds.has(s.id) && effectiveSipDay(s.sip_day) >= todayDay
+  )
   const sipsDueAmount = upcomingSips.reduce((sum, s) => sum + Number(s.amount), 0)
   const nextSipDay = upcomingSips.length > 0 ? Math.min(...upcomingSips.map(s => effectiveSipDay(s.sip_day))) : 0
 

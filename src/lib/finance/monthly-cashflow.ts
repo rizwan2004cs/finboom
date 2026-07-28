@@ -47,9 +47,13 @@ export function sipsDueRestOfMonth(
   }
 }
 
-/** The YYYY-MM a SIP was set up — its first applicable month. */
+/** The YYYY-MM a SIP was set up — its first applicable month (local time).
+ *  created_at is a UTC timestamptz; slicing it directly would shift a SIP
+ *  created between 00:00 and 05:30 IST on the 1st into the previous month. */
 export function sipStartMonthKey(sip: Sip): string {
-  return (sip.created_at || "").slice(0, 7)
+  if (!sip.created_at) return ""
+  const d = new Date(sip.created_at)
+  return Number.isNaN(d.getTime()) ? "" : monthKeyFromDate(d)
 }
 
 /**

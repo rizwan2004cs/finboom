@@ -365,7 +365,9 @@ function TransactionsPage() {
           {Object.entries(grouped).map(([date, txns]) => (
             <div key={date}>
               <p className="text-xs font-medium text-[#86868b] mb-2 px-1">
-                {new Date(date).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
+                {/* "T00:00:00" forces local parsing — a bare date string is UTC
+                    and renders one day early west of UTC. */}
+                {new Date(`${date}T00:00:00`).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}
               </p>
               <div className="space-y-2">
                 {txns.map((t) => {

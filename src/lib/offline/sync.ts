@@ -189,8 +189,17 @@ export async function pullAllData(userId: string): Promise<void> {
           // Merge changed rows without clearing untouched ones.
           await bulkPut(store, data)
         }
-        // Update per-table sync timestamp on success
-        await setMeta(`lastSync_${table}`, syncStart)
+        // Advance the watermark from SERVER timestamps (max updated_at seen),
+        // not the client clock — a fast client clock would set a watermark in
+        // the server's future and silently skip other-device updates until the
+        // next forced full pull. When no rows changed, keep the old watermark
+        // (or fall back to client time on the first-ever pull).
+        const prevMark = lastTableSync ?? ""
+        const maxUpdated = (data ?? []).reduce<string>((m, r) => {
+          const u = (r as { updated_at?: string }).updated_at
+          return typeof u === "string" && u > m ? u : m
+        }, prevMark)
+        await setMeta(`lastSync_${table}`, maxUpdated || syncStart)
       })
     )
 

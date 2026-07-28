@@ -76,7 +76,10 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
         if (row.fetched_at > latest) latest = row.fetched_at
       }
       map["INR"] = 1
-      setRates(map)
+      // Merge over the fallback rather than replacing it — a partial
+      // exchange_rates table would otherwise leave missing currencies
+      // converting at rate 1 (e.g. ₹10L shown as AED 1,000,000).
+      setRates({ ...FALLBACK_RATES, ...map })
       setLastUpdated(latest)
     }
     setLoading(false)

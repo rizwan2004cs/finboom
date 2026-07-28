@@ -142,7 +142,9 @@ function debtDimension(
   if (outstanding <= 0) {
     score = 100
     detail = "No outstanding debt — excellent."
-  } else if (monthlyIncome > 0) {
+  } else if (totalEmi > 0 && monthlyIncome > 0) {
+    // Only score by EMI ratio when EMIs are actually recorded — otherwise
+    // outstanding debt with no EMI data scored a perfect 100 ("EMIs are 0%").
     const ratio = (totalEmi / monthlyIncome) * 100
     score = emiScoreFromRatio(ratio)
     detail = `EMIs are ${ratio.toFixed(0)}% of income.`

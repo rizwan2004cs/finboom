@@ -15,10 +15,25 @@ export function parseAmount(value: unknown): number {
   if (value == null) return 0
 
   let str = String(value)
-    // Normalise unicode/no-break spaces to plain spaces, then drop them.
-    .replace(/[\u00a0\u2007\u202f\s]/g, "")
+    // Normalise unicode/no-break spaces to plain spaces (dropped fully below).
+    .replace(/[\u00a0\u2007\u202f]/g, " ")
     .trim()
     .toLowerCase()
+
+  // Indian magnitude suffixes: "1.2 Cr" / "3 Crore" \u2192 \u00d71e7, "45 Lakh" /
+  // "2 L" / "1.5 lac" \u2192 \u00d71e5. Detected BEFORE whitespace is stripped \u2014 a bare
+  // "1,234cr" with no space keeps its accounting credit-marker meaning below.
+  let multiplier = 1
+  if (/\d\s*crores?\.?$/.test(str) || /\d\s+cr\.?$/.test(str)) {
+    multiplier = 1e7
+    str = str.replace(/\s*(?:crores?|cr)\.?$/, "")
+  } else if (/\d\s*(?:lakhs?|lacs?)\.?$/.test(str) || /\d\s+l\.?$/.test(str)) {
+    multiplier = 1e5
+    str = str.replace(/\s*(?:lakhs?|lacs?|l)\.?$/, "")
+  }
+
+  // Now drop all remaining whitespace.
+  str = str.replace(/\s/g, "")
 
   if (BLANK_TOKENS.has(str)) return 0
 
@@ -62,7 +77,7 @@ export function parseAmount(value: unknown): number {
   if (str === "" || str === ".") return 0
   const parsed = Number.parseFloat(str)
   if (!Number.isFinite(parsed)) return 0
-  return negative ? -parsed : parsed
+  return (negative ? -parsed : parsed) * multiplier
 }
 
 // True when a cell plausibly holds a number (used by the column mapper to

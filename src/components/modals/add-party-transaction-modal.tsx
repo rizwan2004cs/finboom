@@ -95,7 +95,11 @@ export function AddPartyTransactionModal({ onClose, onSave, preselectedPartyId, 
       setError("Pick a valid date — it cannot be in the future.")
       return
     }
-    if (form.due_date && (!isValidISODate(form.due_date) || form.due_date < form.date)) {
+    // Due dates only make sense on obligations (lent/borrowed). The field is
+    // hidden for repayment types, but a value picked before switching type
+    // would otherwise still be saved — or invisibly block submit.
+    const dueDate = form.type === "lent" || form.type === "borrowed" ? form.due_date : ""
+    if (dueDate && (!isValidISODate(dueDate) || dueDate < form.date)) {
       setError("Due date cannot be before the transaction date.")
       return
     }
@@ -113,7 +117,7 @@ export function AddPartyTransactionModal({ onClose, onSave, preselectedPartyId, 
         amount,
         currency: "INR",
         date: form.date,
-        due_date: form.due_date || null,
+        due_date: dueDate || null,
         notes: form.notes.trim() || null,
       })
 
@@ -230,7 +234,13 @@ export function AddPartyTransactionModal({ onClose, onSave, preselectedPartyId, 
                   <button
                     key={t.id}
                     type="button"
-                    onClick={() => setForm(prev => ({ ...prev, type: t.id }))}
+                    onClick={() => setForm(prev => ({
+                      ...prev,
+                      type: t.id,
+                      // Drop a leftover due date when switching to a repayment
+                      // type — the field is hidden there and must not be saved.
+                      due_date: t.id === "lent" || t.id === "borrowed" ? prev.due_date : "",
+                    }))}
                     className={`flex items-center gap-2 p-3 rounded-xl text-left transition-all ${
                       form.type === t.id
                         ? "bg-[#1d1d1f]/[0.08] dark:bg-white/[0.12] border-2 border-[#1d1d1f] dark:border-white"
