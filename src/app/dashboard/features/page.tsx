@@ -5,7 +5,7 @@ import { useUser } from "@/hooks/use-auth"
 import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { useDeleteMutation, useUpdateMutation } from "@/hooks/use-offline-mutation"
 import { useQueryClient } from "@tanstack/react-query"
-import { Plus, Lightbulb, Trash2, Edit2, Check, Undo2 } from "lucide-react"
+import { Plus, Lightbulb, Trash2, Edit2, Check, Undo2, ChevronDown } from "lucide-react"
 import type { FeatureIdea } from "@/lib/types"
 import { useAppDialog } from "@/components/app-dialog"
 import { AddFeatureIdeaModal } from "@/components/modals/add-feature-idea-modal"
@@ -31,6 +31,7 @@ export default function FeatureBoardPage() {
   const [showForm, setShowForm] = useState(false)
   const [editIdea, setEditIdea] = useState<FeatureIdea | null>(null)
   const [filter, setFilter] = useState<StatusFilter>("all")
+  const [expandedId, setExpandedId] = useState<string | null>(null)
 
   const { data: ideas = [], isLoading } = useOfflineQuery<FeatureIdea>(
     "feature_ideas", user?.id, {
@@ -147,19 +148,23 @@ export default function FeatureBoardPage() {
           {visible.map((idea) => (
             <div key={idea.id} className={`liquid-glass rounded-2xl p-5 ${idea.status === "done" ? "opacity-60" : ""}`}>
               <div className="flex items-start justify-between gap-3">
-                <div className="flex items-start gap-3 min-w-0">
+                <button
+                  onClick={() => setExpandedId(expandedId === idea.id ? null : idea.id)}
+                  className="flex items-center gap-3 min-w-0 text-left flex-1"
+                  aria-expanded={expandedId === idea.id}
+                >
                   <div className="w-10 h-10 rounded-xl bg-white/50 backdrop-blur-sm flex items-center justify-center flex-shrink-0">
                     <Lightbulb className="w-5 h-5 text-[#1d1d1f]" strokeWidth={1.5} />
                   </div>
-                  <div className="min-w-0">
-                    <p className={`font-semibold text-[#1d1d1f] ${idea.status === "done" ? "line-through" : ""}`}>
-                      {idea.title}
-                    </p>
-                    {idea.description && (
-                      <p className="text-sm text-[#86868b] mt-1 whitespace-pre-wrap">{idea.description}</p>
-                    )}
-                  </div>
-                </div>
+                  <p className={`font-semibold text-[#1d1d1f] truncate ${idea.status === "done" ? "line-through" : ""}`}>
+                    {idea.title}
+                  </p>
+                  {idea.description && (
+                    <ChevronDown
+                      className={`w-4 h-4 text-[#86868b] flex-shrink-0 transition-transform ${expandedId === idea.id ? "rotate-180" : ""}`}
+                    />
+                  )}
+                </button>
                 <div className="flex gap-1 flex-shrink-0">
                   <button
                     onClick={() => toggleDone(idea)}
@@ -186,6 +191,10 @@ export default function FeatureBoardPage() {
                   </button>
                 </div>
               </div>
+
+              {expandedId === idea.id && idea.description && (
+                <p className="text-sm text-[#86868b] mt-3 whitespace-pre-wrap">{idea.description}</p>
+              )}
 
               <div className="flex items-center justify-between mt-3">
                 <span className={`px-2 py-0.5 rounded-full text-[11px] font-medium ${STATUS_BADGE[idea.status].className}`}>
