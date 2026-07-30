@@ -27,6 +27,7 @@ import {
   Calculator,
   GripVertical,
   Repeat,
+  Lightbulb,
 } from "lucide-react"
 
 const NAV_ORDER_KEY = "sidebar-nav-order"
@@ -42,6 +43,7 @@ const navItems = [
   { href: "/dashboard/sips", label: "SIPs", icon: Repeat },
   { href: "/dashboard/snapshots", label: "Snapshots", icon: Camera },
   { href: "/dashboard/health", label: "Health", icon: Heart },
+  { href: "/dashboard/features", label: "Feature Board", icon: Lightbulb },
   { href: "/tools", label: "Calculators", icon: Calculator },
   { href: "/blog", label: "Blog", icon: BookOpen },
   { href: "/dashboard/profiles", label: "Profiles", icon: Users },
@@ -63,6 +65,7 @@ const moreSubPages = [
   "/dashboard/sips",
   "/dashboard/snapshots",
   "/dashboard/health",
+  "/dashboard/features",
   "/dashboard/profiles",
   "/dashboard/settings",
   "/blog",
@@ -76,6 +79,7 @@ const moreSheetItems = [
   { href: "/dashboard/sips", label: "SIPs", icon: Repeat },
   { href: "/dashboard/snapshots", label: "Snapshots", icon: Camera },
   { href: "/dashboard/health", label: "Health", icon: Heart },
+  { href: "/dashboard/features", label: "Feature Board", icon: Lightbulb },
   { href: "/tools", label: "Calculators", icon: Calculator },
   { href: "/blog", label: "Blog", icon: BookOpen },
   { href: "/dashboard/profiles", label: "Profiles", icon: Users },

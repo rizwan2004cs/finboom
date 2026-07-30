@@ -100,6 +100,18 @@ export interface SipPayment {
   updated_at: string
 }
 
+/** A feature idea on the personal Feature Board — something the owner wants
+ *  to build into the app later. */
+export interface FeatureIdea {
+  id: string
+  user_id: string
+  title: string
+  description?: string | null
+  status: "idea" | "planned" | "done"
+  created_at: string
+  updated_at: string
+}
+
 export interface Snapshot {
   id: string
   user_id: string
