@@ -144,6 +144,7 @@ export function TransferModal({ accounts, defaultFromId, onClose, onSave }: Read
               options={options}
               placeholder="Source account"
               className="mt-1"
+              searchable
             />
           </div>
           <div className="flex justify-center -my-1">
@@ -157,6 +158,7 @@ export function TransferModal({ accounts, defaultFromId, onClose, onSave }: Read
               options={options.filter(o => o.value !== form.from_id)}
               placeholder="Destination account"
               className="mt-1"
+              searchable
             />
           </div>
 

@@ -372,6 +372,7 @@ function TransactionsPage() {
               { value: "none", label: "No account" },
             ]}
             className="min-w-[150px]"
+            searchable
           />
         )}
         <div className="flex bg-[#f5f5f7] dark:bg-[#2c2c2e] rounded-xl p-0.5">

@@ -323,6 +323,7 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
               options={[{ value: "", label: "Not tracked" }, ...accounts.map(a => ({ value: a.id, label: a.name }))]}
               placeholder="Not tracked"
               className="mt-1"
+              searchable
             />
           </div>
 
