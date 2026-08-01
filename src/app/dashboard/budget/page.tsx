@@ -9,6 +9,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { PiggyBank, Plus, Trash2, Sparkles, Copy, Pencil, Info, ChevronLeft, ChevronRight } from "lucide-react"
 import type { Budget, Transaction } from "@/lib/types"
 import { EXPENSE_CATEGORIES } from "@/lib/constants"
+import { isAccountMovement } from "@/lib/finance/accounts"
 import { CategoryIcon } from "@/components/category-icon"
 import { useAppDialog } from "@/components/app-dialog"
 import { useCurrency } from "@/hooks/use-currency"
@@ -91,7 +92,7 @@ export default function BudgetPage() {
   const spendByCategory = useMemo(() => {
     const map: Record<string, number> = {}
     for (const t of transactions) {
-      if (t.type === "expense") {
+      if (t.type === "expense" && !isAccountMovement(t)) {
         map[t.category] = (map[t.category] || 0) + Number(t.amount)
       }
     }
@@ -204,7 +205,7 @@ export default function BudgetPage() {
       // months actually had spend so the average reflects real history.
       const byCategory: Record<string, { total: number; months: Set<string> }> = {}
       for (const t of recentTransactions) {
-        if (t.type !== "expense") continue
+        if (t.type !== "expense" || isAccountMovement(t)) continue
         const tMonth = t.date.slice(0, 7)
         if (tMonth === month) continue // exclude the month being budgeted
         const entry = (byCategory[t.category] ??= { total: 0, months: new Set<string>() })

@@ -14,6 +14,7 @@
 import webpush from "web-push"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { EXPENSE_CATEGORIES } from "@/lib/constants"
+import { isAccountMovement } from "@/lib/finance/accounts"
 import { notificationDedupeKey } from "@/lib/utils"
 
 export interface NotificationToCreate {
@@ -268,6 +269,9 @@ export async function processUserNotifications(
     .from("transactions").select("*").eq("user_id", userId)
     .gte("created_at", dayAgoUTC).gte("amount", 50000)
   for (const tx of (largeData || []) as TxnRow[]) {
+    // Transfers between own accounts / balance adjustments aren't real
+    // income or spending — don't alert on them.
+    if (isAccountMovement(tx)) continue
     if (!notifiedEver("large_transaction", { transaction_id: tx.id })) {
       add("large_transaction", `Large ${tx.type}: ${inr(Number(tx.amount))}`, `${tx.category}${tx.description ? ` — ${tx.description}` : ""}`, { transaction_id: tx.id }, tx.id)
     }
@@ -302,7 +306,7 @@ export async function processUserNotifications(
       .eq("user_id", userId).gte("date", `${monthKey}-01`).lte("date", `${monthKey}-31`)
     const spentByKey = new Map<string, number>()
     for (const tx of (monthTxns || []) as BudgetTxnRow[]) {
-      if (tx.type !== "expense") continue
+      if (tx.type !== "expense" || isAccountMovement(tx)) continue
       const key = `${tx.profile_id ?? ""}|${tx.category}`
       spentByKey.set(key, (spentByKey.get(key) ?? 0) + Number(tx.amount))
     }

@@ -1,5 +1,6 @@
 import type { Asset, Sip, SipPayment, Transaction } from "@/lib/types"
 import { sipExpenseDescription } from "@/lib/finance/sip-payments"
+import { isAccountMovement } from "@/lib/finance/accounts"
 
 /** YYYY-MM for a calendar month. */
 export function monthKeyFromDate(date: Date = new Date()): string {
@@ -18,6 +19,9 @@ export function sumCashflow(transactions: Transaction[]): {
   let income = 0
   let expense = 0
   for (const t of transactions) {
+    // Transfers between own accounts and balance adjustments move money
+    // around but are not cashflow — counting them would inflate both sides.
+    if (isAccountMovement(t)) continue
     if (t.type === "income") income += Number(t.amount)
     else expense += Number(t.amount)
   }

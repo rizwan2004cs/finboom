@@ -4,7 +4,7 @@
  */
 
 const DB_NAME = "finboom-offline"
-const DB_VERSION = 7
+const DB_VERSION = 8
 
 // Single source of truth for the user-data tables synced offline. Every layer
 // (IndexedDB stores, the offline data router, and the sync puller) derives its
@@ -24,6 +24,7 @@ export const DATA_STORES = [
   "sips",
   "sip_payments",
   "feature_ideas",
+  "accounts",
 ] as const
 
 export type DataStore = (typeof DATA_STORES)[number]
@@ -108,6 +109,14 @@ function openDB(): Promise<IDBDatabase> {
       if (oldVersion < 7) {
         if (!db.objectStoreNames.contains("feature_ideas")) {
           const store = db.createObjectStore("feature_ideas", { keyPath: "id" })
+          store.createIndex("updated_at", "updated_at")
+        }
+      }
+
+      // V7 → V8: add accounts store
+      if (oldVersion < 8) {
+        if (!db.objectStoreNames.contains("accounts")) {
+          const store = db.createObjectStore("accounts", { keyPath: "id" })
           store.createIndex("updated_at", "updated_at")
         }
       }

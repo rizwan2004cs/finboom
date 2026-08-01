@@ -3,7 +3,7 @@
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
 import { useOfflineQuery } from "@/hooks/use-offline-query"
-import { TrendingUp, Wallet, CreditCard, Target, ArrowUpRight, Plus, Receipt, Camera, Download, HandCoins, Clock, Repeat } from "lucide-react"
+import { TrendingUp, Wallet, CreditCard, Target, ArrowUpRight, Plus, Receipt, Camera, Download, HandCoins, Clock, Repeat, Banknote, Landmark } from "lucide-react"
 import Link from "next/link"
 import { NetWorthChart } from "@/components/charts/net-worth-chart"
 import { AllocationChart } from "@/components/charts/allocation-chart"
@@ -14,6 +14,8 @@ import { goalProgressPct } from "@/lib/finance/goals"
 import { todayLocalISO } from "@/lib/utils"
 import { useCurrency } from "@/hooks/use-currency"
 import { useSipPayments } from "@/hooks/use-sip-payments"
+import { useAccounts } from "@/hooks/use-accounts"
+import { accountBalance } from "@/lib/finance/accounts"
 
 export default function DashboardPage() {
   const { formatCurrency } = useCurrency()
@@ -51,8 +53,9 @@ export default function DashboardPage() {
     "sips", user?.id, { filters: pf, enabled: !!activeProfile }
   )
   const { data: sipPayments = [] } = useSipPayments(user?.id)
+  const { accounts } = useAccounts()
 
-  const loading = loadingAssets || loadingLiabilities || loadingGoals || !user || !activeProfile
+  const loading = loadingAssets || loadingLiabilities || loadingGoals || loadingTransactions || !user || !activeProfile
 
   const totalAssets = assets.reduce((sum, a) => sum + Number(a.current_value), 0)
   const totalLiabilities = liabilities.reduce((sum, l) => sum + Number(l.outstanding_amount), 0)
@@ -117,6 +120,13 @@ export default function DashboardPage() {
   )
   const sipsDueAmount = upcomingSips.reduce((sum, s) => sum + Number(s.amount), 0)
   const nextSipDay = upcomingSips.length > 0 ? Math.min(...upcomingSips.map(s => effectiveSipDay(s.sip_day))) : 0
+
+  // Cash & Bank balances — derived from the same profile-wide transaction set
+  const accountBalances = accounts.map((a) => ({
+    account: a,
+    balance: accountBalance(a, transactions),
+  }))
+  const totalAccountBalance = accountBalances.reduce((s, b) => s + b.balance, 0)
 
   // Asset allocation breakdown
   const allocationData = ASSET_CLASSES.map(cls => {
@@ -216,6 +226,35 @@ export default function DashboardPage() {
           <p className="text-[12px] text-[#86868b] mt-1">{liabilities.length} active loans</p>
         </div>
       </div>
+
+      {/* Cash & Bank balances */}
+      {accounts.length > 0 && (
+        <Link href="/dashboard/accounts" className="block liquid-glass rounded-2xl p-5 transition-all hover:shadow-md">
+          <div className="flex items-center justify-between">
+            <p className="text-[14px] text-[#86868b] font-medium">Cash &amp; Bank</p>
+            <div className="w-9 h-9 rounded-xl bg-white/50 backdrop-blur-sm flex items-center justify-center">
+              <Landmark className="w-5 h-5 text-[#1d1d1f]" />
+            </div>
+          </div>
+          <p className="text-[28px] font-semibold mt-2 text-[#1d1d1f]">{formatCurrency(totalAccountBalance)}</p>
+          <div className="mt-2 space-y-1">
+            {accountBalances.slice(0, 3).map(({ account, balance }) => (
+              <div key={account.id} className="flex items-center justify-between text-[12px]">
+                <span className="flex items-center gap-1.5 text-[#86868b] min-w-0">
+                  {account.type === "cash"
+                    ? <Banknote className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={1.5} />
+                    : <Landmark className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={1.5} />}
+                  <span className="truncate">{account.name}</span>
+                </span>
+                <span className="font-medium text-[#1d1d1f] tabular-nums">{formatCurrency(balance)}</span>
+              </div>
+            ))}
+            {accounts.length > 3 && (
+              <p className="text-[11px] text-[#86868b]">+{accounts.length - 3} more</p>
+            )}
+          </div>
+        </Link>
+      )}
 
       {/* Party Receivable Cards */}
       {(totalReceivable > 0 || receivableIn30 > 0) && (

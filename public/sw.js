@@ -7,7 +7,7 @@
  * - Offline fallback for navigation requests
  */
 
-const SW_VERSION = "ms7327m2"
+const SW_VERSION = "msaf9n1w"
 const CACHE_STATIC = `finboom-static-${SW_VERSION}`
 const CACHE_PAGES = `finboom-pages-${SW_VERSION}`
 

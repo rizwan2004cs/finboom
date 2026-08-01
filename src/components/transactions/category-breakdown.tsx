@@ -6,6 +6,7 @@ import { ChevronDown, PieChart as PieChartIcon, TrendingUp } from "lucide-react"
 import { useCurrency } from "@/hooks/use-currency"
 import type { Transaction } from "@/lib/types"
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/constants"
+import { isAccountMovement } from "@/lib/finance/accounts"
 import { CategoryIcon } from "@/components/category-icon"
 
 const COLORS = [
@@ -64,8 +65,11 @@ export function TransactionCategoryBreakdown({ transactions, periodLabel }: Prop
   useEffect(() => setMounted(true), [])
 
   const { incomeTotal, expenseTotal, incomeRows, expenseRows, categorySummary } = useMemo(() => {
-    const incomeTx = transactions.filter((t) => t.type === "income")
-    const expenseTx = transactions.filter((t) => t.type === "expense")
+    // Account transfers/adjustments move money between own accounts — they are
+    // not cashflow and would show up as fake "transfer" categories here.
+    const real = transactions.filter((t) => !isAccountMovement(t))
+    const incomeTx = real.filter((t) => t.type === "income")
+    const expenseTx = real.filter((t) => t.type === "expense")
     const incomeMap = sumByCategory(incomeTx)
     const expenseMap = sumByCategory(expenseTx)
 

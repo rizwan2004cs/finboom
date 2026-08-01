@@ -28,6 +28,7 @@ import {
   GripVertical,
   Repeat,
   Lightbulb,
+  Landmark,
 } from "lucide-react"
 
 const NAV_ORDER_KEY = "sidebar-nav-order"
@@ -37,6 +38,7 @@ const navItems = [
   { href: "/dashboard/assets", label: "Assets", icon: Wallet },
   { href: "/dashboard/liabilities", label: "Liabilities", icon: CreditCard },
   { href: "/dashboard/transactions", label: "Transactions", icon: ArrowUpDown },
+  { href: "/dashboard/accounts", label: "Cash & Bank", icon: Landmark },
   { href: "/dashboard/budget", label: "Budget", icon: PiggyBank },
   { href: "/dashboard/parties", label: "Parties", icon: HandCoins },
   { href: "/dashboard/goals", label: "Goals", icon: Target },
@@ -59,6 +61,7 @@ const mobileNavItems = [
 
 // Pages that should highlight the "More" tab
 const moreSubPages = [
+  "/dashboard/accounts",
   "/dashboard/budget",
   "/dashboard/parties",
   "/dashboard/goals",
@@ -73,6 +76,7 @@ const moreSubPages = [
 ]
 
 const moreSheetItems = [
+  { href: "/dashboard/accounts", label: "Cash & Bank", icon: Landmark },
   { href: "/dashboard/budget", label: "Budget", icon: PiggyBank },
   { href: "/dashboard/parties", label: "Parties", icon: HandCoins },
   { href: "/dashboard/goals", label: "Goals", icon: Target },

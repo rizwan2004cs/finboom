@@ -4,6 +4,7 @@
 
 import type { Asset, Goal, Liability, Transaction, HealthCheck } from "@/lib/types"
 import { computeConcentration, computeTaxSaverTotal } from "./portfolio"
+import { isAccountMovement } from "./accounts"
 
 export type DimStatus = "strong" | "fair" | "weak"
 
@@ -163,7 +164,9 @@ function debtDimension(
 function savingsDimension(transactions: Transaction[]): WealthDimension {
   const now = new Date()
   const windowStart = new Date(now.getFullYear(), now.getMonth() - 5, 1)
-  const recent = transactions.filter((t) => new Date(t.date) >= windowStart)
+  const recent = transactions.filter(
+    (t) => new Date(t.date) >= windowStart && !isAccountMovement(t),
+  )
   const income = recent.filter((t) => t.type === "income").reduce((s, t) => s + Number(t.amount), 0)
   const expense = recent.filter((t) => t.type === "expense").reduce((s, t) => s + Number(t.amount), 0)
   const rate = income > 0 ? (income - expense) / income : 0

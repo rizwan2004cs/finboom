@@ -7,9 +7,12 @@ import { useSearchParams } from "next/navigation"
 import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { deleteRow, fetchTable } from "@/lib/offline"
 import { useQueryClient } from "@tanstack/react-query"
-import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Edit2, Receipt, User } from "lucide-react"
+import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Edit2, Receipt, User, Banknote, Landmark } from "lucide-react"
 import type { Transaction, Party, PartyTransaction, Sip } from "@/lib/types"
-import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/constants"
+import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, ACCOUNT_MOVEMENT_CATEGORIES } from "@/lib/constants"
+import { isAccountMovement } from "@/lib/finance/accounts"
+import { useAccounts } from "@/hooks/use-accounts"
+import { CustomSelect } from "@/components/custom-select"
 import { CategoryIcon } from "@/components/category-icon"
 import { AddTransactionModal } from "@/components/modals/add-transaction-modal"
 import { SipMonthChecklist } from "@/components/sip-month-checklist"
@@ -38,6 +41,8 @@ function TransactionsPage() {
   const [showAddModal, setShowAddModal] = useState(false)
   const [editTransaction, setEditTransaction] = useState<Transaction | null>(null)
   const [typeFilter, setTypeFilter] = useState<"all" | "income" | "expense">("all")
+  // "all" | account id | "none" (transactions not tagged with any account)
+  const [accountFilter, setAccountFilter] = useState<string>("all")
   const [monthFilter, setMonthFilter] = useState(
     // Local month key — toISOString() is UTC and shows the previous month to
     // IST users between midnight and 05:30 on the 1st.
@@ -82,6 +87,7 @@ function TransactionsPage() {
     "sips", user?.id, { filters: pf, enabled: !!activeProfile }
   )
   const { data: sipPayments = [] } = useSipPayments(user?.id)
+  const { accounts } = useAccounts()
 
   const prevMonthKey = useMemo(() => previousMonthKey(monthFilter), [monthFilter])
   const prevStartDate = `${prevMonthKey}-01`
@@ -182,7 +188,31 @@ function TransactionsPage() {
 
   const { showConfirm } = useAppDialog()
 
-  async function deleteTransaction(id: string) {
+  async function deleteTransaction(t: Transaction) {
+    // A transfer is two linked legs — deleting only one would silently corrupt
+    // both account balances, so always remove the pair together.
+    if (t.transfer_group_id) {
+      await showConfirm("Delete this transfer? Both sides of it will be removed.", {
+        destructive: true,
+        onConfirm: async () => {
+          const legs = (await fetchTable<Transaction>("transactions", user!.id))
+            .filter(x => x.transfer_group_id === t.transfer_group_id)
+          for (const leg of legs) {
+            let { error } = await deleteRow("transactions", leg.id)
+            if (error) {
+              // One retry so a transient rejection can't strand a one-sided
+              // transfer; if it still fails, stop — the central write-error
+              // toaster surfaces the message rather than pretending success.
+              ;({ error } = await deleteRow("transactions", leg.id))
+              if (error) break
+            }
+          }
+          queryClient.invalidateQueries({ queryKey: ["transactions"] })
+        },
+      })
+      return
+    }
+    const id = t.id
     await showConfirm("Delete this transaction?", {
       destructive: true,
       onConfirm: async () => {
@@ -207,15 +237,26 @@ function TransactionsPage() {
     })
   }
 
-  const filtered = transactions.filter(t => typeFilter === "all" || t.type === typeFilter)
+  const accountById = useMemo(() => new Map(accounts.map(a => [a.id, a])), [accounts])
+
+  const filtered = transactions.filter(t =>
+    (typeFilter === "all" || t.type === typeFilter) &&
+    (accountFilter === "all" ||
+      (accountFilter === "none" ? !t.account_id : t.account_id === accountFilter))
+  )
 
   const todayStr = todayLocalISO()
 
-  /** Month-to-date for current month; full month for past months. */
+  /** Month-to-date for current month; full month for past months. Follows the
+   *  account filter so the summary cards and Insights match the visible list. */
   const tillDateTransactions = useMemo(() => {
-    if (monthFilter !== currentCalendarMonth) return transactions
-    return transactions.filter((t) => t.date <= todayStr)
-  }, [transactions, monthFilter, currentCalendarMonth, todayStr])
+    const base = transactions.filter(t =>
+      accountFilter === "all" ||
+      (accountFilter === "none" ? !t.account_id : t.account_id === accountFilter)
+    )
+    if (monthFilter !== currentCalendarMonth) return base
+    return base.filter((t) => t.date <= todayStr)
+  }, [transactions, monthFilter, currentCalendarMonth, todayStr, accountFilter])
 
   const periodLabel = useMemo(() => {
     const [y, m] = monthFilter.split("-").map(Number)
@@ -227,11 +268,13 @@ function TransactionsPage() {
     return monthName
   }, [monthFilter, currentCalendarMonth])
   
+  // Account movements (transfers/adjustments) shift money between own
+  // accounts — they are not income or spending, so keep them out of the cards.
   const totalIncome = tillDateTransactions
-    .filter(t => t.type === "income")
+    .filter(t => t.type === "income" && !isAccountMovement(t))
     .reduce((sum, t) => sum + Number(t.amount), 0)
   const totalExpense = tillDateTransactions
-    .filter(t => t.type === "expense")
+    .filter(t => t.type === "expense" && !isAccountMovement(t))
     .reduce((sum, t) => sum + Number(t.amount), 0)
   const savings = totalIncome - totalExpense
   const savingsRate = totalIncome > 0 ? (savings / totalIncome) * 100 : 0
@@ -319,6 +362,18 @@ function TransactionsPage() {
           onChange={(e) => setMonthFilter(e.target.value)}
           className="px-3 py-2 rounded-xl bg-[#f5f5f7] dark:bg-[#2c2c2e] text-sm text-[#1d1d1f] dark:text-white border-0 focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10"
         />
+        {accounts.length > 0 && (
+          <CustomSelect
+            value={accountFilter}
+            onChange={setAccountFilter}
+            options={[
+              { value: "all", label: "All accounts" },
+              ...accounts.map(a => ({ value: a.id, label: a.name })),
+              { value: "none", label: "No account" },
+            ]}
+            className="min-w-[150px]"
+          />
+        )}
         <div className="flex bg-[#f5f5f7] dark:bg-[#2c2c2e] rounded-xl p-0.5">
           {(["all", "income", "expense"] as const).map(type => (
             <button
@@ -373,6 +428,9 @@ function TransactionsPage() {
                 {txns.map((t) => {
                   const cats = t.type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES
                   const cat = cats.find(c => c.id === t.category)
+                    ?? ACCOUNT_MOVEMENT_CATEGORIES.find(c => c.id === t.category)
+                  const movement = isAccountMovement(t)
+                  const account = t.account_id ? accountById.get(t.account_id) : undefined
                   const link = partyLinkByTxId.get(t.id)
                   return (
                     <div key={t.id} className="liquid-glass rounded-2xl p-4">
@@ -385,6 +443,14 @@ function TransactionsPage() {
                             {t.description || cat?.label || t.category}
                           </p>
                           <p className="text-xs text-[#86868b]">{cat?.label}</p>
+                          {account && (
+                            <p className="text-xs text-[#86868b] mt-0.5 flex items-center gap-1">
+                              {account.type === "cash"
+                                ? <Banknote className="w-3 h-3 flex-shrink-0" />
+                                : <Landmark className="w-3 h-3 flex-shrink-0" />}
+                              <span className="truncate">{account.name}</span>
+                            </p>
+                          )}
                           {link && (
                             <p className="text-xs text-[#86868b] mt-0.5 flex items-center gap-1 flex-wrap">
                               <User className="w-3 h-3 flex-shrink-0" />
@@ -401,14 +467,19 @@ function TransactionsPage() {
                           </p>
                         </div>
                         <div className="flex gap-1 ml-1">
+                          {/* Transfer/adjustment entries are managed from the
+                              Cash & Bank page — free-form edits here would
+                              desync the linked leg or the corrected balance. */}
+                          {!movement && (
+                            <button
+                              onClick={() => setEditTransaction(t)}
+                              className="p-1.5 rounded-lg hover:bg-[#f5f5f7] transition-all"
+                            >
+                              <Edit2 className="w-3.5 h-3.5 text-[#86868b]" />
+                            </button>
+                          )}
                           <button
-                            onClick={() => setEditTransaction(t)}
-                            className="p-1.5 rounded-lg hover:bg-[#f5f5f7] transition-all"
-                          >
-                            <Edit2 className="w-3.5 h-3.5 text-[#86868b]" />
-                          </button>
-                          <button
-                            onClick={() => deleteTransaction(t.id)}
+                            onClick={() => deleteTransaction(t)}
                             className="p-1.5 rounded-lg hover:bg-[#f5f5f7] transition-all"
                           >
                             <Trash2 className="w-3.5 h-3.5 text-[#86868b]" />

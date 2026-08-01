@@ -170,9 +170,12 @@ export async function insertRow<T extends { id?: string }>(
   const store = TABLE_TO_STORE[table]
   if (!store) return { data: null, error: reportWriteError(`Unknown table: ${table}`), offline: false }
 
-  // Generate a temporary ID for offline inserts
+  // Generate a temporary ID for offline inserts. Stamp created_at too — the
+  // server would default it on replay, but until then cached rows without it
+  // sort before every real timestamp (e.g. in the account ledger's same-day
+  // ordering), and queueing it keeps the true creation time after sync.
   const tempId = data.id as string || crypto.randomUUID()
-  const record = { ...data, id: tempId }
+  const record = { ...data, id: tempId, created_at: (data.created_at as string) || new Date().toISOString() }
 
   if (isOnline()) {
     try {
@@ -199,7 +202,7 @@ export async function insertRow<T extends { id?: string }>(
   // would never match the server row).
   await put(store, record)
   await enqueue(table, "insert", record)
-  return { data: record as T, error: null, offline: true }
+  return { data: record as unknown as T, error: null, offline: true }
 }
 
 /**
@@ -250,7 +253,9 @@ export async function upsertRow<T>(
   const existing = await getAll<Record<string, unknown>>(store)
   const match = existing.find(r => conflict.columns.every(c => r[c] === data[c]))
   const tempId = (data.id as string) || crypto.randomUUID()
-  const record = match ? { ...match, ...data, id: match.id } : { ...data, id: tempId }
+  const record = match
+    ? { ...match, ...data, id: match.id }
+    : { ...data, id: tempId, created_at: (data.created_at as string) || new Date().toISOString() }
   await put(store, record)
   await enqueue(table, "upsert", record, {}, onConflict)
   return { data: record as T, error: null, offline: true }

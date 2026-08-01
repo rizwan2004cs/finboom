@@ -5,7 +5,7 @@
 
 import { createClient } from "@/utils/supabase/client"
 import { getQueue, dequeue, setRetries, type QueuedMutation } from "./queue"
-import { putAll, bulkPut, clearAllStores, setMeta, getMeta, DATA_STORES, type DataStore } from "./db"
+import { putAll, bulkPut, clearAllStores, setMeta, getMeta, getById, put, DATA_STORES, type DataStore } from "./db"
 
 type SyncListener = (status: "syncing" | "synced" | "error" | "offline" | "online") => void
 
@@ -37,7 +37,9 @@ function notify(status: "syncing" | "synced" | "error" | "offline" | "online") {
  *  The distinction matters: only rejections may count toward dropping the
  *  mutation as poison — a flaky network must never destroy queued writes.
  */
-async function replayMutation(m: QueuedMutation): Promise<"ok" | "rejected" | "network"> {
+async function replayMutation(
+  m: QueuedMutation,
+): Promise<{ status: "ok" | "rejected" | "network"; code?: string }> {
   const supabase = createClient()
   try {
     let query
@@ -65,12 +67,14 @@ async function replayMutation(m: QueuedMutation): Promise<"ok" | "rejected" | "n
         // PostgREST rejections carry a non-empty string code; fetch failures
         // surfaced as error objects don't (mirrors isPermanentError in data.ts).
         const code = (error as { code?: unknown }).code
-        return typeof code === "string" && code.length > 0 ? "rejected" : "network"
+        return typeof code === "string" && code.length > 0
+          ? { status: "rejected", code }
+          : { status: "network" }
       }
     }
-    return "ok"
+    return { status: "ok" }
   } catch {
-    return "network"
+    return { status: "network" }
   }
 }
 
@@ -88,14 +92,40 @@ export async function replayQueue(): Promise<{ success: number; failed: number; 
   let dropped = 0
 
   for (const mutation of queue) {
-    const result = await replayMutation(mutation)
-    if (result === "ok") {
+    let result = await replayMutation(mutation)
+
+    // A queued transaction pointing at an account that was deleted elsewhere
+    // fails the FK (23503). Dropping it as poison would destroy a real money
+    // record — instead retry with the tag nulled, matching the FK's own
+    // on-delete-set-null semantics (the row survives, merely unlinked).
+    if (
+      result.status === "rejected" &&
+      result.code === "23503" &&
+      mutation.table === "transactions" &&
+      mutation.operation !== "delete" &&
+      (mutation.data as { account_id?: unknown })?.account_id != null
+    ) {
+      const healed = { ...mutation, data: { ...mutation.data, account_id: null } }
+      result = await replayMutation(healed)
+      if (result.status === "ok") {
+        // Mirror the unlink into the cache so the local row matches the server.
+        const id =
+          ((mutation.data as { id?: string }).id) ||
+          ((mutation.match as { id?: string })?.id)
+        if (id) {
+          const cached = await getById<Record<string, unknown>>("transactions", id)
+          if (cached) await put("transactions", { ...cached, account_id: null })
+        }
+      }
+    }
+
+    if (result.status === "ok") {
       await dequeue(mutation.queue_id)
       success++
       continue
     }
 
-    if (result === "network") {
+    if (result.status === "network") {
       // Connectivity problem, not a rejection — never counts toward poison.
       // Stop (preserving order) and let the next sync retry the whole queue.
       failed++

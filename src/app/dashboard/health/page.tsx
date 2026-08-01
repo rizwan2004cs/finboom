@@ -8,6 +8,7 @@ import { useInsertMutation, useUpdateMutation } from "@/hooks/use-offline-mutati
 import { Shield, Heart, AlertTriangle, CheckCircle, Info } from "lucide-react"
 import type { HealthCheck, Asset, Liability, Goal, Transaction } from "@/lib/types"
 import { computeWealthCheck, type WealthDimension } from "@/lib/finance/wealth-check"
+import { isAccountMovement } from "@/lib/finance/accounts"
 import { useCurrency } from "@/hooks/use-currency"
 
 export default function HealthPage() {
@@ -63,7 +64,7 @@ export default function HealthPage() {
     // overestimated monthly income roughly 3× and skewed every income-based score.
     const now = new Date()
     const windowStart = new Date(now.getFullYear(), now.getMonth() - 5, 1)
-    const incomes = txData.filter(t => t.type === "income" && new Date(t.date) >= windowStart)
+    const incomes = txData.filter(t => t.type === "income" && !isAccountMovement(t) && new Date(t.date) >= windowStart)
     if (incomes.length > 0) {
       const total = incomes.reduce((sum, t) => sum + Number(t.amount), 0)
       const months = new Set(incomes.map(t => t.date.slice(0, 7)))

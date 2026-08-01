@@ -6,6 +6,7 @@ import { useCurrency } from "@/hooks/use-currency"
 import { TrendingDown, TrendingUp } from "lucide-react"
 import type { Transaction } from "@/lib/types"
 import { EXPENSE_CATEGORIES } from "@/lib/constants"
+import { isAccountMovement } from "@/lib/finance/accounts"
 
 // Map raw category ids (e.g. "food_dining") to human labels ("Food & Dining").
 const EXPENSE_LABELS = new Map<string, string>(EXPENSE_CATEGORIES.map((c) => [c.id, c.label]))
@@ -50,7 +51,8 @@ export function SpendingChart({ transactions, isLoading }: Props) {
     const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1
     const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear
 
-    const expenses = transactions.filter(t => t.type === "expense")
+    // Account movements (transfers/adjustments) are not real spending.
+    const expenses = transactions.filter(t => t.type === "expense" && !isAccountMovement(t))
 
     const thisMonthExpenses = expenses.filter(t => {
       const d = new Date(t.date)

@@ -41,7 +41,26 @@ export interface Transaction {
   currency: string
   description?: string
   date: string
+  /** Cash/bank account the money moved through (null = not tracked). */
+  account_id?: string | null
+  /** Shared id linking the two legs of an account-to-account transfer. */
+  transfer_group_id?: string | null
   created_at: string
+}
+
+/** A money account under Cash & Bank — the built-in Cash In Hand or a
+ *  user-added bank account. Balance is always derived client-side:
+ *  opening_balance + Σ income − Σ expense of transactions tagged with it. */
+export interface Account {
+  id: string
+  user_id: string
+  profile_id?: string | null
+  name: string
+  type: "bank" | "cash"
+  opening_balance: number
+  opening_date: string
+  created_at: string
+  updated_at: string
 }
 
 export interface Budget {

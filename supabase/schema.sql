@@ -50,6 +50,21 @@ create table if not exists liabilities (
   updated_at timestamptz default now()
 );
 
+-- Cash & Bank accounts (Cash In Hand + bank accounts, per profile).
+-- Balances are derived client-side (opening_balance + Σ income − Σ expense of
+-- tagged transactions), never stored. Must precede transactions (FK target).
+create table if not exists accounts (
+  id uuid default gen_random_uuid() primary key,
+  user_id text not null,
+  profile_id uuid references profiles(id) on delete set null,
+  name text not null,
+  type text not null default 'bank' check (type in ('bank', 'cash')),
+  opening_balance numeric not null default 0,
+  opening_date date not null default current_date,
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
 -- Transactions table
 create table if not exists transactions (
   id uuid default uuid_generate_v4() primary key,
@@ -61,6 +76,8 @@ create table if not exists transactions (
   currency text not null default 'INR',
   description text,
   date date not null default current_date,
+  account_id uuid references accounts(id) on delete set null,
+  transfer_group_id uuid,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
@@ -203,7 +220,9 @@ $$ language plpgsql;
 
 create or replace trigger set_updated_at_assets before update on assets for each row execute function update_updated_at_column();
 create or replace trigger set_updated_at_liabilities before update on liabilities for each row execute function update_updated_at_column();
-create or replace trigger set_updated_at_transactions before update on transactions for each row execute function update_updated_at_column();
+-- INSERT included so offline-created rows replayed later get a server
+-- timestamp visible to other devices' delta sync.
+create or replace trigger set_updated_at_transactions before insert or update on transactions for each row execute function update_updated_at_column();
 create or replace trigger set_updated_at_goals before update on goals for each row execute function update_updated_at_column();
 create or replace trigger set_updated_at_snapshots before update on snapshots for each row execute function update_updated_at_column();
 create or replace trigger set_updated_at_profiles before update on profiles for each row execute function update_updated_at_column();
@@ -213,6 +232,7 @@ create or replace trigger set_updated_at_budgets before update on budgets for ea
 create or replace trigger set_updated_at_health_checks before update on health_checks for each row execute function update_updated_at_column();
 create or replace trigger set_updated_at_sips before update on sips for each row execute function update_updated_at_column();
 create or replace trigger set_updated_at_feature_ideas before update on feature_ideas for each row execute function update_updated_at_column();
+create or replace trigger set_updated_at_accounts before insert or update on accounts for each row execute function update_updated_at_column();
 
 -- Indexes for fast lookups
 create index if not exists idx_assets_user_id on assets(user_id);
@@ -238,6 +258,10 @@ create index if not exists idx_sips_profile on sips(user_id, profile_id);
 
 create index if not exists idx_feature_ideas_user_id on feature_ideas(user_id);
 
+create index if not exists idx_accounts_user_id on accounts(user_id);
+create index if not exists idx_transactions_account_id on transactions(account_id);
+create index if not exists idx_transactions_transfer_group_id on transactions(transfer_group_id);
+
 -- Indexes for delta sync
 create index if not exists idx_assets_updated_at on assets(updated_at);
 create index if not exists idx_liabilities_updated_at on liabilities(updated_at);
@@ -250,6 +274,7 @@ create index if not exists idx_party_transactions_updated_at on party_transactio
 create index if not exists idx_budgets_updated_at on budgets(updated_at);
 create index if not exists idx_sips_updated_at on sips(updated_at);
 create index if not exists idx_feature_ideas_updated_at on feature_ideas(updated_at);
+create index if not exists idx_accounts_updated_at on accounts(updated_at);
 
 -- Row Level Security (RLS)
 -- Every row is scoped to its owner via the Clerk user id, which arrives in the
@@ -270,6 +295,7 @@ alter table budgets enable row level security;
 alter table health_checks enable row level security;
 alter table sips enable row level security;
 alter table feature_ideas enable row level security;
+alter table accounts enable row level security;
 
 create policy "assets_owner_all" on assets for all to authenticated
   using ((select auth.jwt() ->> 'sub') = user_id) with check ((select auth.jwt() ->> 'sub') = user_id);
@@ -305,6 +331,9 @@ create policy "health_checks_owner_all" on health_checks for all to authenticate
   using ((select auth.jwt() ->> 'sub') = user_id) with check ((select auth.jwt() ->> 'sub') = user_id);
 
 create policy "sips_owner_all" on sips for all to authenticated
+  using ((select auth.jwt() ->> 'sub') = user_id) with check ((select auth.jwt() ->> 'sub') = user_id);
+
+create policy "accounts_owner_all" on accounts for all to authenticated
   using ((select auth.jwt() ->> 'sub') = user_id) with check ((select auth.jwt() ->> 'sub') = user_id);
 
 create policy "feature_ideas_owner_all" on feature_ideas for all to authenticated

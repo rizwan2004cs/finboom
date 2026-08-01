@@ -10,6 +10,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { Plus, Trash2, Edit2, CreditCard, TrendingDown } from "lucide-react"
 import type { Liability, Transaction } from "@/lib/types"
 import { LIABILITY_TYPES } from "@/lib/constants"
+import { isAccountMovement } from "@/lib/finance/accounts"
 import { CategoryIcon } from "@/components/category-icon"
 import { useAppDialog } from "@/components/app-dialog"
 import { useCurrency } from "@/hooks/use-currency"
@@ -228,7 +229,7 @@ function LoanInsights({
   const ws = new Date(now.getFullYear(), now.getMonth() - 5, 1)
   const windowStartStr = `${ws.getFullYear()}-${String(ws.getMonth() + 1).padStart(2, "0")}-01`
   const incomeTx = transactions.filter(
-    (t) => t.type === "income" && t.date >= windowStartStr
+    (t) => t.type === "income" && !isAccountMovement(t) && t.date >= windowStartStr
   )
   const incomeMonths = new Set(incomeTx.map((t) => t.date.slice(0, 7)))
   const totalIncome = incomeTx.reduce((s, t) => s + Number(t.amount), 0)

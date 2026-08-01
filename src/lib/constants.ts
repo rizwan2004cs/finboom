@@ -70,6 +70,25 @@ export const INCOME_CATEGORIES = [
   { id: 'other', label: 'Other', icon: 'MoreHorizontal' },
 ] as const
 
+/** Special transaction categories for Cash & Bank account movements.
+ *  A transfer is stored as two linked legs (expense out of one account,
+ *  income into the other); an adjustment corrects an account balance to
+ *  reality. Neither is real income/expense — aggregations exclude them via
+ *  isAccountMovement in @/lib/finance/accounts. Not listed in the
+ *  income/expense category pickers on purpose. */
+export const TRANSFER_CATEGORY = 'transfer'
+export const ADJUSTMENT_CATEGORY = 'adjustment'
+
+export const ACCOUNT_MOVEMENT_CATEGORIES = [
+  { id: TRANSFER_CATEGORY, label: 'Transfer', icon: 'ArrowLeftRight' },
+  { id: ADJUSTMENT_CATEGORY, label: 'Balance Adjustment', icon: 'SlidersHorizontal' },
+] as const
+
+export const ACCOUNT_TYPES = [
+  { id: 'cash', label: 'Cash', icon: 'Banknote' },
+  { id: 'bank', label: 'Bank Account', icon: 'Landmark' },
+] as const
+
 export const PARTY_TRANSACTION_TYPES = [
   { id: 'lent', label: 'I Gave (Lent)', icon: 'ArrowUpRight', description: 'Money you gave to someone' },
   { id: 'received_back', label: 'Received Back', icon: 'ArrowDownLeft', description: 'Money returned to you' },

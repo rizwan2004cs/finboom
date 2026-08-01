@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
+import { useAccounts } from "@/hooks/use-accounts"
 import { deleteRow, fetchTable, insertRow, updateRow } from "@/lib/offline"
 import {
   sanitizePhone,
@@ -30,22 +31,35 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
   const { symbol, currency, toINR, convert } = useCurrency()
   const { user } = useUser()
   const { activeProfile } = useProfile()
+  const { accounts, isFetched: accountsFetched } = useAccounts()
   const [saving, setSaving] = useState(false)
   const [parties, setParties] = useState<Party[]>([])
   const [showNewParty, setShowNewParty] = useState(false)
   const [newPartyName, setNewPartyName] = useState("")
   const [newPartyPhone, setNewPartyPhone] = useState("")
   const [newPartyNotes, setNewPartyNotes] = useState("")
+  // Stored amounts are INR; the field is labeled in the display currency.
+  // Keep the prefilled string so an untouched field saves the ORIGINAL INR
+  // amount — re-converting the 2-decimal display string would silently drift
+  // the stored amount in non-INR display modes.
+  const [initialAmount] = useState(() =>
+    transaction?.amount != null
+      ? String(Math.round(convert(Number(transaction.amount)) * 100) / 100)
+      : ""
+  )
   const [form, setForm] = useState({
     type: (transaction?.type || "expense") as "income" | "expense",
     category: transaction?.category || "",
-    // Stored amounts are INR; the field is labeled in the display currency, so
-    // prefill the converted value when editing (round-trips through toINR on save).
-    amount: transaction?.amount != null
-      ? String(Math.round(convert(Number(transaction.amount)) * 100) / 100)
-      : "",
+    amount: initialAmount,
     description: transaction?.description || "",
     date: transaction?.date || todayLocalISO(),
+    // "Paid from / Received in" account. New transactions default to the last
+    // account used on this profile (optional-with-memory, Vyapar-style).
+    account_id: transaction
+      ? transaction.account_id || ""
+      : (typeof window !== "undefined" && activeProfile
+          ? localStorage.getItem(`finboom_last_account_${activeProfile.id}`) || ""
+          : ""),
     spent_for_party_id: "",
     due_date: "",
   })
@@ -59,6 +73,16 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
     fetchTable<Party>("parties", user.id, { order: { column: "name", ascending: true } })
       .then(data => setParties(data))
   }, [user])
+
+  // A remembered account may have been deleted (or belong to a stale key) —
+  // once the list is in, only ids present in it count. While accounts are
+  // still loading, pass the id through unverified: stripping it would silently
+  // untag a save that races the fetch.
+  const validAccountId = !accountsFetched
+    ? form.account_id
+    : form.account_id && accounts.some(a => a.id === form.account_id)
+      ? form.account_id
+      : ""
 
   const categories = form.type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES
 
@@ -99,12 +123,21 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
       setError("Due date cannot be before the transaction date.")
       return
     }
+    // A transaction dated before the tagged account's opening as-of date would
+    // be silently ignored by that account's balance — reject it up front.
+    const taggedAccount = validAccountId ? accounts.find(a => a.id === validAccountId) : undefined
+    if (taggedAccount && form.date < taggedAccount.opening_date) {
+      setError(`${taggedAccount.name} tracks its balance from ${taggedAccount.opening_date} — pick a later date or "Not tracked".`)
+      return
+    }
     setError("")
     setSaving(true)
 
     // The field is labeled in the display currency — normalise to INR for
     // storage (the whole app aggregates in INR). No-op when currency is INR.
-    const amountInr = Math.round(toINR(amount, currency) * 100) / 100
+    const amountInr = transaction && form.amount === initialAmount
+      ? Number(transaction.amount)
+      : Math.round(toINR(amount, currency) * 100) / 100
 
     if (isEditing) {
       await updateRow("transactions", transaction.id, {
@@ -113,6 +146,7 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
         amount: amountInr,
         description: form.description || null,
         date: form.date,
+        account_id: validAccountId || null,
       })
       // Keep any linked party receivable/payable in sync with the edited amount
       // and date, so editing a "spent for someone" expense doesn't leave a stale
@@ -138,6 +172,7 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
         description: form.description || null,
         date: form.date,
         currency: "INR",
+        account_id: validAccountId || null,
       })
 
       // If expense was "spent for" a party, also create a party_transaction (lent)
@@ -153,6 +188,19 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
           notes: form.description || null,
           linked_transaction_id: txData.id,
         })
+      }
+    }
+
+    // Remember the account for the next entry on this profile ("" forgets it).
+    // New entries only — editing an old transaction says nothing about what
+    // the user pays with today. Never forget based on a still-loading list.
+    if (!isEditing && activeProfile) {
+      try {
+        const key = `finboom_last_account_${activeProfile.id}`
+        if (validAccountId) localStorage.setItem(key, validAccountId)
+        else if (accountsFetched) localStorage.removeItem(key)
+      } catch {
+        /* storage may be unavailable (private mode) */
       }
     }
 
@@ -259,6 +307,22 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
               onChange={(e) => { setForm(prev => ({ ...prev, date: e.target.value })); setError("") }}
               onFocus={(e) => setTimeout(() => e.target.scrollIntoView({ behavior: "smooth", block: "center" }), 100)}
               className="mt-1 w-full px-4 py-3 rounded-xl bg-[#f5f5f7] dark:bg-white/[0.06] border-0 text-sm text-[#1d1d1f] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10 dark:[color-scheme:dark]"
+            />
+          </div>
+
+          {/* Paid from / Received in — optional account tag so the Cash & Bank
+              balances track reality. Defaults to the last account used. */}
+          <div>
+            <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">
+              {form.type === "expense" ? "Paid from" : "Received in"}{" "}
+              <span className="text-[#86868b] font-normal">(optional)</span>
+            </label>
+            <CustomSelect
+              value={validAccountId}
+              onChange={(val) => setForm(prev => ({ ...prev, account_id: val }))}
+              options={[{ value: "", label: "Not tracked" }, ...accounts.map(a => ({ value: a.id, label: a.name }))]}
+              placeholder="Not tracked"
+              className="mt-1"
             />
           </div>
 

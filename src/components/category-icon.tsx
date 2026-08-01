@@ -6,7 +6,7 @@ import {
   ShieldPlus, Globe, Globe2, Banknote, MoreHorizontal, Car, User, GraduationCap,
   CreditCard, ShoppingCart, Zap, UtensilsCrossed, Stethoscope, Film, ShoppingBag,
   Repeat, Sparkles, Plane, Gift, Briefcase, Laptop, Building2, Percent, DollarSign,
-  ArrowUpRight, Calculator,
+  ArrowUpRight, Calculator, ArrowLeftRight, SlidersHorizontal,
   type LucideIcon,
 } from "lucide-react"
 
@@ -16,7 +16,7 @@ const iconMap: Record<string, LucideIcon> = {
   ShieldPlus, Globe, Globe2, Banknote, MoreHorizontal, Car, User, GraduationCap,
   CreditCard, ShoppingCart, Zap, UtensilsCrossed, Stethoscope, Film, ShoppingBag,
   Repeat, Sparkles, Plane, Gift, Briefcase, Laptop, Building2, Percent, DollarSign,
-  ArrowUpRight, Calculator,
+  ArrowUpRight, Calculator, ArrowLeftRight, SlidersHorizontal,
 }
 
 interface CategoryIconProps {
