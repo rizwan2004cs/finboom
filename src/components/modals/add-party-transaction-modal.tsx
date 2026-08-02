@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
+import { useAccounts } from "@/hooks/use-accounts"
 import { fetchTable, insertRow, updateRow } from "@/lib/offline"
 import { createClient } from "@/utils/supabase/client"
 import {
@@ -37,6 +38,7 @@ export function AddPartyTransactionModal({ onClose, onSave, preselectedPartyId, 
   const { symbol } = useCurrency()
   const { user } = useUser()
   const { activeProfile } = useProfile()
+  const { accounts, isFetched: accountsFetched } = useAccounts()
   const [saving, setSaving] = useState(false)
   const [parties, setParties] = useState<Party[]>([])
   const [showNewParty, setShowNewParty] = useState(false)
@@ -50,8 +52,28 @@ export function AddPartyTransactionModal({ onClose, onSave, preselectedPartyId, 
     date: todayLocalISO(),
     due_date: "",
     notes: "",
+    // Cash/bank account the money moves through — tags the auto-created
+    // transaction so Cash & Bank balances track party lending/borrowing.
+    // Defaults to the last account used on this profile (shared with the
+    // regular transaction modal).
+    account_id:
+      typeof window !== "undefined" && activeProfile
+        ? localStorage.getItem(`finboom_last_account_${activeProfile.id}`) || ""
+        : "",
   })
   const [error, setError] = useState("")
+
+  // A remembered account may have been deleted — once the list is in, only ids
+  // present in it count. While accounts are still loading, pass the id through
+  // unverified so a save racing the fetch isn't silently untagged.
+  const validAccountId = !accountsFetched
+    ? form.account_id
+    : form.account_id && accounts.some(a => a.id === form.account_id)
+      ? form.account_id
+      : ""
+
+  // Money leaves on lent/paid_back, arrives on borrowed/received_back.
+  const moneyOut = form.type === "lent" || form.type === "paid_back"
 
   const newPartyPhoneInvalid = newPartyPhone.length > 0 && !isValidPhone(newPartyPhone)
   const todayStr = todayLocalISO()
@@ -103,6 +125,13 @@ export function AddPartyTransactionModal({ onClose, onSave, preselectedPartyId, 
       setError("Due date cannot be before the transaction date.")
       return
     }
+    // A transaction dated before the tagged account's opening as-of date would
+    // be silently ignored by that account's balance — reject it up front.
+    const taggedAccount = validAccountId ? accounts.find(a => a.id === validAccountId) : undefined
+    if (taggedAccount && form.date < taggedAccount.opening_date) {
+      setError(`${taggedAccount.name} tracks its balance from ${taggedAccount.opening_date} — pick a later date or "Not tracked".`)
+      return
+    }
     setError("")
     setSaving(true)
 
@@ -144,50 +173,22 @@ export function AddPartyTransactionModal({ onClose, onSave, preselectedPartyId, 
         if (profileId) {
           let txInsert: Record<string, unknown> | null = null
 
-          if (form.type === "received_back") {
-            txInsert = {
-              user_id: user.id,
-              profile_id: profileId,
-              type: "income",
-              category: "other",
-              amount,
-              description: `Received back from ${partyName}`,
-              date: form.date,
-              currency: "INR",
-            }
-          } else if (form.type === "paid_back") {
-            txInsert = {
-              user_id: user.id,
-              profile_id: profileId,
-              type: "expense",
-              category: "other",
-              amount,
-              description: `Paid back to ${partyName}`,
-              date: form.date,
-              currency: "INR",
-            }
-          } else if (form.type === "lent") {
-            txInsert = {
-              user_id: user.id,
-              profile_id: profileId,
-              type: "expense",
-              category: "other",
-              amount,
-              description: `Lent to ${partyName}`,
-              date: form.date,
-              currency: "INR",
-            }
-          } else if (form.type === "borrowed") {
-            txInsert = {
-              user_id: user.id,
-              profile_id: profileId,
-              type: "income",
-              category: "other",
-              amount,
-              description: `Borrowed from ${partyName}`,
-              date: form.date,
-              currency: "INR",
-            }
+          const descriptions = {
+            received_back: `Received back from ${partyName}`,
+            paid_back: `Paid back to ${partyName}`,
+            lent: `Lent to ${partyName}`,
+            borrowed: `Borrowed from ${partyName}`,
+          }
+          txInsert = {
+            user_id: user.id,
+            profile_id: profileId,
+            type: moneyOut ? "expense" : "income",
+            category: "other",
+            amount,
+            description: descriptions[form.type],
+            date: form.date,
+            currency: "INR",
+            account_id: validAccountId || null,
           }
 
           if (txInsert) {
@@ -202,6 +203,18 @@ export function AddPartyTransactionModal({ onClose, onSave, preselectedPartyId, 
       }
     } catch (err) {
       console.error("[party-tx] handleSubmit error:", err)
+    }
+
+    // Remember the account for the next entry on this profile ("" forgets it).
+    // Never forget based on a still-loading list.
+    if (activeProfile) {
+      try {
+        const key = `finboom_last_account_${activeProfile.id}`
+        if (validAccountId) localStorage.setItem(key, validAccountId)
+        else if (accountsFetched) localStorage.removeItem(key)
+      } catch {
+        /* storage may be unavailable (private mode) */
+      }
     }
 
     setSaving(false)
@@ -361,6 +374,24 @@ export function AddPartyTransactionModal({ onClose, onSave, preselectedPartyId, 
               onChange={(e) => { setForm(prev => ({ ...prev, date: e.target.value })); setError("") }}
               onFocus={(e) => setTimeout(() => e.target.scrollIntoView({ behavior: "smooth", block: "center" }), 100)}
               className="mt-1 w-full px-4 py-3 rounded-xl bg-white/50 dark:bg-white/[0.06] border border-white/40 dark:border-white/[0.06] text-sm text-[#1d1d1f] dark:text-white focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10 dark:[color-scheme:dark]"
+            />
+          </div>
+
+          {/* Paid from / Received in — optional account tag so Cash & Bank
+              balances track the party money movement. */}
+          <div>
+            <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">
+              {moneyOut ? "Paid from" : "Received in"}{" "}
+              <span className="text-[#86868b] font-normal">(optional)</span>
+            </label>
+            <CustomSelect
+              value={validAccountId}
+              onChange={(val) => { setForm(prev => ({ ...prev, account_id: val })); setError("") }}
+              options={[{ value: "", label: "Not tracked" }, ...accounts.map(a => ({ value: a.id, label: a.name }))]}
+              placeholder="Not tracked"
+              className="mt-1"
+              variant="glass"
+              searchable
             />
           </div>
 

@@ -149,14 +149,17 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
         account_id: validAccountId || null,
       })
       // Keep any linked party receivable/payable in sync with the edited amount
-      // and date, so editing a "spent for someone" expense doesn't leave a stale
-      // party balance behind. If the transaction was flipped to income it can no
-      // longer back a receivable — remove the link instead of updating it.
-      const linked = (await fetchTable<{ id: string; linked_transaction_id?: string }>(
+      // and date, so editing the transaction doesn't leave a stale party
+      // balance behind. Each party-tx type backs a specific transaction type
+      // (lent/paid_back → expense, borrowed/received_back → income); only when
+      // the user flips the type so it no longer matches does the link stop
+      // making sense — remove it then, never for account/amount/date edits.
+      const linked = (await fetchTable<{ id: string; type: string; linked_transaction_id?: string }>(
         "party_transactions", user.id
       )).filter((pt) => pt.linked_transaction_id === transaction.id)
       for (const pt of linked) {
-        if (form.type === "income") {
+        const expectedType = pt.type === "borrowed" || pt.type === "received_back" ? "income" : "expense"
+        if (form.type !== expectedType) {
           await deleteRow("party_transactions", pt.id)
         } else {
           await updateRow("party_transactions", pt.id, { amount: amountInr, date: form.date })
