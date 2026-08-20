@@ -7,7 +7,7 @@ import { useSearchParams } from "next/navigation"
 import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { deleteRow, fetchTable } from "@/lib/offline"
 import { useQueryClient } from "@tanstack/react-query"
-import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Edit2, Receipt, User, Banknote, Landmark } from "lucide-react"
+import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Edit2, Receipt, User, Banknote, Landmark, Download } from "lucide-react"
 import type { Transaction, Party, PartyTransaction, Sip } from "@/lib/types"
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, ACCOUNT_MOVEMENT_CATEGORIES } from "@/lib/constants"
 import { isAccountMovement } from "@/lib/finance/accounts"
@@ -15,6 +15,7 @@ import { useAccounts } from "@/hooks/use-accounts"
 import { CustomSelect } from "@/components/custom-select"
 import { CategoryIcon } from "@/components/category-icon"
 import { AddTransactionModal } from "@/components/modals/add-transaction-modal"
+import { StatementModal } from "@/components/modals/statement-modal"
 import { SipMonthChecklist } from "@/components/sip-month-checklist"
 import { useSipPayments } from "@/hooks/use-sip-payments"
 import { useAppDialog } from "@/components/app-dialog"
@@ -39,6 +40,7 @@ function TransactionsPage() {
   const searchParams = useSearchParams()
   const queryClient = useQueryClient()
   const [showAddModal, setShowAddModal] = useState(false)
+  const [showStatement, setShowStatement] = useState(false)
   const [editTransaction, setEditTransaction] = useState<Transaction | null>(null)
   const [typeFilter, setTypeFilter] = useState<"all" | "income" | "expense">("all")
   // "all" | account id | "none" (transactions not tagged with any account)
@@ -316,13 +318,23 @@ function TransactionsPage() {
           <h1 className="text-xl font-bold text-[#1d1d1f] dark:text-white">Transactions</h1>
           <p className="text-sm text-[#86868b]">Income & Expenses</p>
         </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="flex items-center gap-1.5 liquid-glass-btn-primary"
-        >
-          <Plus className="w-4 h-4" />
-          <span className="hidden sm:inline">Add</span>
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowStatement(true)}
+            className="flex items-center gap-1.5 liquid-glass rounded-full px-3 py-2 text-sm font-medium text-[#1d1d1f] dark:text-white hover:shadow-md transition-all"
+            aria-label="Download statement"
+          >
+            <Download className="w-4 h-4" />
+            <span className="hidden sm:inline">Statement</span>
+          </button>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-1.5 liquid-glass-btn-primary"
+          >
+            <Plus className="w-4 h-4" />
+            <span className="hidden sm:inline">Add</span>
+          </button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -505,6 +517,16 @@ function TransactionsPage() {
           periodLabel={periodLabel}
         />
       </div>
+
+      {showStatement && (
+        <StatementModal
+          onClose={() => setShowStatement(false)}
+          accounts={accounts}
+          initialAccountId={
+            accountFilter !== "all" && accountFilter !== "none" ? accountFilter : ""
+          }
+        />
+      )}
 
       {(showAddModal || editTransaction) && (
         <AddTransactionModal

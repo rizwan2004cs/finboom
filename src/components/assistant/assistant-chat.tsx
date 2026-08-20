@@ -715,6 +715,9 @@ export function AssistantChat() {
       ])
       queryClient.invalidateQueries()
     } catch (err) {
+      // The action failed (e.g. overdraft guard) — retrying the same one
+      // would fail identically, so drop the Confirm card with the message.
+      setPending(null)
       setMessages((prev) => [
         ...prev,
         {

@@ -9,8 +9,9 @@ import { deleteRow, updateRow } from "@/lib/offline"
 import { useQueryClient } from "@tanstack/react-query"
 import {
   Plus, Landmark, Banknote, Trash2, Edit2, ArrowLeftRight,
-  SlidersHorizontal, ChevronDown, Star,
+  SlidersHorizontal, ChevronDown, Star, Download,
 } from "lucide-react"
+import { StatementModal } from "@/components/modals/statement-modal"
 import { getPrimaryAccountId, setPrimaryAccountId } from "@/lib/accounts/default-account"
 import type { Account, Transaction } from "@/lib/types"
 import { accountBalance, accountLedger } from "@/lib/finance/accounts"
@@ -40,6 +41,7 @@ export default function AccountsPage() {
   const [transferFromId, setTransferFromId] = useState<string | undefined>(undefined)
   const [adjustAccount, setAdjustAccount] = useState<Account | null>(null)
   const [openLedgerId, setOpenLedgerId] = useState<string | null>(null)
+  const [statementAccountId, setStatementAccountId] = useState<string | null>(null)
   // Explicit default money source (UPI-style primary). Wins over "last used"
   // in the transaction modals and the assistant. Derived from storage with a
   // version bump on writes (a setState-in-effect here trips the lint rule).
@@ -216,6 +218,14 @@ export default function AccountsPage() {
                         />
                       </button>
                       <button
+                        onClick={() => setStatementAccountId(account.id)}
+                        className="p-1.5 rounded-lg hover:bg-[#f5f5f7] transition-all"
+                        aria-label={`Download ${account.name} statement`}
+                        title="Download statement"
+                      >
+                        <Download className="w-3.5 h-3.5 text-[#86868b]" />
+                      </button>
+                      <button
                         onClick={() => setAdjustAccount(account)}
                         className="p-1.5 rounded-lg hover:bg-[#f5f5f7] transition-all"
                         aria-label={`Adjust ${account.name} balance`}
@@ -308,6 +318,14 @@ export default function AccountsPage() {
           onSave={() => { setShowTransfer(false); invalidate() }}
         />
       )}
+      {statementAccountId && (
+        <StatementModal
+          onClose={() => setStatementAccountId(null)}
+          accounts={accounts}
+          initialAccountId={statementAccountId}
+        />
+      )}
+
       {adjustAccount && (
         <AdjustBalanceModal
           account={adjustAccount}
