@@ -27,15 +27,27 @@ const typeIcons = {
   paid_back: ArrowUpLeft,
 }
 
+export interface OpenObligation {
+  id: string
+  party_id: string
+  type: "lent" | "borrowed"
+  date: string
+  amount: number
+  outstanding: number
+}
+
 interface Props {
   onClose: () => void
   onSave: () => void
   preselectedPartyId?: string
   preselectedType?: "lent" | "received_back" | "borrowed" | "paid_back"
   // Entry-level Settle: the lent/borrowed entry this repayment settles, so
-  // the allocation targets it instead of the party's oldest open entry.
+  // the allocation targets it instead of LIFO across the party's open entries.
   settlesTransactionId?: string
   prefillAmount?: string
+  // The party's still-open entries — offered as an optional "settles which
+  // entry?" pick on repayment types.
+  openObligations?: OpenObligation[]
 }
 
 export function AddPartyTransactionModal({
@@ -45,6 +57,7 @@ export function AddPartyTransactionModal({
   preselectedType,
   settlesTransactionId,
   prefillAmount,
+  openObligations,
 }: Props) {
   const { symbol } = useCurrency()
   const { user } = useUser()
@@ -73,6 +86,21 @@ export function AddPartyTransactionModal({
         : "",
   })
   const [error, setError] = useState("")
+  // Which open entry this repayment settles ("" = automatic, newest first).
+  const [settlesId, setSettlesId] = useState(settlesTransactionId || "")
+
+  // Open entries this repayment could settle: same party, matching direction
+  // (received_back settles lent, paid_back settles borrowed).
+  const settleCandidates =
+    form.type === "received_back" || form.type === "paid_back"
+      ? (openObligations ?? []).filter(
+          o =>
+            o.party_id === form.party_id &&
+            o.type === (form.type === "received_back" ? "lent" : "borrowed")
+        )
+      : []
+  // A stale pick (party/type changed underneath it) silently falls back to auto.
+  const validSettlesId = settleCandidates.some(o => o.id === settlesId) ? settlesId : ""
 
   // A remembered account may have been deleted — once the list is in, only ids
   // present in it count. While accounts are still loading, pass the id through
@@ -159,12 +187,9 @@ export function AddPartyTransactionModal({
         date: form.date,
         due_date: dueDate || null,
         notes: form.notes.trim() || null,
-        // Only meaningful on repayments; drop it if the user switched the
-        // type away from the settle flow (e.g. to log a new loan instead).
-        settles_transaction_id:
-          settlesTransactionId && (form.type === "received_back" || form.type === "paid_back")
-            ? settlesTransactionId
-            : null,
+        // Only meaningful on repayments; a pick invalidated by switching
+        // party/type resolves to null (automatic LIFO allocation).
+        settles_transaction_id: validSettlesId || null,
       })
 
       if (ptError) {
@@ -431,6 +456,42 @@ export function AddPartyTransactionModal({
                   Due date cannot be before the transaction date.
                 </p>
               )}
+            </div>
+          )}
+
+          {/* Which entry does this repayment settle? */}
+          {settleCandidates.length > 0 && (
+            <div>
+              <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">
+                Settles which entry? (optional)
+              </label>
+              <CustomSelect
+                value={validSettlesId}
+                onChange={(val) => {
+                  setSettlesId(val)
+                  // Picking an entry prefills its outstanding amount; the user
+                  // can still edit it for a partial repayment.
+                  const picked = settleCandidates.find(o => o.id === val)
+                  if (picked) setForm(prev => ({ ...prev, amount: String(picked.outstanding) }))
+                }}
+                options={[
+                  { value: "", label: "Automatic (newest first)" },
+                  ...settleCandidates.map(o => ({
+                    value: o.id,
+                    label: `${new Date(`${o.date}T00:00:00`).toLocaleDateString("en-IN", {
+                      day: "numeric",
+                      month: "short",
+                      year: "numeric",
+                    })} · ${symbol}${o.outstanding.toLocaleString("en-IN")}${
+                      o.outstanding !== o.amount
+                        ? ` left of ${symbol}${o.amount.toLocaleString("en-IN")}`
+                        : ""
+                    }`,
+                  })),
+                ]}
+                className="mt-1"
+                variant="glass"
+              />
             </div>
           )}
 

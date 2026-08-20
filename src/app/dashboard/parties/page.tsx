@@ -239,13 +239,13 @@ function PartiesPageInner() {
   // Net outstanding per party (used for summary cards and settle actions).
   const balanceByParty = new Map(partyBalances.map(p => [p.party.id, p.balance]))
 
-  // Remaining outstanding per individual obligation. Repayments created via an
-  // entry's Settle button carry settles_transaction_id and reduce THAT entry
-  // first; any unlinked repayment (or the overflow of a linked one) is
-  // allocated FIFO — oldest obligation first. This lets a fully-repaid entry
-  // drop off the overdue list even when the party still has other open
-  // obligations, and settling a specific entry can no longer be absorbed by an
-  // older one.
+  // Remaining outstanding per individual obligation. Repayments carrying
+  // settles_transaction_id (entry-level Settle, or picked in the modal's
+  // "settles which entry" select) reduce THAT entry first; any unlinked
+  // repayment (or the overflow of a linked one) is allocated LIFO — newest
+  // obligation first, matching how people actually settle ("that last ₹500").
+  // This lets a fully-repaid entry drop off the overdue list even when the
+  // party still has other open obligations.
   const outstandingByTx = useMemo(() => {
     const remaining = new Map<string, number>()
     const byParty = new Map<string, PartyTransaction[]>()
@@ -261,7 +261,7 @@ function PartiesPageInner() {
       const open = new Map(obligations.map(o => [o.id, Number(o.amount)]))
 
       // Phase 1: targeted repayments hit their linked entry; overflow (and
-      // repayments without a link) feed the FIFO pool.
+      // repayments without a link) feed the LIFO pool.
       let pool = 0
       for (const t of txs.filter(t => t.type === repayment)) {
         const target = t.settles_transaction_id
@@ -275,8 +275,8 @@ function PartiesPageInner() {
         }
       }
 
-      // Phase 2: FIFO the pool over whatever is still open.
-      for (const ob of obligations) {
+      // Phase 2: LIFO the pool over whatever is still open (newest first).
+      for (const ob of [...obligations].reverse()) {
         const cur = open.get(ob.id) ?? 0
         const used = Math.min(cur, pool)
         pool -= used
@@ -295,6 +295,28 @@ function PartiesPageInner() {
     if (tx.type !== "lent" && tx.type !== "borrowed") return false
     return (outstandingByTx.get(tx.id) ?? Number(tx.amount)) > 0
   }
+
+  // Still-open lent/borrowed entries, newest first — the settle modal offers
+  // these so a repayment can be pinned to a specific entry.
+  const openObligations = useMemo(
+    () =>
+      transactions
+        .filter(
+          t =>
+            (t.type === "lent" || t.type === "borrowed") &&
+            (outstandingByTx.get(t.id) ?? Number(t.amount)) > 0
+        )
+        .map(t => ({
+          id: t.id,
+          party_id: t.party_id,
+          type: t.type as "lent" | "borrowed",
+          date: t.date,
+          amount: Number(t.amount),
+          outstanding: outstandingByTx.get(t.id) ?? Number(t.amount),
+        }))
+        .sort((a, b) => b.date.localeCompare(a.date)),
+    [transactions, outstandingByTx]
+  )
 
   // Due within 30 days — sum the individual due-dated entries (NOT the whole
   // party net balance), so setting a due date on one transaction doesn't pull
@@ -865,6 +887,7 @@ function PartiesPageInner() {
           preselectedType={settlePartyId ? settleType : undefined}
           settlesTransactionId={settleTarget?.id}
           prefillAmount={settleTarget ? String(settleTarget.amount) : undefined}
+          openObligations={openObligations}
         />
       )}
       {showAddParty && (
