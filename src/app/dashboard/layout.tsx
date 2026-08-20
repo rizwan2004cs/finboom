@@ -1,6 +1,7 @@
 "use client"
 
 import { Sidebar, MobileBottomNav } from "@/components/navigation"
+import { AssistantChat } from "@/components/assistant/assistant-chat"
 import { TopBar } from "@/components/top-bar"
 import { SidebarProvider, useSidebar } from "@/components/sidebar-context"
 import { OfflineProvider } from "@/components/offline-provider"
@@ -33,6 +34,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
         </main>
       </div>
       <MobileBottomNav onStartTour={startTour} />
+      <AssistantChat />
       <FeatureTour open={open} onClose={closeTour} />
     </div>
   )
