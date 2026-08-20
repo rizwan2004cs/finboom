@@ -32,9 +32,20 @@ interface Props {
   onSave: () => void
   preselectedPartyId?: string
   preselectedType?: "lent" | "received_back" | "borrowed" | "paid_back"
+  // Entry-level Settle: the lent/borrowed entry this repayment settles, so
+  // the allocation targets it instead of the party's oldest open entry.
+  settlesTransactionId?: string
+  prefillAmount?: string
 }
 
-export function AddPartyTransactionModal({ onClose, onSave, preselectedPartyId, preselectedType }: Props) {
+export function AddPartyTransactionModal({
+  onClose,
+  onSave,
+  preselectedPartyId,
+  preselectedType,
+  settlesTransactionId,
+  prefillAmount,
+}: Props) {
   const { symbol } = useCurrency()
   const { user } = useUser()
   const { activeProfile } = useProfile()
@@ -48,7 +59,7 @@ export function AddPartyTransactionModal({ onClose, onSave, preselectedPartyId, 
   const [form, setForm] = useState({
     party_id: preselectedPartyId || "",
     type: preselectedType || "lent" as "lent" | "received_back" | "borrowed" | "paid_back",
-    amount: "",
+    amount: prefillAmount || "",
     date: todayLocalISO(),
     due_date: "",
     notes: "",
@@ -148,6 +159,12 @@ export function AddPartyTransactionModal({ onClose, onSave, preselectedPartyId, 
         date: form.date,
         due_date: dueDate || null,
         notes: form.notes.trim() || null,
+        // Only meaningful on repayments; drop it if the user switched the
+        // type away from the settle flow (e.g. to log a new loan instead).
+        settles_transaction_id:
+          settlesTransactionId && (form.type === "received_back" || form.type === "paid_back")
+            ? settlesTransactionId
+            : null,
       })
 
       if (ptError) {

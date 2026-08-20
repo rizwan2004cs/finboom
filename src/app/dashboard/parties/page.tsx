@@ -67,6 +67,9 @@ function PartiesPageInner() {
   const [showAddParty, setShowAddParty] = useState(false)
   const [settlePartyId, setSettlePartyId] = useState<string | null>(null)
   const [settleType, setSettleType] = useState<"received_back" | "paid_back">("received_back")
+  // Entry-level settle target: id of the lent/borrowed entry plus its
+  // outstanding remainder (prefills the modal amount).
+  const [settleTarget, setSettleTarget] = useState<{ id: string; amount: number } | null>(null)
   const [selectedPartyId, setSelectedPartyId] = useState<string | null>(null)
   const [editingParty, setEditingParty] = useState<Party | null>(null)
   const [deletingPartyId, setDeletingPartyId] = useState<string | null>(null)
@@ -236,11 +239,13 @@ function PartiesPageInner() {
   // Net outstanding per party (used for summary cards and settle actions).
   const balanceByParty = new Map(partyBalances.map(p => [p.party.id, p.balance]))
 
-  // Remaining outstanding per individual obligation. Repayments (received_back /
-  // paid_back) aren't linked to specific lent/borrowed entries, so allocate them
-  // FIFO — oldest obligation first — to decide which entries are still open. This
-  // lets a fully-repaid entry drop off the overdue list even when the party still
-  // has other open obligations.
+  // Remaining outstanding per individual obligation. Repayments created via an
+  // entry's Settle button carry settles_transaction_id and reduce THAT entry
+  // first; any unlinked repayment (or the overflow of a linked one) is
+  // allocated FIFO — oldest obligation first. This lets a fully-repaid entry
+  // drop off the overdue list even when the party still has other open
+  // obligations, and settling a specific entry can no longer be absorbed by an
+  // older one.
   const outstandingByTx = useMemo(() => {
     const remaining = new Map<string, number>()
     const byParty = new Map<string, PartyTransaction[]>()
@@ -250,21 +255,32 @@ function PartiesPageInner() {
       else byParty.set(tx.party_id, [tx])
     }
     const allocate = (txs: PartyTransaction[], obligation: string, repayment: string) => {
-      let pool = txs
-        .filter(t => t.type === repayment)
-        .reduce((s, t) => s + Number(t.amount), 0)
       const obligations = txs
         .filter(t => t.type === obligation)
         .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-      for (const ob of obligations) {
-        const amt = Number(ob.amount)
-        if (pool >= amt) {
-          pool -= amt
-          remaining.set(ob.id, 0)
+      const open = new Map(obligations.map(o => [o.id, Number(o.amount)]))
+
+      // Phase 1: targeted repayments hit their linked entry; overflow (and
+      // repayments without a link) feed the FIFO pool.
+      let pool = 0
+      for (const t of txs.filter(t => t.type === repayment)) {
+        const target = t.settles_transaction_id
+        const cur = target ? open.get(target) : undefined
+        if (target && cur !== undefined) {
+          const used = Math.min(cur, Number(t.amount))
+          open.set(target, cur - used)
+          pool += Number(t.amount) - used
         } else {
-          remaining.set(ob.id, amt - pool)
-          pool = 0
+          pool += Number(t.amount)
         }
+      }
+
+      // Phase 2: FIFO the pool over whatever is still open.
+      for (const ob of obligations) {
+        const cur = open.get(ob.id) ?? 0
+        const used = Math.min(cur, pool)
+        pool -= used
+        remaining.set(ob.id, cur - used)
       }
     }
     for (const txs of byParty.values()) {
@@ -306,9 +322,14 @@ function PartiesPageInner() {
     return tx.due_date < todayStr
   })
 
-  function handleSettle(partyId: string, balance: number) {
+  function handleSettle(
+    partyId: string,
+    balance: number,
+    target?: { id: string; amount: number }
+  ) {
     setSettlePartyId(partyId)
     setSettleType(balance > 0 ? "received_back" : "paid_back")
+    setSettleTarget(target ?? null)
     setShowAddTransaction(true)
   }
 
@@ -450,7 +471,12 @@ function PartiesPageInner() {
                       the net sign can point the repayment the wrong way. */}
                   <button
                     type="button"
-                    onClick={() => handleSettle(tx.party_id, tx.type === "lent" ? 1 : -1)}
+                    onClick={() =>
+                      handleSettle(tx.party_id, tx.type === "lent" ? 1 : -1, {
+                        id: tx.id,
+                        amount: outstandingByTx.get(tx.id) ?? Number(tx.amount),
+                      })
+                    }
                     className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#1d1d1f] dark:bg-white text-white dark:text-[#1d1d1f] hover:opacity-90 transition-opacity"
                   >
                     Settle
@@ -833,10 +859,12 @@ function PartiesPageInner() {
       {/* Modals */}
       {showAddTransaction && (
         <AddPartyTransactionModal
-          onClose={() => { setShowAddTransaction(false); setSettlePartyId(null) }}
-          onSave={() => { setShowAddTransaction(false); setSettlePartyId(null); invalidateParties() }}
+          onClose={() => { setShowAddTransaction(false); setSettlePartyId(null); setSettleTarget(null) }}
+          onSave={() => { setShowAddTransaction(false); setSettlePartyId(null); setSettleTarget(null); invalidateParties() }}
           preselectedPartyId={settlePartyId || undefined}
           preselectedType={settlePartyId ? settleType : undefined}
+          settlesTransactionId={settleTarget?.id}
+          prefillAmount={settleTarget ? String(settleTarget.amount) : undefined}
         />
       )}
       {showAddParty && (

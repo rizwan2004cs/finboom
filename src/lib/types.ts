@@ -191,6 +191,10 @@ export interface PartyTransaction {
   due_date?: string
   notes?: string
   linked_transaction_id?: string
+  // For received_back/paid_back: the specific lent/borrowed entry this
+  // repayment settles (set by the entry-level Settle button). Unlinked
+  // repayments are allocated FIFO across the party's open obligations.
+  settles_transaction_id?: string
   created_at: string
   party?: Party
 }
