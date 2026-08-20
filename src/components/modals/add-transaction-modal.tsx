@@ -18,6 +18,7 @@ import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/constants"
 import { CategoryIcon } from "@/components/category-icon"
 import type { Party, Transaction } from "@/lib/types"
 import { accountBalance } from "@/lib/finance/accounts"
+import { getPreferredAccountId } from "@/lib/accounts/default-account"
 import { CustomSelect } from "@/components/custom-select"
 import { useCurrency } from "@/hooks/use-currency"
 
@@ -59,7 +60,7 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
     account_id: transaction
       ? transaction.account_id || ""
       : (typeof window !== "undefined" && activeProfile
-          ? localStorage.getItem(`finboom_last_account_${activeProfile.id}`) || ""
+          ? getPreferredAccountId(activeProfile.id)
           : ""),
     spent_for_party_id: "",
     due_date: "",

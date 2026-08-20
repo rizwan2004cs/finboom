@@ -9,8 +9,9 @@ import { deleteRow, updateRow } from "@/lib/offline"
 import { useQueryClient } from "@tanstack/react-query"
 import {
   Plus, Landmark, Banknote, Trash2, Edit2, ArrowLeftRight,
-  SlidersHorizontal, ChevronDown,
+  SlidersHorizontal, ChevronDown, Star,
 } from "lucide-react"
+import { getPrimaryAccountId, setPrimaryAccountId } from "@/lib/accounts/default-account"
 import type { Account, Transaction } from "@/lib/types"
 import { accountBalance, accountLedger } from "@/lib/finance/accounts"
 import { useAppDialog } from "@/components/app-dialog"
@@ -39,6 +40,21 @@ export default function AccountsPage() {
   const [transferFromId, setTransferFromId] = useState<string | undefined>(undefined)
   const [adjustAccount, setAdjustAccount] = useState<Account | null>(null)
   const [openLedgerId, setOpenLedgerId] = useState<string | null>(null)
+  // Explicit default money source (UPI-style primary). Wins over "last used"
+  // in the transaction modals and the assistant. Derived from storage with a
+  // version bump on writes (a setState-in-effect here trips the lint rule).
+  const [primaryVersion, setPrimaryVersion] = useState(0)
+  const primaryId = useMemo(
+    () => (activeProfile ? getPrimaryAccountId(activeProfile.id) : ""),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- primaryVersion invalidates the storage read
+    [activeProfile, primaryVersion]
+  )
+
+  function togglePrimary(accountId: string) {
+    if (!activeProfile) return
+    setPrimaryAccountId(activeProfile.id, primaryId === accountId ? null : accountId)
+    setPrimaryVersion((v) => v + 1)
+  }
 
   const loading = loadingAccounts || loadingTransactions || !user || !activeProfile
   const { showConfirm } = useAppDialog()
@@ -160,7 +176,14 @@ export default function AccountsPage() {
                       <Icon className="w-5 h-5 text-[#1d1d1f]" strokeWidth={1.5} />
                     </div>
                     <div className="min-w-0">
-                      <p className="font-semibold text-[#1d1d1f] truncate">{account.name}</p>
+                      <p className="font-semibold text-[#1d1d1f] truncate">
+                        {account.name}
+                        {primaryId === account.id && (
+                          <span className="ml-2 inline-block align-middle text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400">
+                            Default
+                          </span>
+                        )}
+                      </p>
                       <p className="text-xs text-[#86868b]">
                         {account.type === "cash" ? "Cash" : "Bank"} · tap for ledger
                       </p>
@@ -174,6 +197,24 @@ export default function AccountsPage() {
                       {formatCurrency(balance)}
                     </p>
                     <div className="flex gap-1 mt-1 justify-end">
+                      <button
+                        onClick={() => togglePrimary(account.id)}
+                        className="p-1.5 rounded-lg hover:bg-[#f5f5f7] transition-all"
+                        aria-label={
+                          primaryId === account.id
+                            ? `Unset ${account.name} as default account`
+                            : `Set ${account.name} as default account`
+                        }
+                        title={primaryId === account.id ? "Default account" : "Set as default"}
+                      >
+                        <Star
+                          className={`w-3.5 h-3.5 ${
+                            primaryId === account.id
+                              ? "text-amber-500 fill-amber-500"
+                              : "text-[#86868b]"
+                          }`}
+                        />
+                      </button>
                       <button
                         onClick={() => setAdjustAccount(account)}
                         className="p-1.5 rounded-lg hover:bg-[#f5f5f7] transition-all"

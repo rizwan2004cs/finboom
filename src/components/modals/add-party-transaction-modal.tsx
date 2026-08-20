@@ -17,6 +17,7 @@ import {
 import { X, ArrowUpRight, ArrowDownLeft, ArrowDownRight, ArrowUpLeft, Plus, Loader2 } from "lucide-react"
 import type { Party, Transaction } from "@/lib/types"
 import { accountBalance } from "@/lib/finance/accounts"
+import { getPreferredAccountId } from "@/lib/accounts/default-account"
 import { PARTY_TRANSACTION_TYPES } from "@/lib/constants"
 import { CustomSelect } from "@/components/custom-select"
 import { useCurrency } from "@/hooks/use-currency"
@@ -81,9 +82,10 @@ export function AddPartyTransactionModal({
     // transaction so Cash & Bank balances track party lending/borrowing.
     // Defaults to the last account used on this profile (shared with the
     // regular transaction modal).
+    // Primary (starred) account wins; else the last one used on this profile.
     account_id:
       typeof window !== "undefined" && activeProfile
-        ? localStorage.getItem(`finboom_last_account_${activeProfile.id}`) || ""
+        ? getPreferredAccountId(activeProfile.id)
         : "",
   })
   const [error, setError] = useState("")

@@ -234,9 +234,11 @@ body::after {
   z-index: 0;
 }
 
-/* Hover: lift + intensify shadow */
+/* Hover: lift + intensify shadow. No translateZ zoom — with the perspective
+   it magnified the card, and tall expanded cards (account ledgers) visually
+   overlapped their neighbours. */
 .liquid-glass:hover {
-  transform: perspective(1200px) translateZ(10px) translateY(-2px);
+  transform: perspective(1200px) translateZ(0) translateY(-2px);
   box-shadow:
     var(--glass-inner-shadow),
     0 8px 32px rgba(0, 0, 0, 0.1),

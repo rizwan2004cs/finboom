@@ -6,6 +6,7 @@ import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
 import { fetchTable, insertRow, updateRow, deleteRow } from "@/lib/offline"
 import { accountBalance } from "@/lib/finance/accounts"
+import { getPreferredAccountId } from "@/lib/accounts/default-account"
 import { todayLocalISO } from "@/lib/utils"
 import type {
   Account,
@@ -233,14 +234,10 @@ export function AssistantChat() {
         type: a.type,
         balance: accountBalance(a, allTx),
       })),
-      // Same per-profile "last used account" the manual modals default to.
+      // Primary (starred) account wins; else the last one used on this profile.
       defaultAccountId: (() => {
-        try {
-          const saved = localStorage.getItem(`finboom_last_account_${pid}`)
-          return saved && accounts.some((a) => a.id === saved) ? saved : undefined
-        } catch {
-          return undefined
-        }
+        const preferred = getPreferredAccountId(pid)
+        return preferred && accounts.some((a) => a.id === preferred) ? preferred : undefined
       })(),
       parties: parties.map((p) => ({
         id: p.id,
