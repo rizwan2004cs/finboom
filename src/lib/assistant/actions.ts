@@ -44,6 +44,36 @@ export type AssistantAction =
       amount: number
       month: string // YYYY-MM
     }
+  | {
+      kind: "update_transaction"
+      transaction_id: string
+      amount?: number
+      category?: string
+      type?: "income" | "expense"
+      description?: string
+      date?: string
+    }
+  | {
+      kind: "delete_transaction"
+      transaction_id: string
+    }
+  | {
+      kind: "mark_sip_paid"
+      sip_id: string
+      month: string // YYYY-MM
+    }
+  // Read-only data request. Executed automatically (no confirmation), its
+  // result is fed back to the model as a "[DATA]" message so it can answer
+  // questions beyond the standing snapshot.
+  | {
+      kind: "query"
+      scope: "transactions" | "party_ledger"
+      date_from?: string
+      date_to?: string
+      category?: string
+      type?: "income" | "expense"
+      party_id?: string
+    }
 
 export type AssistantResponse = {
   reply: string
@@ -61,9 +91,22 @@ export type AssistantContext = {
   today: string // YYYY-MM-DD
   month: string // YYYY-MM
   accounts: Array<{ id: string; name: string; type: string }>
-  parties: Array<{ id: string; name: string }>
+  parties: Array<{ id: string; name: string; balance: number }>
   assets: Array<{ id: string; name: string; asset_class: string; current_value: number }>
   budgets: Array<{ category: string; amount: number }>
+  sips: Array<{ id: string; name: string; amount: number; paidThisMonth: boolean }>
+  // Newest first — lets the model resolve "yesterday's 500" to a real id.
+  // `linked` marks transactions backing a party entry or SIP payment, whose
+  // edits/deletes carry extra logic.
+  recentTransactions: Array<{
+    id: string
+    type: "income" | "expense"
+    amount: number
+    category: string
+    description?: string
+    date: string
+    linked?: "party" | "sip"
+  }>
   stats: {
     incomeTotal: number
     expenseTotal: number
@@ -114,6 +157,33 @@ export function validateAction(raw: unknown): (AssistantAction & { summary: stri
     case "set_budget":
       if (typeof a.category !== "string" || !a.category || !validAmount(a.amount)) return null
       if (typeof a.month !== "string" || !ISO_MONTH.test(a.month)) return null
+      return a as AssistantAction & { summary: string }
+    case "update_transaction": {
+      if (typeof a.transaction_id !== "string" || !a.transaction_id) return null
+      const hasChange =
+        a.amount !== undefined ||
+        a.category !== undefined ||
+        a.type !== undefined ||
+        a.description !== undefined ||
+        a.date !== undefined
+      if (!hasChange) return null
+      if (a.amount !== undefined && !validAmount(a.amount)) return null
+      if (a.type !== undefined && a.type !== "income" && a.type !== "expense") return null
+      if (a.date !== undefined && (typeof a.date !== "string" || !ISO_DATE.test(a.date))) return null
+      return a as AssistantAction & { summary: string }
+    }
+    case "delete_transaction":
+      if (typeof a.transaction_id !== "string" || !a.transaction_id) return null
+      return a as AssistantAction & { summary: string }
+    case "mark_sip_paid":
+      if (typeof a.sip_id !== "string" || !a.sip_id) return null
+      if (typeof a.month !== "string" || !ISO_MONTH.test(a.month)) return null
+      return a as AssistantAction & { summary: string }
+    case "query":
+      if (a.scope !== "transactions" && a.scope !== "party_ledger") return null
+      if (a.scope === "party_ledger" && (typeof a.party_id !== "string" || !a.party_id)) return null
+      if (a.date_from !== undefined && (typeof a.date_from !== "string" || !ISO_DATE.test(a.date_from))) return null
+      if (a.date_to !== undefined && (typeof a.date_to !== "string" || !ISO_DATE.test(a.date_to))) return null
       return a as AssistantAction & { summary: string }
     default:
       return null
