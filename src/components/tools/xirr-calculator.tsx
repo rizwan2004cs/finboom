@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react"
 import { xirr, type CashFlow } from "@/lib/finance/calculators"
 import { formatINR, formatPct } from "@/lib/finance/format"
-import { CalcLayout, Field, Stat, Disclaimer } from "./ui"
+import { CalcLayout, Field, Stat, Disclaimer, MAX_MONEY } from "./ui"
 import { cn } from "@/lib/utils"
 
 type Row = { id: string; date: string; amount: number; kind: "invest" | "redeem" }
@@ -84,7 +84,11 @@ export function XirrCalculator() {
                       aria-label="Cash flow amount"
                       value={Number.isFinite(row.amount) ? row.amount : ""}
                       min={0}
-                      onChange={(e) => update(row.id, { amount: Number.parseFloat(e.target.value) || 0 })}
+                      onChange={(e) =>
+                        update(row.id, {
+                          amount: Math.min(MAX_MONEY, Math.max(0, Number.parseFloat(e.target.value) || 0)),
+                        })
+                      }
                       className="w-full bg-transparent px-1.5 py-2 text-sm text-[#1d1d1f] dark:text-white outline-none tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
                     />
                   </div>

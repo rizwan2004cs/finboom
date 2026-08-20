@@ -32,11 +32,11 @@ export function FdCalculator() {
             <Slider value={principal} onChange={setPrincipal} min={10000} max={10000000} step={10000} ariaLabel="Deposit amount slider" />
           </Field>
           <Field label="Interest rate (p.a.)" value={`${rate}%`}>
-            <MoneyInput value={rate} onChange={setRate} prefix="" suffix="% p.a." step={0.1} ariaLabel="Interest rate" />
+            <MoneyInput value={rate} onChange={setRate} prefix="" suffix="% p.a." max={100} step={0.1} ariaLabel="Interest rate" />
             <Slider value={rate} onChange={setRate} min={1} max={12} step={0.1} ariaLabel="Interest rate slider" />
           </Field>
           <Field label="Tenure" value={`${years} yr`}>
-            <MoneyInput value={years} onChange={setYears} prefix="" suffix="years" step={1} ariaLabel="Tenure in years" />
+            <MoneyInput value={years} onChange={setYears} prefix="" suffix="years" max={100} step={1} ariaLabel="Tenure in years" />
             <Slider value={years} onChange={setYears} min={1} max={20} step={1} ariaLabel="Tenure slider" />
           </Field>
           <Field label="Compounding">

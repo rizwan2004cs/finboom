@@ -160,7 +160,7 @@ export const TOOLS: readonly ToolDef[] = [
       "Income tax calculator for FY 2025-26 (AY 2026-27). Compare the old and new tax regimes and see which one saves you more, including the latest slabs and rebate.",
     keywords: ["income tax calculator", "old vs new regime", "fy 2025-26 tax", "tax slabs india"],
     gradient: "from-fuchsia-500/25 via-purple-400/10 to-transparent",
-    icon: "Receipt",
+    icon: "ReceiptIndianRupee",
     intro:
       "The new tax regime is the default, but the old regime can still win if you claim large deductions (80C, 80D, HRA, home loan interest). Enter your income and deductions to compare both for FY 2025-26.",
     faqs: [

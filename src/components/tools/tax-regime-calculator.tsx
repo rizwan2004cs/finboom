@@ -112,7 +112,9 @@ function RegimeCard({
   return (
     <div
       className={cn(
-        "rounded-xl border p-4 transition-colors",
+        // min-w-0 + break-all: a huge tax figure wraps inside this card
+        // instead of overlapping the sibling regime card.
+        "min-w-0 rounded-xl border p-4 transition-colors",
         winner
           ? "border-accent/40 bg-accent/[0.06]"
           : "border-black/[0.06] dark:border-white/[0.08]"
@@ -126,10 +128,10 @@ function RegimeCard({
           </span>
         )}
       </div>
-      <p className="mt-2 text-2xl font-serif font-semibold tabular-nums text-[#1d1d1f] dark:text-white">
+      <p className="mt-2 text-2xl font-serif font-semibold tabular-nums break-all text-[#1d1d1f] dark:text-white">
         {formatINR(tax)}
       </p>
-      <p className="mt-1 text-xs text-[#86868b] dark:text-[#98989d]">
+      <p className="mt-1 text-xs text-[#86868b] dark:text-[#98989d] break-all">
         Taxable: {formatINR(taxable)}
       </p>
     </div>

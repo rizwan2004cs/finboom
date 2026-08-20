@@ -44,12 +44,17 @@ export function Field({
   )
 }
 
+// Hard ceiling for money inputs: ₹1 lakh crore. Anything typed beyond this is
+// clamped so absurd values can't blow up the result layout or the maths.
+export const MAX_MONEY = 1_000_000_000_000
+
 export function MoneyInput({
   value,
   onChange,
   prefix = "₹",
   suffix,
   min = 0,
+  max = MAX_MONEY,
   step = 1,
   ariaLabel,
 }: Readonly<{
@@ -58,6 +63,7 @@ export function MoneyInput({
   prefix?: string
   suffix?: string
   min?: number
+  max?: number
   step?: number
   ariaLabel?: string
 }>) {
@@ -72,10 +78,11 @@ export function MoneyInput({
         aria-label={ariaLabel}
         value={Number.isFinite(value) ? value : ""}
         min={min}
+        max={max}
         step={step}
         onChange={(e) => {
           const n = Number.parseFloat(e.target.value)
-          onChange(Number.isFinite(n) ? n : 0)
+          onChange(Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : 0)
         }}
         className="w-full bg-transparent px-2 py-2.5 text-[#1d1d1f] dark:text-white outline-none tabular-nums [appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none"
       />
@@ -161,13 +168,15 @@ export function Stat({
   sub?: string
 }>) {
   return (
-    <div>
+    <div className="min-w-0">
       <p className="text-xs font-medium uppercase tracking-wide text-[#86868b] dark:text-[#98989d]">
         {label}
       </p>
+      {/* break-all: a very long rupee figure must wrap inside its card, never
+          overflow into the neighbouring column. */}
       <p
         className={cn(
-          "mt-1 font-semibold tabular-nums",
+          "mt-1 font-semibold tabular-nums break-all",
           big ? "text-3xl md:text-4xl font-serif" : "text-xl",
           accent ? "text-accent" : "text-[#1d1d1f] dark:text-white"
         )}

@@ -27,15 +27,15 @@ export function StepUpSipCalculator() {
             <Slider value={monthly} onChange={setMonthly} min={500} max={200000} step={500} ariaLabel="Starting monthly investment slider" />
           </Field>
           <Field label="Annual step-up" value={`${stepUp}%`}>
-            <MoneyInput value={stepUp} onChange={setStepUp} prefix="" suffix="% / yr" step={1} ariaLabel="Annual step-up percent" />
+            <MoneyInput value={stepUp} onChange={setStepUp} prefix="" suffix="% / yr" max={100} step={1} ariaLabel="Annual step-up percent" />
             <Slider value={stepUp} onChange={setStepUp} min={0} max={25} step={1} ariaLabel="Annual step-up slider" />
           </Field>
           <Field label="Expected return (p.a.)" value={`${rate}%`}>
-            <MoneyInput value={rate} onChange={setRate} prefix="" suffix="% p.a." step={0.5} ariaLabel="Expected annual return" />
+            <MoneyInput value={rate} onChange={setRate} prefix="" suffix="% p.a." max={100} step={0.5} ariaLabel="Expected annual return" />
             <Slider value={rate} onChange={setRate} min={1} max={30} step={0.5} ariaLabel="Expected return slider" />
           </Field>
           <Field label="Time period" value={`${years} yr`}>
-            <MoneyInput value={years} onChange={setYears} prefix="" suffix="years" step={1} ariaLabel="Time period in years" />
+            <MoneyInput value={years} onChange={setYears} prefix="" suffix="years" max={100} step={1} ariaLabel="Time period in years" />
             <Slider value={years} onChange={setYears} min={1} max={40} step={1} ariaLabel="Time period slider" />
           </Field>
         </>
