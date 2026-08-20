@@ -4,7 +4,13 @@ import { useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { Search, X } from "lucide-react"
 
-export function BlogSearchBox({ initialQuery }: { initialQuery?: string }) {
+export function BlogSearchBox({
+  initialQuery,
+  basePath = "/blog",
+}: {
+  initialQuery?: string
+  basePath?: string
+}) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [value, setValue] = useState(initialQuery ?? "")
@@ -18,7 +24,7 @@ export function BlogSearchBox({ initialQuery }: { initialQuery?: string }) {
       params.delete("q")
     }
     const qs = params.toString()
-    router.replace(qs ? `/blog?${qs}` : "/blog", { scroll: false })
+    router.replace(qs ? `${basePath}?${qs}` : basePath, { scroll: false })
   }
 
   function onChange(next: string) {

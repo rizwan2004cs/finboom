@@ -58,20 +58,18 @@ export default function ToolsLandingPage() {
           <Link
             key={tool.slug}
             href={`/tools/${tool.slug}`}
-            className="group liquid-glass overflow-hidden"
+            className="group liquid-glass p-6"
           >
-            <div className={`relative h-28 overflow-hidden bg-gradient-to-br ${tool.gradient}`}>
+            <div className="flex items-center justify-center w-12 h-12 rounded-xl bg-black/[0.04] dark:bg-white/[0.06]">
               <CategoryIcon
                 name={tool.icon}
-                className="absolute bottom-3 right-4 h-11 w-11 text-[#1d1d1f]/65 dark:text-white/75 transition-transform duration-500 group-hover:scale-110"
+                className="h-6 w-6 text-[#1d1d1f]/70 dark:text-white/80 transition-transform duration-500 group-hover:scale-110"
               />
             </div>
-            <div className="p-5">
-              <h2 className="text-lg font-semibold text-[#1d1d1f] dark:text-white group-hover:text-accent transition-colors">
-                {tool.title}
-              </h2>
-              <p className="mt-1.5 text-sm text-[#6e6e73] dark:text-[#98989d]">{tool.tagline}</p>
-            </div>
+            <h2 className="mt-4 text-lg font-semibold text-[#1d1d1f] dark:text-white group-hover:text-accent transition-colors">
+              {tool.title}
+            </h2>
+            <p className="mt-1.5 text-sm text-[#6e6e73] dark:text-[#98989d]">{tool.tagline}</p>
           </Link>
         ))}
       </div>

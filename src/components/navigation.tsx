@@ -46,8 +46,8 @@ const navItems = [
   { href: "/dashboard/snapshots", label: "Snapshots", icon: Camera },
   { href: "/dashboard/health", label: "Health", icon: Heart },
   { href: "/dashboard/features", label: "Feature Board", icon: Lightbulb },
-  { href: "/tools", label: "Calculators", icon: Calculator },
-  { href: "/blog", label: "Blog", icon: BookOpen },
+  { href: "/dashboard/calculators", label: "Calculators", icon: Calculator },
+  { href: "/dashboard/blog", label: "Blog", icon: BookOpen },
   { href: "/dashboard/profiles", label: "Profiles", icon: Users },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ]
@@ -71,8 +71,8 @@ const moreSubPages = [
   "/dashboard/features",
   "/dashboard/profiles",
   "/dashboard/settings",
-  "/blog",
-  "/tools",
+  "/dashboard/blog",
+  "/dashboard/calculators",
 ]
 
 const moreSheetItems = [
@@ -84,8 +84,8 @@ const moreSheetItems = [
   { href: "/dashboard/snapshots", label: "Snapshots", icon: Camera },
   { href: "/dashboard/health", label: "Health", icon: Heart },
   { href: "/dashboard/features", label: "Feature Board", icon: Lightbulb },
-  { href: "/tools", label: "Calculators", icon: Calculator },
-  { href: "/blog", label: "Blog", icon: BookOpen },
+  { href: "/dashboard/calculators", label: "Calculators", icon: Calculator },
+  { href: "/dashboard/blog", label: "Blog", icon: BookOpen },
   { href: "/dashboard/profiles", label: "Profiles", icon: Users },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ]

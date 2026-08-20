@@ -6,17 +6,19 @@ export function BlogCategoryFilter({
   categories,
   labels,
   active,
+  basePath = "/blog",
 }: {
   categories: string[]
   labels: Record<string, string>
   active?: string
+  basePath?: string
 }) {
   if (categories.length === 0) return null
 
   return (
     <div className="flex flex-wrap gap-2">
       <Link
-        href="/blog"
+        href={basePath}
         className={`px-3.5 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
           !active
             ? "bg-[#1d1d1f] dark:bg-white text-white dark:text-[#1d1d1f]"
@@ -28,7 +30,7 @@ export function BlogCategoryFilter({
       {categories.map((cat) => (
         <Link
           key={cat}
-          href={`/blog?category=${cat}`}
+          href={`${basePath}?category=${cat}`}
           className={`px-3.5 py-1.5 rounded-full text-sm font-medium transition-all duration-200 ${
             active === cat
               ? "bg-[#1d1d1f] dark:bg-white text-white dark:text-[#1d1d1f]"
