@@ -15,7 +15,8 @@ import {
   PHONE_MAX_LENGTH,
 } from "@/lib/utils"
 import { X, ArrowUpRight, ArrowDownLeft, ArrowDownRight, ArrowUpLeft, Plus, Loader2 } from "lucide-react"
-import type { Party } from "@/lib/types"
+import type { Party, Transaction } from "@/lib/types"
+import { accountBalance } from "@/lib/finance/accounts"
 import { PARTY_TRANSACTION_TYPES } from "@/lib/constants"
 import { CustomSelect } from "@/components/custom-select"
 import { useCurrency } from "@/hooks/use-currency"
@@ -170,6 +171,16 @@ export function AddPartyTransactionModal({
     if (taggedAccount && form.date < taggedAccount.opening_date) {
       setError(`${taggedAccount.name} tracks its balance from ${taggedAccount.opening_date} — pick a later date or "Not tracked".`)
       return
+    }
+    // Overdraft guard: money leaving a tracked account (lent / paid back)
+    // can't exceed its balance.
+    if (taggedAccount && moneyOut) {
+      const allTx = await fetchTable<Transaction>("transactions", user.id)
+      const balance = accountBalance(taggedAccount, allTx)
+      if (balance < amount) {
+        setError(`${taggedAccount.name} has only ₹${balance.toLocaleString("en-IN")} — this would overdraw it. Pick another account or "Not tracked".`)
+        return
+      }
     }
     setError("")
     setSaving(true)

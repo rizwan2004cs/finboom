@@ -80,6 +80,9 @@ export type AssistantResponse = {
   // Present only when every required field is known; `summary` is the
   // one-line human confirmation ("Add ₹10 expense · Tea · Cash · today").
   action?: AssistantAction & { summary: string }
+  // Quick-reply choices when the reply is a multiple-choice question
+  // (category, account, which transaction) — rendered as tappable chips.
+  options?: string[]
 }
 
 export type AssistantMessage = { role: "user" | "assistant"; content: string }
@@ -90,7 +93,7 @@ export type AssistantMessage = { role: "user" | "assistant"; content: string }
 export type AssistantContext = {
   today: string // YYYY-MM-DD
   month: string // YYYY-MM
-  accounts: Array<{ id: string; name: string; type: string }>
+  accounts: Array<{ id: string; name: string; type: string; balance: number }>
   parties: Array<{ id: string; name: string; balance: number }>
   assets: Array<{ id: string; name: string; asset_class: string; current_value: number }>
   budgets: Array<{ category: string; amount: number }>
@@ -111,6 +114,8 @@ export type AssistantContext = {
     incomeTotal: number
     expenseTotal: number
     expenseByCategory: Record<string, number>
+    totalAssetValue: number
+    totalAccountBalance: number
   }
 }
 

@@ -33,7 +33,7 @@ You do things by talking: the user describes money events in natural language, y
 Today is ${ctx.today}. Current month: ${ctx.month}.
 
 USER'S DATA (resolve names to these ids; never invent ids):
-- Cash/bank accounts: ${ctx.accounts.map((a) => `${a.name} [id=${a.id}, ${a.type}]`).join("; ") || "none"}
+- Cash/bank accounts with balance: ${ctx.accounts.map((a) => `${a.name} [id=${a.id}, ${a.type}, ₹${a.balance}]`).join("; ") || "none"}
 - Parties with net balance (positive = they owe the user): ${ctx.parties.map((p) => `${p.name} [id=${p.id}, ₹${p.balance}]`).join("; ") || "none"}
 - Assets: ${ctx.assets.map((a) => `${a.name} [id=${a.id}, ${a.asset_class}, ₹${a.current_value}]`).join("; ") || "none"}
 - Budgets for ${ctx.month}: ${ctx.budgets.map((b) => `${b.category}=₹${b.amount}`).join("; ") || "none"}
@@ -51,6 +51,7 @@ USER'S DATA (resolve names to these ids; never invent ids):
       .map(([c, v]) => `${c}=₹${v}`)
       .join("; ") || "none"
   }
+- Totals: total asset value ₹${ctx.stats.totalAssetValue}; total cash & bank balance ₹${ctx.stats.totalAccountBalance}
 
 VALID VALUES:
 - expense categories: ${expenseIds}
@@ -70,8 +71,10 @@ ACTIONS you may propose. MANDATORY fields must be known before proposing; OPTION
 
 RULES:
 - Extract everything you can from the whole conversation; do not re-ask for what was already said.
-- Ask ONLY about MANDATORY fields, one short question at a time. NEVER ask a question about an optional field.
-- DO make the user aware of optional extras: when proposing an action with unset optional fields, add one short parenthetical to the reply, e.g. "(You can also mention a due date, notes, or which account.)" If they then supply one, re-propose with it filled in.
+- Ask ONLY about MANDATORY fields, one short question at a time. NEVER ask a question about cosmetic optional fields (description, notes, due date).
+- EXCEPTION — the money's account matters: for add_transaction (and party entries) when the user has accounts and didn't name one, ask once "Which account?" WITH options (the account names plus "No account") before proposing. Never silently record money as untracked. If they have no accounts, use null without asking.
+- DO make the user aware of the remaining optional extras: when proposing an action with unset optional fields, add one short parenthetical to the reply, e.g. "(You can also add a due date or notes.)" If they then supply one, re-propose with it filled in.
+- The summary must always state where the money moved: the account name, or "no account · untracked" when account_id is null — the user must never have to assume.
 - NEVER guess an amount. If no amount was given, ask.
 - Dates: resolve relative dates ("yesterday", "last Friday") against today; default to today when unstated (mark_sip_paid defaults to the current month). Output YYYY-MM-DD.
 - Category: pick the best fit from the valid ids ("tea" → food); use "other" only when nothing fits — inferring is preferred over asking.
@@ -79,15 +82,17 @@ RULES:
 - "Ramesh returned 2000" = received_back; "paid back Ramesh" = paid_back; "gave/lent" = lent; "took/borrowed" = borrowed.
 - Edits/deletes ("move yesterday's 500 to travel", "delete the tea expense"): find the transaction in Recent transactions by amount/date/description. If exactly one matches, use its id. If several match, ask which one (quote date · amount · description). If none match, use a query to look further back before saying it's not found. NEVER invent a transaction_id.
 - A transaction marked (linked:party) backs a party ledger entry — say so in the confirmation ("this also updates the Ramesh entry"). One marked (linked:sip) is a SIP payment — do not delete/edit it; tell the user to unmark the SIP instead.
-- Data questions: answer from USER'S DATA when it suffices. When it doesn't (past months, a party's full ledger), propose a "query" action — its result arrives as a message starting with "[DATA]"; then answer from that data. Never answer from memory.
+- Data questions ("what's my total assets", "how much did I spend on food") are READS: answer them IMMEDIATELY in the same turn, straight from USER'S DATA. Reads NEVER need confirmation, clarification, or an announcement that you will "query" — asking "would you like to see it?" when the number is already above is forbidden. Only when the answer genuinely isn't in USER'S DATA (past months, a party's full ledger) emit a "query" action — it runs automatically, its result arrives as a "[DATA]" message, and you then answer directly.
 - When proposing an action, "reply" is a short confirmation question and "summary" is a compact receipt line like "₹10 expense · Tea · Food & Dining · today". For "query", summary is a short label like "Food spends in June".
+- An expense tagged to an account must NOT exceed that account's balance — the app rejects overdrafts. If the stated account lacks funds, say so and offer the alternatives (another account with enough balance, or no account).
+- When your reply is a question with a small fixed set of answers (which category, which account, which transaction), also output "options": 2–8 short tappable labels, e.g. ["Cash","SBI savings","No account"]. Omit "options" for open questions like amounts.
 - Keep replies to 1–2 short sentences plus the optional-extras parenthetical when applicable. Never output an action while a mandatory field is still unknown.
 
 Conversation so far:
 ${transcript}
 
 Respond with STRICT JSON only:
-{"reply": string, "action": <action object with an extra "summary" string field> | null}`
+{"reply": string, "action": <action object with an extra "summary" string field> | null, "options": string[] | null}`
 }
 
 export async function POST(request: Request) {
@@ -112,16 +117,23 @@ export async function POST(request: Request) {
   }
 
   try {
-    const parsed = await generateParsedJson<{ reply?: string; action?: unknown }>(
+    const parsed = await generateParsedJson<{ reply?: string; action?: unknown; options?: unknown }>(
       buildPrompt(messages, ctx),
       { temperature: 0.2, maxOutputTokens: 1024 },
       (value) => typeof value.reply === "string" && value.reply.trim().length > 0
     )
 
     const action = parsed.action ? validateAction(parsed.action) : null
+    // Quick-reply chips: short strings only, capped at 8.
+    const options = Array.isArray(parsed.options)
+      ? parsed.options
+          .filter((o): o is string => typeof o === "string" && o.trim().length > 0 && o.length <= 60)
+          .slice(0, 8)
+      : []
     const response: AssistantResponse = {
       reply: parsed.reply!.trim(),
       ...(action ? { action } : {}),
+      ...(options.length > 0 ? { options } : {}),
     }
     return NextResponse.json(response)
   } catch (err) {

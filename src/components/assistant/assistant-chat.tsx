@@ -5,6 +5,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
 import { fetchTable, insertRow, updateRow, deleteRow } from "@/lib/offline"
+import { accountBalance } from "@/lib/finance/accounts"
 import { todayLocalISO } from "@/lib/utils"
 import type {
   Account,
@@ -22,7 +23,7 @@ import type {
   AssistantMessage,
   AssistantResponse,
 } from "@/lib/assistant/actions"
-import { Sparkles, X, Send, Loader2, Check, Undo2 } from "lucide-react"
+import { Sparkles, X, Send, Loader2, Check, Undo2, Plus, History, Trash2 } from "lucide-react"
 
 // In-app AI assistant: type "I spent 10 rs for tea" → the model extracts the
 // fields (asking only for what's missing), proposes one action, and after an
@@ -42,11 +43,16 @@ type ChatMessage = AssistantMessage & {
   undone?: boolean
   // "[DATA] …" query results: sent to the model, never rendered.
   hidden?: boolean
+  // Quick-reply chips for multiple-choice questions.
+  options?: string[]
 }
+
+type ChatSession = { id: string; title: string; createdAt: string; messages: ChatMessage[] }
 
 type PendingAction = AssistantAction & { summary: string }
 
 const HISTORY_LIMIT = 40
+const SESSION_LIMIT = 15
 
 export function AssistantChat() {
   const { user } = useUser()
@@ -58,29 +64,106 @@ export function AssistantChat() {
   const [pending, setPending] = useState<PendingAction | null>(null)
   const [input, setInput] = useState("")
   const [busy, setBusy] = useState(false)
+  const [activeSessionId, setActiveSessionId] = useState<string | null>(null)
+  const [sessionList, setSessionList] = useState<ChatSession[] | null>(null) // non-null = list view open
   const listRef = useRef<HTMLDivElement>(null)
-  const historyKey = user && activeProfile ? `finboom_assistant_${user.id}_${activeProfile.id}` : null
+  const sessionsKey =
+    user && activeProfile ? `finboom_assistant_sessions_${user.id}_${activeProfile.id}` : null
 
-  // Restore per-profile history (receipts survive; pending actions don't).
-  useEffect(() => {
-    if (!historyKey) return
+  const readSessions = useCallback((): ChatSession[] => {
+    if (!sessionsKey) return []
     try {
-      const saved = localStorage.getItem(historyKey)
-      setMessages(saved ? (JSON.parse(saved) as ChatMessage[]) : [])
+      return JSON.parse(localStorage.getItem(sessionsKey) ?? "[]") as ChatSession[]
     } catch {
-      setMessages([])
+      return []
     }
+  }, [sessionsKey])
+
+  const writeSessions = useCallback(
+    (list: ChatSession[]) => {
+      if (!sessionsKey) return
+      try {
+        localStorage.setItem(sessionsKey, JSON.stringify(list.slice(0, SESSION_LIMIT)))
+      } catch {
+        /* storage unavailable */
+      }
+    },
+    [sessionsKey]
+  )
+
+  // Restore the most recent session per profile (migrating the pre-sessions
+  // single-thread history into a session on first run).
+  useEffect(() => {
+    if (!sessionsKey || !user || !activeProfile) return
+    let list = readSessions()
+    try {
+      const legacyKey = `finboom_assistant_${user.id}_${activeProfile.id}`
+      const legacy = localStorage.getItem(legacyKey)
+      if (list.length === 0 && legacy) {
+        const msgs = JSON.parse(legacy) as ChatMessage[]
+        if (msgs.length > 0) {
+          list = [
+            {
+              id: crypto.randomUUID(),
+              title: (msgs.find((m) => m.role === "user")?.content ?? "Chat").slice(0, 48),
+              createdAt: new Date().toISOString(),
+              messages: msgs,
+            },
+          ]
+          writeSessions(list)
+        }
+        localStorage.removeItem(legacyKey)
+      }
+    } catch {
+      /* malformed legacy history */
+    }
+    const latest = list[0]
+    setActiveSessionId(latest?.id ?? crypto.randomUUID())
+    setMessages(latest?.messages ?? [])
     setPending(null)
-  }, [historyKey])
+    setSessionList(null)
+  }, [sessionsKey, user, activeProfile, readSessions, writeSessions])
 
+  // Persist the active session (created lazily on its first message).
   useEffect(() => {
-    if (!historyKey) return
-    try {
-      localStorage.setItem(historyKey, JSON.stringify(messages.slice(-HISTORY_LIMIT)))
-    } catch {
-      /* storage unavailable */
+    if (!sessionsKey || !activeSessionId || messages.length === 0) return
+    const list = readSessions()
+    const idx = list.findIndex((s) => s.id === activeSessionId)
+    const entry: ChatSession = {
+      id: activeSessionId,
+      title: (messages.find((m) => m.role === "user" && !m.hidden)?.content ?? "Chat").slice(0, 48),
+      createdAt: idx >= 0 ? list[idx].createdAt : new Date().toISOString(),
+      messages: messages.slice(-HISTORY_LIMIT),
     }
-  }, [messages, historyKey])
+    if (idx >= 0) list[idx] = entry
+    else list.unshift(entry)
+    writeSessions(list)
+  }, [messages, activeSessionId, sessionsKey, readSessions, writeSessions])
+
+  function startNewChat() {
+    setActiveSessionId(crypto.randomUUID())
+    setMessages([])
+    setPending(null)
+    setSessionList(null)
+  }
+
+  function openSession(s: ChatSession) {
+    setActiveSessionId(s.id)
+    setMessages(s.messages)
+    setPending(null)
+    setSessionList(null)
+  }
+
+  function deleteSession(id: string) {
+    const list = readSessions().filter((s) => s.id !== id)
+    writeSessions(list)
+    setSessionList(list)
+    if (id === activeSessionId) {
+      setActiveSessionId(crypto.randomUUID())
+      setMessages([])
+      setPending(null)
+    }
+  }
 
   useEffect(() => {
     listRef.current?.scrollTo({ top: listRef.current.scrollHeight })
@@ -91,12 +174,9 @@ export function AssistantChat() {
     const pid = activeProfile!.id
     const today = todayLocalISO()
     const month = today.slice(0, 7)
-    // Two months of transactions: current month for stats, plus the previous
-    // month so "yesterday's 500" resolves even across a month boundary.
-    const prev = new Date()
-    prev.setMonth(prev.getMonth() - 1, 1)
-    const prevStart = `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, "0")}-01`
-    const [accounts, parties, assets, budgets, recentTx, partyTx, sips, sipPayments] =
+    // All transactions in one fetch: account balances need the full history,
+    // and recent/month slices derive from it.
+    const [accounts, parties, assets, budgets, allTx, partyTx, sips, sipPayments] =
       await Promise.all([
         fetchTable<Account>("accounts", uid),
         fetchTable<Party>("parties", uid),
@@ -104,9 +184,7 @@ export function AssistantChat() {
         fetchTable<Budget>("budgets", uid, {
           filters: [{ column: "month", op: "eq", value: month }],
         }),
-        fetchTable<Transaction>("transactions", uid, {
-          filters: [{ column: "date", op: "gte", value: prevStart }],
-        }),
+        fetchTable<Transaction>("transactions", uid),
         fetchTable<PartyTransaction>("party_transactions", uid),
         fetchTable<Sip>("sips", uid),
         fetch("/api/sip-payments")
@@ -115,7 +193,7 @@ export function AssistantChat() {
           .catch(() => [] as SipPayment[]),
       ])
 
-    const profileTx = recentTx.filter((t) => t.profile_id === pid)
+    const profileTx = allTx.filter((t) => t.profile_id === pid)
     const monthTx = profileTx.filter((t) => t.date >= `${month}-01`)
     const expenseByCategory: Record<string, number> = {}
     let incomeTotal = 0
@@ -146,7 +224,12 @@ export function AssistantChat() {
     return {
       today,
       month,
-      accounts: accounts.map((a) => ({ id: a.id, name: a.name, type: a.type })),
+      accounts: accounts.map((a) => ({
+        id: a.id,
+        name: a.name,
+        type: a.type,
+        balance: accountBalance(a, allTx),
+      })),
       parties: parties.map((p) => ({
         id: p.id,
         name: p.name,
@@ -187,7 +270,15 @@ export function AssistantChat() {
               ? { linked: "sip" as const }
               : {}),
         })),
-      stats: { incomeTotal, expenseTotal, expenseByCategory },
+      stats: {
+        incomeTotal,
+        expenseTotal,
+        expenseByCategory,
+        totalAssetValue: assets
+          .filter((a) => a.profile_id === pid)
+          .reduce((s, a) => s + Number(a.current_value), 0),
+        totalAccountBalance: accounts.reduce((s, a) => s + accountBalance(a, allTx), 0),
+      },
     }
   }, [user, activeProfile])
 
@@ -276,13 +367,18 @@ export function AssistantChat() {
 
     setMessages((prev) => [
       ...prev,
-      { id: crypto.randomUUID(), role: "assistant", content: data.reply },
+      {
+        id: crypto.randomUUID(),
+        role: "assistant",
+        content: data.reply,
+        ...(data.options?.length ? { options: data.options } : {}),
+      },
     ])
     if (data.action && data.action.kind !== "query") setPending(data.action)
   }
 
-  async function send() {
-    const text = input.trim()
+  async function send(textArg?: string) {
+    const text = (textArg ?? input).trim()
     if (!text || busy || !user || !activeProfile) return
     setInput("")
     setPending(null)
@@ -312,6 +408,23 @@ export function AssistantChat() {
     const pid = activeProfile!.id
 
     if (action.kind === "add_transaction") {
+      // Overdraft guard: an expense from a tracked account can't exceed its
+      // balance (mirrors the manual modal's check).
+      if (action.type === "expense" && action.account_id) {
+        const [accounts, allTx] = await Promise.all([
+          fetchTable<Account>("accounts", uid),
+          fetchTable<Transaction>("transactions", uid),
+        ])
+        const account = accounts.find((a) => a.id === action.account_id)
+        if (account) {
+          const balance = accountBalance(account, allTx)
+          if (balance < action.amount) {
+            throw new Error(
+              `${account.name} has only ₹${balance.toLocaleString("en-IN")} — this ₹${action.amount.toLocaleString("en-IN")} expense would overdraw it. Pick another account or leave it untracked.`
+            )
+          }
+        }
+      }
       const { data, error } = await insertRow<{ id: string }>("transactions", {
         user_id: uid,
         profile_id: pid,
@@ -647,15 +760,69 @@ export function AssistantChat() {
               <Sparkles className="w-4 h-4 text-accent" />
               <p className="text-sm font-semibold text-[#1d1d1f] dark:text-white">Assistant</p>
             </div>
-            <button
-              onClick={() => setOpen(false)}
-              aria-label="Close assistant"
-              className="p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-all"
-            >
-              <X className="w-4 h-4 text-[#86868b]" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setSessionList(sessionList ? null : readSessions())}
+                aria-label="Chat history"
+                className="p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-all"
+              >
+                <History className="w-4 h-4 text-[#86868b]" />
+              </button>
+              <button
+                onClick={startNewChat}
+                aria-label="New chat"
+                className="p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-all"
+              >
+                <Plus className="w-4 h-4 text-[#86868b]" />
+              </button>
+              <button
+                onClick={() => setOpen(false)}
+                aria-label="Close assistant"
+                className="p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 transition-all"
+              >
+                <X className="w-4 h-4 text-[#86868b]" />
+              </button>
+            </div>
           </div>
 
+          {sessionList && (
+            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1.5">
+              {sessionList.length === 0 && (
+                <p className="text-sm text-[#86868b] text-center pt-6">No past chats yet.</p>
+              )}
+              {sessionList.map((s) => (
+                <div
+                  key={s.id}
+                  className={`flex items-center gap-2 rounded-xl px-3 py-2.5 cursor-pointer hover:bg-black/[0.04] dark:hover:bg-white/[0.06] ${
+                    s.id === activeSessionId ? "bg-black/[0.05] dark:bg-white/[0.08]" : ""
+                  }`}
+                  onClick={() => openSession(s)}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-[#1d1d1f] dark:text-white truncate">{s.title}</p>
+                    <p className="text-[11px] text-[#86868b]">
+                      {new Date(s.createdAt).toLocaleDateString("en-IN", {
+                        day: "numeric",
+                        month: "short",
+                      })}
+                    </p>
+                  </div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      deleteSession(s.id)
+                    }}
+                    aria-label={`Delete chat ${s.title}`}
+                    className="p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 shrink-0"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 text-[#86868b]" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {!sessionList && (
           <div ref={listRef} className="flex-1 overflow-y-auto px-4 py-3 space-y-2.5">
             {messages.length === 0 && (
               <div className="text-sm text-[#86868b] space-y-2 pt-4">
@@ -687,6 +854,23 @@ export function AssistantChat() {
                     </button>
                   )}
                   {m.undone && <span className="ml-2 text-xs opacity-70">(undone)</span>}
+                  {/* Quick-reply chips: only on the newest message, gone once answered */}
+                  {m.options &&
+                    m === messages.filter((x) => !x.hidden).at(-1) &&
+                    !pending &&
+                    !busy && (
+                      <div className="flex flex-wrap gap-1.5 mt-2">
+                        {m.options.map((o) => (
+                          <button
+                            key={o}
+                            onClick={() => void send(o)}
+                            className="px-3 py-1.5 rounded-full text-xs font-medium bg-white dark:bg-white/[0.08] border border-black/10 dark:border-white/15 text-[#1d1d1f] dark:text-white hover:border-accent hover:text-accent transition-colors"
+                          >
+                            {o}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                 </div>
               </div>
             ))}
@@ -697,8 +881,9 @@ export function AssistantChat() {
               </div>
             )}
           </div>
+          )}
 
-          {pending && (
+          {pending && !sessionList && (
             <div className="mx-4 mb-2 p-3 rounded-xl border border-accent/25 bg-accent/[0.06]">
               <p className="text-xs font-medium uppercase tracking-wide text-accent">Confirm</p>
               <p className="mt-1 text-sm text-[#1d1d1f] dark:text-white break-words">{pending.summary}</p>
@@ -721,6 +906,7 @@ export function AssistantChat() {
             </div>
           )}
 
+          {!sessionList && (
           <div className="p-3 border-t border-black/[0.04] dark:border-white/[0.06]">
             <div className="flex items-center gap-2">
               <input
@@ -745,6 +931,7 @@ export function AssistantChat() {
               </button>
             </div>
           </div>
+          )}
         </div>
       )}
     </>

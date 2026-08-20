@@ -17,6 +17,7 @@ import { X, Plus, Loader2 } from "lucide-react"
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/constants"
 import { CategoryIcon } from "@/components/category-icon"
 import type { Party, Transaction } from "@/lib/types"
+import { accountBalance } from "@/lib/finance/accounts"
 import { CustomSelect } from "@/components/custom-select"
 import { useCurrency } from "@/hooks/use-currency"
 
@@ -129,6 +130,18 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
     if (taggedAccount && form.date < taggedAccount.opening_date) {
       setError(`${taggedAccount.name} tracks its balance from ${taggedAccount.opening_date} — pick a later date or "Not tracked".`)
       return
+    }
+    // Overdraft guard: an expense from a tracked account can't exceed its
+    // balance (when editing, the row's own old contribution is excluded).
+    if (taggedAccount && form.type === "expense") {
+      const allTx = await fetchTable<Transaction>("transactions", user.id)
+      const others = isEditing ? allTx.filter(t => t.id !== transaction.id) : allTx
+      const balance = accountBalance(taggedAccount, others)
+      const spend = Math.round(toINR(amount, currency) * 100) / 100
+      if (balance < spend) {
+        setError(`${taggedAccount.name} has only ₹${balance.toLocaleString("en-IN")} — this would overdraw it. Pick another account or "Not tracked".`)
+        return
+      }
     }
     setError("")
     setSaving(true)
