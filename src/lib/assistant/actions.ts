@@ -94,6 +94,9 @@ export type AssistantContext = {
   today: string // YYYY-MM-DD
   month: string // YYYY-MM
   accounts: Array<{ id: string; name: string; type: string; balance: number }>
+  // The user's usual money source (last account used on this profile) — like
+  // a UPI app's default account. Unstated accounts default to this.
+  defaultAccountId?: string
   parties: Array<{ id: string; name: string; balance: number }>
   assets: Array<{ id: string; name: string; asset_class: string; current_value: number }>
   budgets: Array<{ category: string; amount: number }>

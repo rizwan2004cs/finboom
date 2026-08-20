@@ -230,6 +230,15 @@ export function AssistantChat() {
         type: a.type,
         balance: accountBalance(a, allTx),
       })),
+      // Same per-profile "last used account" the manual modals default to.
+      defaultAccountId: (() => {
+        try {
+          const saved = localStorage.getItem(`finboom_last_account_${pid}`)
+          return saved && accounts.some((a) => a.id === saved) ? saved : undefined
+        } catch {
+          return undefined
+        }
+      })(),
       parties: parties.map((p) => ({
         id: p.id,
         name: p.name,
@@ -437,6 +446,14 @@ export function AssistantChat() {
         account_id: action.account_id ?? null,
       })
       if (error || !data) throw new Error(error || "Insert failed")
+      // Refresh the per-profile default source, same as the manual modal.
+      if (action.account_id) {
+        try {
+          localStorage.setItem(`finboom_last_account_${pid}`, action.account_id)
+        } catch {
+          /* storage unavailable */
+        }
+      }
       return {
         receipt: `Added ${action.summary}`,
         undo: { type: "delete", rows: [{ table: "transactions", id: data.id }] },
