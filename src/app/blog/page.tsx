@@ -32,9 +32,18 @@ const CATEGORY_BADGE_CLASS = "bg-accent/10 text-accent"
 
 function CardArtwork({ post, tall = false }: { post: Post; tall?: boolean }) {
   const height = tall ? "h-full min-h-[220px]" : "h-48"
+  // Round the artwork wrapper itself (matching the card's radius) instead of
+  // relying on the card's overflow clipping — the card animates a 3D
+  // transform on hover, and browsers drop an ancestor's rounded clipping for
+  // a frame when the scaled image gets promoted to its own layer, flashing
+  // sharp corners. The featured (tall) card's artwork sits on top on mobile
+  // but fills the left column on md, so its rounded edge moves with it.
+  const rounding = tall
+    ? "rounded-t-[var(--radius)] md:rounded-tr-none md:rounded-l-[var(--radius)]"
+    : "rounded-t-[var(--radius)]"
   if (post.mainImage) {
     return (
-      <div className={`relative ${height} overflow-hidden`}>
+      <div className={`relative ${height} overflow-hidden ${rounding}`}>
         <Image
           src={urlFor(post.mainImage).width(600).height(400).url()}
           alt={post.title}
@@ -46,7 +55,7 @@ function CardArtwork({ post, tall = false }: { post: Post; tall?: boolean }) {
   }
   return (
     <div
-      className={`relative ${height} overflow-hidden bg-gradient-to-br ${
+      className={`relative ${height} overflow-hidden ${rounding} bg-gradient-to-br ${
         BLOG_CATEGORY_GRADIENTS[post.category] || "from-slate-500/20 via-slate-400/10 to-transparent"
       }`}
     >
