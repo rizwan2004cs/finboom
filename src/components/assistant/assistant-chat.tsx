@@ -92,12 +92,15 @@ export function AssistantChat() {
   )
 
   // Restore the most recent session per profile (migrating the pre-sessions
-  // single-thread history into a session on first run).
+  // single-thread history into a session on first run). Depend ONLY on the
+  // stable storage key — depending on the user/profile objects re-ran this on
+  // every provider re-render, resetting the session list & new-chat state the
+  // moment the header buttons changed them.
   useEffect(() => {
-    if (!sessionsKey || !user || !activeProfile) return
+    if (!sessionsKey) return
     let list = readSessions()
     try {
-      const legacyKey = `finboom_assistant_${user.id}_${activeProfile.id}`
+      const legacyKey = sessionsKey.replace("finboom_assistant_sessions_", "finboom_assistant_")
       const legacy = localStorage.getItem(legacyKey)
       if (list.length === 0 && legacy) {
         const msgs = JSON.parse(legacy) as ChatMessage[]
@@ -122,7 +125,7 @@ export function AssistantChat() {
     setMessages(latest?.messages ?? [])
     setPending(null)
     setSessionList(null)
-  }, [sessionsKey, user, activeProfile, readSessions, writeSessions])
+  }, [sessionsKey, readSessions, writeSessions])
 
   // Persist the active session (created lazily on its first message).
   useEffect(() => {
