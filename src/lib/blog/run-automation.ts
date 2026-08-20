@@ -17,6 +17,7 @@ import {
   skipQueueTopic,
   syncQueueWithPublishedTitles,
 } from "@/lib/blog/topic-queue"
+import { getUsedImageKeys, saveUsedImages } from "@/lib/blog/used-images"
 import { getSupabaseSecretKey } from "@/utils/supabase/admin"
 import { sendBlogPostEmailToUsers } from "@/lib/email/send"
 
@@ -306,10 +307,15 @@ export async function runBlogAutomation({ force = false }: { force?: boolean } =
     // Trends are optional - generation continues without them.
   }
 
+  // Seed the image resolver with every photo already used on the blog so this
+  // post can't repeat one (best-effort — an empty list just means no dedup).
+  const usedImageKeys = await getUsedImageKeys()
+
   const generated = await generateBlogFromTopic(selectedTopic.title, {
     targetCategory,
     keywords,
     seasonContext,
+    usedImageKeys,
   })
   const body = markdownToPortableText(generated.content)
 
@@ -338,6 +344,7 @@ export async function runBlogAutomation({ force = false }: { force?: boolean } =
   }
 
   await publishToSanity(post)
+  await saveUsedImages(generated.usedImages ?? [], slug)
   if (selectedTopic.queueId) {
     await markQueueTopicPosted({
       id: selectedTopic.queueId,

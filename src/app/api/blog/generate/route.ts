@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth, clerkClient } from "@clerk/nextjs/server"
 import { generateBlogFromTopic } from "@/lib/blog/ai-generation"
+import { getUsedImageKeys, saveUsedImages } from "@/lib/blog/used-images"
 
 export async function POST(request: Request) {
   const { userId } = await auth()
@@ -24,7 +25,13 @@ export async function POST(request: Request) {
   }
 
   try {
-    const generated = await generateBlogFromTopic(topic.trim())
+    // Seed with previously used photos so manual posts don't repeat images
+    // either; record immediately (a discarded preview over-blocks a few
+    // photos, which is harmless against the size of the stock-photo pool).
+    const generated = await generateBlogFromTopic(topic.trim(), {
+      usedImageKeys: await getUsedImageKeys(),
+    })
+    await saveUsedImages(generated.usedImages ?? [])
     return NextResponse.json(generated)
   } catch (err: unknown) {
     console.error("Blog generation error:", err)

@@ -6,14 +6,26 @@
 // queries into real, finance-relevant photo URLs.
 //
 // Provider order: Unsplash API (real, relevance-scored) -> Pexels API
-// (relevance-scored) -> LoremFlickr (category-aware keywords, no key) ->
-// Picsum (last-resort). Candidates are scored against the query so the most
-// closely-related photo wins instead of just the first result.
+// (relevance-scored) -> API retry with an abstract on-theme query ->
+// LoremFlickr (category-aware keywords, no key) -> Picsum (last-resort).
+// Candidates are scored against the query; a photo whose text shares NOTHING
+// with the query is rejected as irrelevant, so an off-topic result (the cat
+// statue on a lifestyle-inflation post) falls through to abstract imagery
+// instead of shipping.
+//
+// Dedup works on provider-scoped keys ("unsplash-<id>", "pexels-<id>", or the
+// fallback URL). Seed the resolver with keys from previous posts (see
+// used-images.ts) so a photo used anywhere on the blog is never picked again,
+// and persist `newlyUsed()` after publishing.
 
 export type ResolvedImage = {
   url: string
   alt: string
+  // Provider-scoped dedup key; absent only for last-resort fallbacks keyed by URL.
+  key?: string
 }
+
+export type UsedImage = { key: string; url: string }
 
 const IMAGE_TOKEN_REGEX = /\{\{\s*IMAGE\s*:\s*([^}]+?)\s*\}\}/gi
 
@@ -106,7 +118,11 @@ type UnsplashPhoto = {
   urls?: { regular?: string; raw?: string }
 }
 
-async function searchUnsplash(query: string, usedIds: Set<string>): Promise<ResolvedImage | null> {
+async function searchUnsplash(
+  query: string,
+  usedIds: Set<string>,
+  requireRelevance: boolean
+): Promise<ResolvedImage | null> {
   const accessKey = process.env.UNSPLASH_ACCESS_KEY
   if (!accessKey) return null
 
@@ -125,7 +141,9 @@ async function searchUnsplash(query: string, usedIds: Set<string>): Promise<Reso
     })
     if (!response.ok) return null
     const data = (await response.json()) as { results?: UnsplashPhoto[] }
-    const results = (data.results ?? []).filter((p) => p.urls?.regular && !usedIds.has(p.id))
+    const results = (data.results ?? []).filter(
+      (p) => p.urls?.regular && !usedIds.has(`unsplash-${p.id}`)
+    )
     if (results.length === 0) return null
 
     const tokens = queryTokens(query)
@@ -137,14 +155,20 @@ async function searchUnsplash(query: string, usedIds: Set<string>): Promise<Reso
       })
       .sort((a, b) => b.score - a.score)
 
+    // A photo whose text shares no token with the query is a random result,
+    // not a relevant one — reject so the caller can fall back to abstract.
+    const relevant = ranked.filter((r) => r.score > 0)
+    if (requireRelevance && relevant.length === 0) return null
+
     // Pick among the top matches (not always #1) so similar queries across
     // different posts don't all get the same hero image.
-    const top = ranked.slice(0, Math.min(5, ranked.length))
-    const photo = top[pickVariantIndex(top.length, query)]?.photo ?? ranked[0]?.photo
+    const pool = relevant.length > 0 ? relevant : ranked
+    const top = pool.slice(0, Math.min(5, pool.length))
+    const photo = top[pickVariantIndex(top.length, query)]?.photo ?? pool[0]?.photo
     if (!photo?.urls?.regular) return null
-    usedIds.add(photo.id)
+    usedIds.add(`unsplash-${photo.id}`)
     const alt = (photo.alt_description || photo.description || sanitizeQuery(query)).trim()
-    return { url: photo.urls.regular, alt }
+    return { url: photo.urls.regular, alt, key: `unsplash-${photo.id}` }
   } catch {
     return null
   }
@@ -156,7 +180,11 @@ type PexelsPhoto = {
   src?: { large2x?: string; large?: string; landscape?: string }
 }
 
-async function searchPexels(query: string, usedIds: Set<string>): Promise<ResolvedImage | null> {
+async function searchPexels(
+  query: string,
+  usedIds: Set<string>,
+  requireRelevance: boolean
+): Promise<ResolvedImage | null> {
   const apiKey = process.env.PEXELS_API_KEY
   if (!apiKey) return null
 
@@ -179,47 +207,85 @@ async function searchPexels(query: string, usedIds: Set<string>): Promise<Resolv
       .map((p) => ({ photo: p, score: relevanceScore(tokens, p.alt ?? "") }))
       .sort((a, b) => b.score - a.score)
 
-    const top = ranked.slice(0, Math.min(5, ranked.length))
-    const photo = top[pickVariantIndex(top.length, query)]?.photo ?? ranked[0]?.photo
+    // Same relevance gate as Unsplash: zero token overlap = random photo.
+    const relevant = ranked.filter((r) => r.score > 0)
+    if (requireRelevance && relevant.length === 0) return null
+
+    const pool = relevant.length > 0 ? relevant : ranked
+    const top = pool.slice(0, Math.min(5, pool.length))
+    const photo = top[pickVariantIndex(top.length, query)]?.photo ?? pool[0]?.photo
     const src = photo?.src?.large2x || photo?.src?.large || photo?.src?.landscape
     if (!src) return null
 
     usedIds.add(`pexels-${photo.id}`)
-    return { url: src, alt: (photo.alt || sanitizeQuery(query)).trim() }
+    return { url: src, alt: (photo.alt || sanitizeQuery(query)).trim(), key: `pexels-${photo.id}` }
   } catch {
     return null
   }
 }
 
-export type ImageResolver = { resolve: (query: string) => Promise<ResolvedImage> }
+export type ImageResolver = {
+  resolve: (query: string) => Promise<ResolvedImage>
+  // Images consumed during THIS run — persist via saveUsedImages after publish.
+  newlyUsed: () => UsedImage[]
+}
 
-// A per-generation fetcher keeps track of already-used photos so the hero
-// and inline images don't repeat within a single post. Share one resolver
-// across the hero + inline passes to keep them distinct.
-export function createImageResolver(): ImageResolver {
+// An abstract-but-on-theme query for when no photo genuinely matches the
+// topic ("worst case try abstract images"): better a clean abstract finance
+// visual than a random unrelated photo.
+function abstractQueryFor(query: string): string {
+  for (const theme of THEME_KEYWORDS) {
+    if (theme.match.test(query)) {
+      const first = theme.keywords.split(",")[0].replace(/-/g, " ")
+      return `abstract ${first} background`
+    }
+  }
+  return "abstract finance background"
+}
+
+// A resolver keeps track of already-used photos so images never repeat —
+// within one post (share a single resolver across the hero + inline passes)
+// AND across the whole blog (seed with the keys of every previously published
+// image, then persist newlyUsed() after publishing).
+export function createImageResolver(previouslyUsedKeys: Iterable<string> = []): ImageResolver {
   const usedIds = new Set<string>()
   const usedUrls = new Set<string>()
+  for (const key of previouslyUsedKeys) {
+    usedIds.add(key)
+    if (key.startsWith("http")) usedUrls.add(key)
+  }
+  const newlyUsed: UsedImage[] = []
+
+  function take(image: ResolvedImage): ResolvedImage {
+    usedUrls.add(image.url)
+    newlyUsed.push({ key: image.key ?? image.url, url: image.url })
+    return image
+  }
 
   async function resolve(query: string): Promise<ResolvedImage> {
     const cleaned = sanitizeQuery(query) || "personal finance india"
 
-    const fromApi = (await searchUnsplash(cleaned, usedIds)) ?? (await searchPexels(cleaned, usedIds))
-    if (fromApi && !usedUrls.has(fromApi.url)) {
-      usedUrls.add(fromApi.url)
-      return fromApi
+    // Pass 1: a photo genuinely relevant to the query.
+    let fromApi =
+      (await searchUnsplash(cleaned, usedIds, true)) ?? (await searchPexels(cleaned, usedIds, true))
+    // Pass 2: nothing relevant exists — fetch an abstract on-theme image
+    // instead of shipping a random photo.
+    if (!fromApi) {
+      const abstract = abstractQueryFor(cleaned)
+      fromApi =
+        (await searchUnsplash(abstract, usedIds, false)) ??
+        (await searchPexels(abstract, usedIds, false))
     }
+    if (fromApi && !usedUrls.has(fromApi.url)) return take(fromApi)
     if (fromApi) return fromApi
 
     // Keyless fallbacks - vary the URL so repeats stay distinct.
     const flickr = loremFlickrUrl(cleaned)
-    if (!usedUrls.has(flickr)) {
-      usedUrls.add(flickr)
-      return { url: flickr, alt: cleaned }
-    }
-    return { url: picsumUrl(cleaned), alt: cleaned }
+    if (!usedUrls.has(flickr)) return take({ url: flickr, alt: cleaned })
+    return take({ url: picsumUrl(cleaned), alt: cleaned })
   }
 
-  return { resolve }
+  return { resolve, newlyUsed: () => [...newlyUsed] }
 }
 
 const IMAGE_LINE_REGEX = /^!\[.*\]\(.+\)$/

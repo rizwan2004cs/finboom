@@ -1,5 +1,5 @@
 import { GoogleGenerativeAI } from "@google/generative-ai"
-import { injectInlineImages, resolveHeroImage, createImageResolver } from "@/lib/blog/images"
+import { injectInlineImages, resolveHeroImage, createImageResolver, type UsedImage } from "@/lib/blog/images"
 import {
   BLOG_CATEGORY_IDS,
   normalizeBlogCategory,
@@ -17,6 +17,9 @@ export type GeneratedBlogPost = {
   keywords: string[]
   heroImageUrl?: string
   heroImageAlt?: string
+  // Dedup keys of every stock photo this post consumed (hero + inline).
+  // Persist via saveUsedImages() once the post is published.
+  usedImages?: UsedImage[]
 }
 
 export type BlogGenerationOptions = {
@@ -26,6 +29,9 @@ export type BlogGenerationOptions = {
   keywords?: string[]
   // Human-readable seasonal context, e.g. "March (timely: tax saving...)".
   seasonContext?: string
+  // Image keys used by previously published posts — seeds the resolver so no
+  // photo ever repeats across the blog (see used-images.ts).
+  usedImageKeys?: string[]
 }
 
 type BlogOutline = {
@@ -642,13 +648,14 @@ export async function generateBlogFromTopic(
   // number of inline images. Share ONE resolver so the hero and inline
   // images stay distinct and on-topic. Never let an image failure kill the post.
   let hero: { url: string; alt: string } | null = null
+  const resolver = createImageResolver(opts.usedImageKeys)
   try {
-    const resolver = createImageResolver()
     hero = await resolveHeroImage(outline.heroImageQuery, resolver)
     content = await injectInlineImages(content, 3, resolver, topic)
   } catch {
     content = content.replace(IMAGE_TOKEN_PLACEHOLDER, "").replace(/\n{3,}/g, "\n\n")
   }
+  const usedImages = resolver.newlyUsed()
 
   const wordCount = countWords(content)
   if (wordCount < TARGET_MIN_WORDS) {
@@ -671,6 +678,7 @@ export async function generateBlogFromTopic(
     keywords,
     heroImageUrl: hero?.url,
     heroImageAlt: hero?.alt,
+    usedImages,
   }
 }
 

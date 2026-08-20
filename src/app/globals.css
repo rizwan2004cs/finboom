@@ -200,6 +200,10 @@ body::after {
   transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94),
               box-shadow 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
   transform: perspective(1200px) translateZ(0);
+  /* Keep composited children (e.g. a hover-scaled card image) clipped by the
+     rounded corners — without this the radius drops for a frame when the
+     browser promotes/demotes the child to its own layer. */
+  isolation: isolate;
 }
 
 /* Ensure card content renders above glass pseudo-elements */

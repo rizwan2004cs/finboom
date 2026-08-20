@@ -39,7 +39,7 @@ function CardArtwork({ post, tall = false }: { post: Post; tall?: boolean }) {
           src={urlFor(post.mainImage).width(600).height(400).url()}
           alt={post.title}
           fill
-          className="object-cover transition-transform duration-500 group-hover:scale-105"
+          className="object-cover transition-transform duration-500 group-hover:scale-105 will-change-transform"
         />
       </div>
     )
@@ -52,7 +52,7 @@ function CardArtwork({ post, tall = false }: { post: Post; tall?: boolean }) {
     >
       <span
         aria-hidden
-        className="absolute -bottom-5 left-4 select-none font-serif text-[110px] font-bold leading-none text-black/[0.08] dark:text-white/[0.08] transition-transform duration-500 group-hover:scale-105"
+        className="absolute -bottom-5 left-4 select-none font-serif text-[110px] font-bold leading-none text-black/[0.08] dark:text-white/[0.08] transition-transform duration-500 group-hover:scale-105 will-change-transform"
       >
         {post.title.charAt(0)}
       </span>
