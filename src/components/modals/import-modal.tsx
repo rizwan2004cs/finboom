@@ -5,7 +5,7 @@ import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
 import { useCurrency } from "@/hooks/use-currency"
 import { useQueryClient } from "@tanstack/react-query"
-import { insertRow } from "@/lib/offline"
+import { insertRow, updateRow } from "@/lib/offline"
 import { X, Upload, CheckCircle, Sparkles, AlertTriangle, Loader2 } from "lucide-react"
 import { ASSET_CLASSES, type AssetClassId } from "@/lib/constants"
 import type { Asset } from "@/lib/types"
@@ -35,6 +35,8 @@ type PreviewRow = {
   invested_value: number
   currency: string
   skipReason?: string
+  existingId?: string
+  existingNotes?: string
 }
 
 const CURRENCIES = ["INR", "USD", "EUR", "GBP", "AED", "SGD"]
@@ -92,6 +94,7 @@ export function ImportModal({ onClose, onImport }: Props) {
   const [aiUsed, setAiUsed] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importedCount, setImportedCount] = useState(0)
+  const [updatedCount, setUpdatedCount] = useState(0)
 
   const tryAiMapping = useCallback(async (t: RawTable) => {
     setAiLoading(true)
@@ -176,23 +179,29 @@ export function ImportModal({ onClose, onImport }: Props) {
     })
   }, [])
 
-  // Names already in the ACTIVE profile's portfolio for de-duplication. The
-  // cache holds asset queries for every profile (prefix match on ["assets"]),
-  // so filter by profile_id — otherwise a holding owned by another profile
-  // wrongly skips the row being imported into this one.
-  const existingNames = useMemo(() => {
-    const names = new Set<string>()
+  // Assets already in the ACTIVE profile's portfolio, keyed by ISIN and by
+  // normalised name. A matching import row UPDATES that asset instead of being
+  // skipped — so re-uploading a fresh statement refreshes values in place
+  // rather than forcing a delete-everything-and-reimport. The cache holds
+  // asset queries for every profile (prefix match on ["assets"]), so filter by
+  // profile_id — otherwise a holding owned by another profile wrongly matches
+  // the row being imported into this one.
+  const existingAssets = useMemo(() => {
+    const byKey = new Map<string, Asset>()
     const cached = queryClient.getQueriesData({ queryKey: ["assets"] }) as Array<
       [unknown, Asset[] | undefined]
     >
     for (const [, data] of cached) {
       if (Array.isArray(data)) {
         for (const a of data) {
-          if (a?.name && a.profile_id === activeProfile?.id) names.add(a.name.toLowerCase().trim())
+          if (!a?.name || a.profile_id !== activeProfile?.id) continue
+          byKey.set(`name:${a.name.toLowerCase().trim()}`, a)
+          const isin = a.notes?.match(/ISIN:\s*([A-Z0-9]+)/i)?.[1]
+          if (isin) byKey.set(`isin:${isin.toUpperCase()}`, a)
         }
       }
     }
-    return names
+    return byKey
   }, [queryClient, activeProfile?.id])
 
   const previewRows = useMemo<PreviewRow[]>(() => {
@@ -230,7 +239,11 @@ export function ImportModal({ onClose, onImport }: Props) {
       if (!name) skipReason = "No name"
       else if (TOTAL_ROW_REGEX.test(lname)) skipReason = "Total row"
       else if (current <= 0 && invested <= 0 && units <= 0) skipReason = "No value"
-      else if (existingNames.has(lname)) skipReason = "Already in portfolio"
+
+      const match = skipReason
+        ? undefined
+        : (isin ? existingAssets.get(`isin:${isin.toUpperCase()}`) : undefined) ??
+          existingAssets.get(`name:${lname.trim()}`)
 
       return {
         index,
@@ -242,15 +255,21 @@ export function ImportModal({ onClose, onImport }: Props) {
         invested_value: Math.max(0, invested),
         currency,
         skipReason,
+        existingId: match?.id,
+        existingNotes: match?.notes,
       }
     })
-  }, [table, mapping, rowClass, currency, existingNames])
+  }, [table, mapping, rowClass, currency, existingAssets])
 
   const importableRows = useMemo(
     () => previewRows.filter((r) => !r.skipReason && !excluded.has(r.index)),
     [previewRows, excluded]
   )
   const skippedRows = useMemo(() => previewRows.filter((r) => r.skipReason), [previewRows])
+  const updateCount = useMemo(
+    () => importableRows.filter((r) => r.existingId).length,
+    [importableRows]
+  )
 
   function toggleExcluded(index: number) {
     setExcluded((prev) => {
@@ -264,10 +283,25 @@ export function ImportModal({ onClose, onImport }: Props) {
   async function handleImport() {
     if (!user || !activeProfile) return
     setImporting(true)
-    let count = 0
+    let added = 0
+    let updated = 0
     for (const r of importableRows) {
       // Normalise to INR — the app aggregates assuming INR, so a USD/EUR import
       // must be converted before storage rather than kept in its source currency.
+      if (r.existingId) {
+        // Row matches an existing asset (by ISIN or name): refresh its values
+        // in place. Name, asset class, and any user-written notes stay as they
+        // are — only backfill the ISIN note when there are no notes yet, so
+        // the next import can match this asset by ISIN.
+        const { error } = await updateRow("assets", r.existingId, {
+          current_value: toINR(r.current_value, r.currency),
+          invested_value: toINR(r.invested_value, r.currency),
+          units: r.units ?? null,
+          ...(r.isin && !r.existingNotes ? { notes: `ISIN: ${r.isin}` } : {}),
+        })
+        if (!error) updated += 1
+        continue
+      }
       const { error } = await insertRow("assets", {
         user_id: user.id,
         profile_id: activeProfile.id,
@@ -281,9 +315,10 @@ export function ImportModal({ onClose, onImport }: Props) {
       })
       // Only count real successes — a server-rejected insert (RLS, constraint)
       // otherwise still showed up in "N assets added successfully".
-      if (!error) count += 1
+      if (!error) added += 1
     }
-    setImportedCount(count)
+    setImportedCount(added)
+    setUpdatedCount(updated)
     setImporting(false)
     setStep("done")
     setTimeout(onImport, 1500)
@@ -430,7 +465,10 @@ export function ImportModal({ onClose, onImport }: Props) {
             <div className="space-y-4">
               <div className="flex items-center justify-between gap-3">
                 <p className="text-sm text-[#86868b]">
-                  <span className="font-medium text-[#1d1d1f] dark:text-white">{importableRows.length}</span> ready
+                  <span className="font-medium text-[#1d1d1f] dark:text-white">{importableRows.length - updateCount}</span> new
+                  {updateCount > 0 && (
+                    <> · <span className="font-medium text-[#1d1d1f] dark:text-white">{updateCount}</span> to update</>
+                  )}
                   {skippedRows.length > 0 && <> · {skippedRows.length} skipped</>}
                 </p>
                 <div className="flex items-center gap-1.5">
@@ -458,21 +496,31 @@ export function ImportModal({ onClose, onImport }: Props) {
                 {importableRows.map((row) => (
                   <div key={row.index} className="flex items-center gap-2 p-3 bg-[#f5f5f7] dark:bg-white/[0.04] rounded-xl">
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium text-[#1d1d1f] dark:text-white truncate">{row.name}</p>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <p className="text-sm font-medium text-[#1d1d1f] dark:text-white truncate">{row.name}</p>
+                        {row.existingId && (
+                          <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide px-1.5 py-0.5 rounded-full bg-blue-500/10 text-blue-700 dark:text-blue-400">
+                            Update
+                          </span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-1.5 mt-1">
-                        <select
-                          aria-label={`Asset class for ${row.name}`}
-                          value={row.asset_class}
-                          onChange={(e) =>
-                            setRowClass((prev) => ({ ...prev, [row.index]: e.target.value as AssetClassId }))
-                          }
-                          className="text-xs px-2 py-1 rounded-md border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 text-[#515154] dark:text-[#98989d] max-w-[150px]"
-                        >
-                          {ASSET_CLASSES.map((c) => (
-                            <option key={c.id} value={c.id}>{c.label}</option>
-                          ))}
-                        </select>
-                        {row.units ? <span className="text-xs text-[#86868b]">· {row.units} u</span> : null}
+                        {/* Class only applies to new assets — updates keep the existing class. */}
+                        {!row.existingId && (
+                          <select
+                            aria-label={`Asset class for ${row.name}`}
+                            value={row.asset_class}
+                            onChange={(e) =>
+                              setRowClass((prev) => ({ ...prev, [row.index]: e.target.value as AssetClassId }))
+                            }
+                            className="text-xs px-2 py-1 rounded-md border border-black/10 dark:border-white/10 bg-white dark:bg-white/5 text-[#515154] dark:text-[#98989d] max-w-[150px]"
+                          >
+                            {ASSET_CLASSES.map((c) => (
+                              <option key={c.id} value={c.id}>{c.label}</option>
+                            ))}
+                          </select>
+                        )}
+                        {row.units ? <span className="text-xs text-[#86868b]">{row.existingId ? "" : "· "}{row.units} u</span> : null}
                       </div>
                     </div>
                     <p className="text-sm font-semibold text-[#1d1d1f] dark:text-white shrink-0">{formatCompact(toINR(row.current_value, row.currency))}</p>
@@ -526,7 +574,14 @@ export function ImportModal({ onClose, onImport }: Props) {
             <div className="text-center py-8">
               <CheckCircle className="w-16 h-16 text-emerald-500 mx-auto mb-3" />
               <p className="text-lg font-bold text-[#1d1d1f] dark:text-white">Import Complete!</p>
-              <p className="text-sm text-[#86868b] mt-1">{importedCount} assets added successfully</p>
+              <p className="text-sm text-[#86868b] mt-1">
+                {[
+                  importedCount > 0 ? `${importedCount} added` : null,
+                  updatedCount > 0 ? `${updatedCount} updated` : null,
+                ]
+                  .filter(Boolean)
+                  .join(" · ") || "No assets imported"}
+              </p>
             </div>
           )}
         </div>
