@@ -29,7 +29,7 @@ function DashboardShell({ children }: { children: React.ReactNode }) {
         collapsed ? "lg:pl-[72px]" : "lg:pl-[260px]"
       )}>
         <TopBar />
-        <main className="flex-1 p-4 lg:p-8 pb-24 lg:pb-28">
+        <main className="flex-1 p-4 lg:p-8 pb-40 lg:pb-28">
           {children}
         </main>
       </div>
