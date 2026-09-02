@@ -228,15 +228,6 @@ export default function AccountsPage() {
                       </p>
                     )}
                     <div className="flex gap-1 mt-1 justify-end">
-                      {card && outstanding > 0 && cashAndBank.length > 0 && (
-                        <button
-                          onClick={() => setPayCard(account)}
-                          className="text-[11px] font-medium px-2 py-1 rounded-lg bg-[#1d1d1f] text-white hover:opacity-90 transition-all"
-                          aria-label={`Pay ${account.name} bill`}
-                        >
-                          Pay bill
-                        </button>
-                      )}
                       <button
                         onClick={() => togglePrimary(account.id)}
                         className="p-1.5 rounded-lg hover:bg-[#f5f5f7] transition-all"
@@ -296,6 +287,21 @@ export default function AccountsPage() {
                     </div>
                   </div>
                 </div>
+
+                {card && outstanding > 0 && cashAndBank.length > 0 && (
+                  <div className="mt-3 flex items-center justify-between gap-3 rounded-xl bg-[#f5f5f7]/80 dark:bg-white/[0.04] px-3 py-2">
+                    <p className="text-[12px] text-[#86868b] min-w-0 truncate">
+                      {dueLabel ? `Bill of ${formatCurrency(outstanding)} due ${dueLabel}` : `${formatCurrency(outstanding)} outstanding`}
+                    </p>
+                    <button
+                      onClick={() => setPayCard(account)}
+                      className="flex-shrink-0 text-[12px] font-medium px-3 py-1.5 rounded-lg bg-[#1d1d1f] text-white hover:opacity-90 transition-all"
+                      aria-label={`Pay ${account.name} bill`}
+                    >
+                      Pay bill
+                    </button>
+                  </div>
+                )}
 
                 {/* Ledger */}
                 {ledgerOpen && (
