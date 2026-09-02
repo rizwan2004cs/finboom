@@ -87,6 +87,7 @@ export const ACCOUNT_MOVEMENT_CATEGORIES = [
 export const ACCOUNT_TYPES = [
   { id: 'cash', label: 'Cash', icon: 'Banknote' },
   { id: 'bank', label: 'Bank Account', icon: 'Landmark' },
+  { id: 'credit_card', label: 'Credit Card', icon: 'CreditCard' },
 ] as const
 
 export const PARTY_TRANSACTION_TYPES = [

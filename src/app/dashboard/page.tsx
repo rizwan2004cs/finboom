@@ -15,7 +15,7 @@ import { todayLocalISO } from "@/lib/utils"
 import { useCurrency } from "@/hooks/use-currency"
 import { useSipPayments } from "@/hooks/use-sip-payments"
 import { useAccounts } from "@/hooks/use-accounts"
-import { accountBalance } from "@/lib/finance/accounts"
+import { accountBalance, cashAndBankAccounts, summarizeCards } from "@/lib/finance/accounts"
 
 export default function DashboardPage() {
   const { formatCurrency } = useCurrency()
@@ -58,7 +58,10 @@ export default function DashboardPage() {
   const loading = loadingAssets || loadingLiabilities || loadingGoals || loadingTransactions || !user || !activeProfile
 
   const totalAssets = assets.reduce((sum, a) => sum + Number(a.current_value), 0)
-  const totalLiabilities = liabilities.reduce((sum, l) => sum + Number(l.outstanding_amount), 0)
+  // Credit card dues count against net worth alongside loans.
+  const cardSummary = summarizeCards(accounts, transactions)
+  const totalLiabilities =
+    liabilities.reduce((sum, l) => sum + Number(l.outstanding_amount), 0) + cardSummary.totalOutstanding
   const netWorth = totalAssets - totalLiabilities
   
   // Snapshots arrive newest-first; present oldest→newest for the chart.
@@ -122,7 +125,8 @@ export default function DashboardPage() {
   const nextSipDay = upcomingSips.length > 0 ? Math.min(...upcomingSips.map(s => effectiveSipDay(s.sip_day))) : 0
 
   // Cash & Bank balances — derived from the same profile-wide transaction set
-  const accountBalances = accounts.map((a) => ({
+  const cashAndBank = cashAndBankAccounts(accounts)
+  const accountBalances = cashAndBank.map((a) => ({
     account: a,
     balance: accountBalance(a, transactions),
   }))
@@ -228,7 +232,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Cash & Bank balances */}
-      {accounts.length > 0 && (
+      {cashAndBank.length > 0 && (
         <Link href="/dashboard/accounts" className="block liquid-glass rounded-2xl p-5 transition-all hover:shadow-md">
           <div className="flex items-center justify-between">
             <p className="text-[14px] text-[#86868b] font-medium">Cash &amp; Bank</p>
@@ -249,9 +253,43 @@ export default function DashboardPage() {
                 <span className="font-medium text-[#1d1d1f] tabular-nums">{formatCurrency(balance)}</span>
               </div>
             ))}
-            {accounts.length > 3 && (
-              <p className="text-[11px] text-[#86868b]">+{accounts.length - 3} more</p>
+            {cashAndBank.length > 3 && (
+              <p className="text-[11px] text-[#86868b]">+{cashAndBank.length - 3} more</p>
             )}
+          </div>
+        </Link>
+      )}
+
+      {/* Credit card bills */}
+      {cardSummary.cards.length > 0 && (
+        <Link href="/dashboard/accounts" className="block liquid-glass rounded-2xl p-5 transition-all hover:shadow-md">
+          <div className="flex items-center justify-between">
+            <p className="text-[14px] text-[#86868b] font-medium">Credit Card Bills</p>
+            <div className="w-9 h-9 rounded-xl bg-white/50 backdrop-blur-sm flex items-center justify-center">
+              <CreditCard className="w-5 h-5 text-[#1d1d1f]" />
+            </div>
+          </div>
+          <p className={`text-[28px] font-semibold mt-2 ${cardSummary.totalOutstanding > 0 ? "text-red-600 dark:text-red-400" : "text-[#1d1d1f]"}`}>
+            {cardSummary.totalOutstanding > 0 ? formatCurrency(cardSummary.totalOutstanding) : "No dues"}
+          </p>
+          {cardSummary.nextDue && cardSummary.nextDue.dueDate && (
+            <p className={`text-[12px] mt-1 font-medium ${(cardSummary.nextDue.daysToDue ?? 99) <= 3 ? "text-red-600 dark:text-red-400" : "text-[#86868b]"}`}>
+              {cardSummary.nextDue.account.name} due{" "}
+              {new Date(`${cardSummary.nextDue.dueDate}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })}
+              {cardSummary.nextDue.daysToDue === 0 ? " · today" : cardSummary.nextDue.daysToDue ? ` · in ${cardSummary.nextDue.daysToDue}d` : ""}
+            </p>
+          )}
+          <div className="mt-2 space-y-1">
+            {cardSummary.cards.slice(0, 3).map(({ account, outstanding, available }) => (
+              <div key={account.id} className="flex items-center justify-between text-[12px]">
+                <span className="flex items-center gap-1.5 text-[#86868b] min-w-0">
+                  <CreditCard className="w-3.5 h-3.5 flex-shrink-0" strokeWidth={1.5} />
+                  <span className="truncate">{account.name}</span>
+                  {available !== null && <span className="text-[11px] hidden sm:inline">· {formatCurrency(available)} left</span>}
+                </span>
+                <span className="font-medium text-[#1d1d1f] tabular-nums">{outstanding > 0 ? formatCurrency(outstanding) : "Paid"}</span>
+              </div>
+            ))}
           </div>
         </Link>
       )}

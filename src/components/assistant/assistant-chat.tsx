@@ -5,7 +5,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
 import { fetchTable, insertRow, updateRow, deleteRow } from "@/lib/offline"
-import { accountBalance } from "@/lib/finance/accounts"
+import { accountBalance, spendGuardError } from "@/lib/finance/accounts"
 import { getPreferredAccountId } from "@/lib/accounts/default-account"
 import { todayLocalISO } from "@/lib/utils"
 import type {
@@ -427,11 +427,8 @@ export function AssistantChat() {
         const account = accounts.find((a) => a.id === action.account_id)
         if (account) {
           const balance = accountBalance(account, allTx)
-          if (balance < action.amount) {
-            throw new Error(
-              `${account.name} has only ₹${balance.toLocaleString("en-IN")} — this ₹${action.amount.toLocaleString("en-IN")} expense would overdraw it. Pick another account or leave it untracked.`
-            )
-          }
+          const guard = spendGuardError(account, balance, action.amount)
+          if (guard) throw new Error(guard)
         }
       }
       const { data, error } = await insertRow<{ id: string }>("transactions", {

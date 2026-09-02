@@ -10,6 +10,7 @@ import { ACCOUNT_TYPES } from "@/lib/constants"
 import { CategoryIcon } from "@/components/category-icon"
 import type { Account } from "@/lib/types"
 import { useCurrency } from "@/hooks/use-currency"
+import { isCreditCard } from "@/lib/finance/accounts"
 
 interface Props {
   account?: Account | null
@@ -28,15 +29,21 @@ export function AddAccountModal({ account, onClose, onSave }: Readonly<Props>) {
   // Keep the prefilled string so an untouched field saves the ORIGINAL INR
   // value — re-converting the 2-decimal display string would silently drift
   // the stored balance in non-INR display modes.
+  // Cards store what's owed as a negative balance; the form shows it positive.
   const [initialOpening] = useState(() =>
-    account ? String(Math.round(convert(Number(account.opening_balance)) * 100) / 100) : ""
+    account ? String(Math.round(convert(Math.abs(Number(account.opening_balance))) * 100) / 100) : ""
   )
   const [form, setForm] = useState({
     name: account?.name || "",
     type: account?.type || ("bank" as Account["type"]),
     opening_balance: initialOpening,
     opening_date: account?.opening_date || todayLocalISO(),
+    credit_limit: account?.credit_limit
+      ? String(Math.round(convert(Number(account.credit_limit)) * 100) / 100)
+      : "",
+    bill_due_day: account?.bill_due_day ? String(account.bill_due_day) : "",
   })
+  const isCard = isCreditCard({ type: form.type })
 
   const todayStr = todayLocalISO()
 
@@ -56,14 +63,40 @@ export function AddAccountModal({ account, onClose, onSave }: Readonly<Props>) {
     setError(null)
     setSaving(true)
 
-    const openingInr = account && form.opening_balance === initialOpening
-      ? Number(account.opening_balance)
-      : Math.round(toINR(opening, currency) * 100) / 100
+    let creditLimit: number | null = null
+    let billDueDay: number | null = null
+    if (isCard) {
+      if (form.credit_limit.trim() !== "") {
+        const limit = parseFloat(form.credit_limit)
+        if (!Number.isFinite(limit) || limit <= 0) {
+          setError("Enter a valid credit limit, or leave it blank.")
+          return
+        }
+        creditLimit = Math.round(toINR(limit, currency) * 100) / 100
+      }
+      if (form.bill_due_day.trim() !== "") {
+        const day = parseInt(form.bill_due_day, 10)
+        if (!Number.isFinite(day) || day < 1 || day > 31) {
+          setError("Bill due day must be between 1 and 31.")
+          return
+        }
+        billDueDay = day
+      }
+    }
+
+    const untouched = account && form.opening_balance === initialOpening && isCreditCard(account) === isCard
+    const openingAbs = untouched
+      ? Math.abs(Number(account.opening_balance))
+      : Math.round(toINR(Math.abs(opening), currency) * 100) / 100
+    // A card's opening figure is what was OWED on the as-of date → negative.
+    const openingInr = isCard ? -openingAbs : (untouched ? Number(account.opening_balance) : Math.round(toINR(opening, currency) * 100) / 100)
     const data = {
       name: form.name.trim(),
       type: form.type,
       opening_balance: openingInr,
       opening_date: form.opening_date,
+      credit_limit: creditLimit,
+      bill_due_day: billDueDay,
       updated_at: new Date().toISOString(),
     }
 
@@ -107,7 +140,7 @@ export function AddAccountModal({ account, onClose, onSave }: Readonly<Props>) {
               required
               value={form.name}
               onChange={(e) => setForm(prev => ({ ...prev, name: e.target.value }))}
-              placeholder="e.g. HDFC Savings"
+              placeholder={isCard ? "e.g. HDFC Regalia" : "e.g. HDFC Savings"}
               className="mt-1 w-full px-4 py-3 rounded-xl bg-[#f5f5f7] dark:bg-white/[0.06] border-0 text-sm text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10"
             />
           </div>
@@ -115,7 +148,7 @@ export function AddAccountModal({ account, onClose, onSave }: Readonly<Props>) {
           {/* Type */}
           <div>
             <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">Type</label>
-            <div className="mt-1 grid grid-cols-2 gap-2">
+            <div className="mt-1 grid grid-cols-3 gap-2">
               {ACCOUNT_TYPES.map((t) => (
                 <button
                   key={t.id}
@@ -134,10 +167,49 @@ export function AddAccountModal({ account, onClose, onSave }: Readonly<Props>) {
             </div>
           </div>
 
+          {/* Card details */}
+          {isCard && (
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">Credit limit ({symbol})</label>
+                <input
+                  type="number"
+                  step="1"
+                  min="0"
+                  inputMode="decimal"
+                  value={form.credit_limit}
+                  onChange={(e) => { setForm(prev => ({ ...prev, credit_limit: e.target.value })); setError(null) }}
+                  placeholder="Optional"
+                  className="mt-1 w-full px-4 py-3 rounded-xl bg-[#f5f5f7] dark:bg-white/[0.06] border-0 text-sm text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10"
+                />
+              </div>
+              <div>
+                <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">Bill due day</label>
+                <input
+                  type="number"
+                  step="1"
+                  min="1"
+                  max="31"
+                  inputMode="numeric"
+                  value={form.bill_due_day}
+                  onChange={(e) => { setForm(prev => ({ ...prev, bill_due_day: e.target.value })); setError(null) }}
+                  placeholder="e.g. 15"
+                  className="mt-1 w-full px-4 py-3 rounded-xl bg-[#f5f5f7] dark:bg-white/[0.06] border-0 text-sm text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10"
+                />
+              </div>
+            </div>
+          )}
+
           {/* Opening balance */}
           <div>
-            <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">Opening balance ({symbol})</label>
-            <p className="text-[11px] text-[#86868b] mt-0.5">The balance this account held on the as-of date — transactions move it from there</p>
+            <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">
+              {isCard ? "Outstanding on as-of date" : "Opening balance"} ({symbol})
+            </label>
+            <p className="text-[11px] text-[#86868b] mt-0.5">
+              {isCard
+                ? "What you owed on the card on the as-of date — spends on the card add to it, bill payments clear it"
+                : "The balance this account held on the as-of date — transactions move it from there"}
+            </p>
             <input
               type="number"
               step="0.01"

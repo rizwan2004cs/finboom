@@ -3,7 +3,13 @@ import type { Account, Transaction } from "@/lib/types"
 import {
   accountBalance,
   accountLedger,
+  cardAvailable,
+  cardOutstanding,
+  cashAndBankAccounts,
   isAccountMovement,
+  nextBillDueDate,
+  spendGuardError,
+  summarizeCards,
   withoutAccountMovements,
 } from "./accounts"
 import { sumCashflow } from "./monthly-cashflow"
@@ -126,5 +132,47 @@ describe("sumCashflow excludes account movements", () => {
       tx({ type: "income", amount: 50, category: "adjustment" }),
     ]
     expect(sumCashflow(txs)).toEqual({ income: 1000, expense: 400, surplus: 600 })
+  })
+})
+
+describe("credit cards", () => {
+  const card = acc({ id: "c1", name: "Regalia", type: "credit_card", opening_balance: -5000, credit_limit: 100000, bill_due_day: 15 })
+  const bank = acc({ id: "b1", name: "HDFC", type: "bank", opening_balance: 20000 })
+
+  it("derives outstanding from a negative balance and available from the limit", () => {
+    const txs = [
+      { id: "t1", account_id: "c1", type: "expense", amount: 3000, date: "2026-02-01" } as Transaction,
+      { id: "t2", account_id: "c1", type: "income", amount: 8000, date: "2026-02-10", category: "transfer" } as Transaction,
+      { id: "t3", account_id: "c1", type: "expense", amount: 1500, date: "2026-02-12" } as Transaction,
+    ]
+    const balance = accountBalance(card, txs) // -5000 -3000 +8000 -1500 = -1500
+    expect(balance).toBe(-1500)
+    expect(cardOutstanding(balance)).toBe(1500)
+    expect(cardOutstanding(200)).toBe(0)
+    expect(cardAvailable(card, balance)).toBe(98500)
+    expect(cardAvailable(acc({ type: "credit_card", credit_limit: null }), -100)).toBeNull()
+  })
+
+  it("splits cash/bank from cards and totals dues", () => {
+    expect(cashAndBankAccounts([card, bank]).map((a) => a.id)).toEqual(["b1"])
+    const summary = summarizeCards([card, bank], [], new Date(2026, 1, 10))
+    expect(summary.cards).toHaveLength(1)
+    expect(summary.totalOutstanding).toBe(5000)
+    expect(summary.nextDue?.dueDate).toBe("2026-02-15")
+    expect(summary.nextDue?.daysToDue).toBe(5)
+  })
+
+  it("rolls the due date to next month once it has passed and clamps to month length", () => {
+    expect(nextBillDueDate({ bill_due_day: 15 }, new Date(2026, 1, 20))).toBe("2026-03-15")
+    expect(nextBillDueDate({ bill_due_day: 31 }, new Date(2026, 1, 1))).toBe("2026-02-28")
+    expect(nextBillDueDate({ bill_due_day: null }, new Date(2026, 1, 1))).toBeNull()
+  })
+
+  it("guards cash against overdraft and cards against the limit", () => {
+    expect(spendGuardError(bank, 1000, 1500)).toMatch(/overdraw/)
+    expect(spendGuardError(bank, 1000, 1000)).toBeNull()
+    expect(spendGuardError(card, -99000, 500)).toBeNull()
+    expect(spendGuardError(card, -99000, 1500)).toMatch(/exceed/)
+    expect(spendGuardError(acc({ type: "credit_card", credit_limit: null }), -500000, 1)).toBeNull()
   })
 })

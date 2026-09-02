@@ -50,17 +50,21 @@ create table if not exists liabilities (
   updated_at timestamptz default now()
 );
 
--- Cash & Bank accounts (Cash In Hand + bank accounts, per profile).
+-- Cash, Bank & Credit Card accounts (per profile).
 -- Balances are derived client-side (opening_balance + Σ income − Σ expense of
--- tagged transactions), never stored. Must precede transactions (FK target).
+-- tagged transactions), never stored. A credit card's negative balance is the
+-- amount owed; paying the bill is a transfer into the card.
+-- Must precede transactions (FK target).
 create table if not exists accounts (
   id uuid default gen_random_uuid() primary key,
   user_id text not null,
   profile_id uuid references profiles(id) on delete set null,
   name text not null,
-  type text not null default 'bank' check (type in ('bank', 'cash')),
+  type text not null default 'bank' check (type in ('bank', 'cash', 'credit_card')),
   opening_balance numeric not null default 0,
   opening_date date not null default current_date,
+  credit_limit numeric,
+  bill_due_day integer check (bill_due_day between 1 and 31),
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );

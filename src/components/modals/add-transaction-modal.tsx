@@ -17,7 +17,7 @@ import { X, Plus, Loader2 } from "lucide-react"
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/constants"
 import { CategoryIcon } from "@/components/category-icon"
 import type { Party, Transaction } from "@/lib/types"
-import { accountBalance } from "@/lib/finance/accounts"
+import { accountBalance, isCreditCard, spendGuardError } from "@/lib/finance/accounts"
 import { getPreferredAccountId } from "@/lib/accounts/default-account"
 import { CustomSelect } from "@/components/custom-select"
 import { useCurrency } from "@/hooks/use-currency"
@@ -139,8 +139,9 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
       const others = isEditing ? allTx.filter(t => t.id !== transaction.id) : allTx
       const balance = accountBalance(taggedAccount, others)
       const spend = Math.round(toINR(amount, currency) * 100) / 100
-      if (balance < spend) {
-        setError(`${taggedAccount.name} has only ₹${balance.toLocaleString("en-IN")} — this would overdraw it. Pick another account or "Not tracked".`)
+      const guard = spendGuardError(taggedAccount, balance, spend)
+      if (guard) {
+        setError(guard)
         return
       }
     }
@@ -337,7 +338,10 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
             <CustomSelect
               value={validAccountId}
               onChange={(val) => setForm(prev => ({ ...prev, account_id: val }))}
-              options={[{ value: "", label: "Not tracked" }, ...accounts.map(a => ({ value: a.id, label: a.name }))]}
+              options={[
+                { value: "", label: "Not tracked" },
+                ...accounts.map(a => ({ value: a.id, label: isCreditCard(a) ? `${a.name} (card)` : a.name })),
+              ]}
               placeholder="Not tracked"
               className="mt-1"
               searchable

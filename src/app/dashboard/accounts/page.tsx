@@ -8,13 +8,16 @@ import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { deleteRow, updateRow } from "@/lib/offline"
 import { useQueryClient } from "@tanstack/react-query"
 import {
-  Plus, Landmark, Banknote, Trash2, Edit2, ArrowLeftRight,
+  Plus, Landmark, Banknote, CreditCard, Trash2, Edit2, ArrowLeftRight,
   SlidersHorizontal, ChevronDown, Star, Download,
 } from "lucide-react"
 import { StatementModal } from "@/components/modals/statement-modal"
 import { getPrimaryAccountId, setPrimaryAccountId } from "@/lib/accounts/default-account"
 import type { Account, Transaction } from "@/lib/types"
-import { accountBalance, accountLedger } from "@/lib/finance/accounts"
+import {
+  accountBalance, accountLedger, cardAvailable, cardOutstanding,
+  cashAndBankAccounts, daysUntil, isCreditCard, nextBillDueDate,
+} from "@/lib/finance/accounts"
 import { useAppDialog } from "@/components/app-dialog"
 import { useCurrency } from "@/hooks/use-currency"
 import { AddAccountModal } from "@/components/modals/add-account-modal"
@@ -39,6 +42,7 @@ export default function AccountsPage() {
   const [editAccount, setEditAccount] = useState<Account | null>(null)
   const [showTransfer, setShowTransfer] = useState(false)
   const [transferFromId, setTransferFromId] = useState<string | undefined>(undefined)
+  const [payCard, setPayCard] = useState<Account | null>(null)
   const [adjustAccount, setAdjustAccount] = useState<Account | null>(null)
   const [openLedgerId, setOpenLedgerId] = useState<string | null>(null)
   const [statementAccountId, setStatementAccountId] = useState<string | null>(null)
@@ -67,7 +71,11 @@ export default function AccountsPage() {
     return map
   }, [accounts, transactions])
 
-  const totalBalance = accounts.reduce((s, a) => s + (balances.get(a.id) ?? 0), 0)
+  const cashAndBank = cashAndBankAccounts(accounts)
+  const totalBalance = cashAndBank.reduce((s, a) => s + (balances.get(a.id) ?? 0), 0)
+  const totalCardDues = accounts
+    .filter(isCreditCard)
+    .reduce((s, a) => s + cardOutstanding(balances.get(a.id) ?? 0), 0)
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ["accounts"] })
@@ -115,10 +123,10 @@ export default function AccountsPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold text-[#1d1d1f]">Cash &amp; Bank</h1>
+          <h1 className="text-xl font-bold text-[#1d1d1f]">Cash, Bank &amp; Cards</h1>
           <p className="text-sm text-[#86868b]">
             {accounts.length > 0
-              ? `Total balance ${formatCurrency(totalBalance)} across ${accounts.length} account${accounts.length === 1 ? "" : "s"}`
+              ? `${formatCurrency(totalBalance)} in ${cashAndBank.length} account${cashAndBank.length === 1 ? "" : "s"}${totalCardDues > 0 ? ` · ${formatCurrency(totalCardDues)} card dues` : ""}`
               : "Track where your money actually sits"}
           </p>
         </div>
@@ -150,7 +158,7 @@ export default function AccountsPage() {
           </div>
           <p className="font-medium text-[#1d1d1f]">No accounts yet</p>
           <p className="text-sm text-[#86868b] mt-1">
-            Add your cash drawer and bank accounts, then tag transactions to keep every balance matching reality
+            Add your cash drawer, bank accounts and credit cards, then tag transactions to keep every balance matching reality
           </p>
           <button
             onClick={() => setShowAccountForm(true)}
@@ -163,9 +171,17 @@ export default function AccountsPage() {
         <div className="space-y-3">
           {accounts.map((account) => {
             const balance = balances.get(account.id) ?? 0
-            const Icon = account.type === "cash" ? Banknote : Landmark
+            const card = isCreditCard(account)
+            const Icon = card ? CreditCard : account.type === "cash" ? Banknote : Landmark
             const ledgerOpen = openLedgerId === account.id
             const ledger = ledgerOpen ? accountLedger(account, transactions) : []
+            const outstanding = card ? cardOutstanding(balance) : 0
+            const available = card ? cardAvailable(account, balance) : null
+            const dueDate = card ? nextBillDueDate(account) : null
+            const daysToDue = dueDate ? daysUntil(dueDate) : null
+            const dueLabel = dueDate
+              ? new Date(`${dueDate}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" })
+              : null
             return (
               <div key={account.id} className="liquid-glass rounded-2xl p-5">
                 <div className="flex items-start justify-between gap-3">
@@ -187,7 +203,14 @@ export default function AccountsPage() {
                         )}
                       </p>
                       <p className="text-xs text-[#86868b]">
-                        {account.type === "cash" ? "Cash" : "Bank"} · tap for ledger
+                        {card ? "Credit card" : account.type === "cash" ? "Cash" : "Bank"}
+                        {card && dueLabel && outstanding > 0 && (
+                          <span className={daysToDue !== null && daysToDue <= 3 ? " text-red-600 dark:text-red-400 font-medium" : ""}>
+                            {" "}· bill due {dueLabel}{daysToDue === 0 ? " (today)" : daysToDue !== null && daysToDue > 0 ? ` (${daysToDue}d)` : ""}
+                          </span>
+                        )}
+                        {card && available !== null && ` · ${formatCurrency(available)} credit left`}
+                        {!card && " · tap for ledger"}
                       </p>
                     </div>
                     <ChevronDown
@@ -195,10 +218,25 @@ export default function AccountsPage() {
                     />
                   </button>
                   <div className="text-right flex-shrink-0">
-                    <p className={`font-semibold ${balance < 0 ? "text-red-600 dark:text-red-400" : "text-[#1d1d1f]"}`}>
-                      {formatCurrency(balance)}
-                    </p>
+                    {card ? (
+                      <p className={`font-semibold ${outstanding > 0 ? "text-red-600 dark:text-red-400" : "text-[#1d1d1f]"}`}>
+                        {outstanding > 0 ? `${formatCurrency(outstanding)} due` : balance > 0 ? `${formatCurrency(balance)} credit` : "No dues"}
+                      </p>
+                    ) : (
+                      <p className={`font-semibold ${balance < 0 ? "text-red-600 dark:text-red-400" : "text-[#1d1d1f]"}`}>
+                        {formatCurrency(balance)}
+                      </p>
+                    )}
                     <div className="flex gap-1 mt-1 justify-end">
+                      {card && outstanding > 0 && cashAndBank.length > 0 && (
+                        <button
+                          onClick={() => setPayCard(account)}
+                          className="text-[11px] font-medium px-2 py-1 rounded-lg bg-[#1d1d1f] text-white hover:opacity-90 transition-all"
+                          aria-label={`Pay ${account.name} bill`}
+                        >
+                          Pay bill
+                        </button>
+                      )}
                       <button
                         onClick={() => togglePrimary(account.id)}
                         className="p-1.5 rounded-lg hover:bg-[#f5f5f7] transition-all"
@@ -316,6 +354,16 @@ export default function AccountsPage() {
           defaultFromId={transferFromId}
           onClose={() => setShowTransfer(false)}
           onSave={() => { setShowTransfer(false); invalidate() }}
+        />
+      )}
+      {payCard && (
+        <TransferModal
+          accounts={accounts}
+          defaultFromId={primaryId && primaryId !== payCard.id ? primaryId : undefined}
+          defaultToId={payCard.id}
+          defaultAmountInr={cardOutstanding(balances.get(payCard.id) ?? 0)}
+          onClose={() => setPayCard(null)}
+          onSave={() => { setPayCard(null); invalidate() }}
         />
       )}
       {statementAccountId && (

@@ -8,6 +8,7 @@ import { isValidISODate, isFutureISODate, todayLocalISO } from "@/lib/utils"
 import { X, Loader2, ArrowDown } from "lucide-react"
 import { TRANSFER_CATEGORY } from "@/lib/constants"
 import type { Account, Transaction } from "@/lib/types"
+import { cashAndBankAccounts, isCreditCard } from "@/lib/finance/accounts"
 import { CustomSelect } from "@/components/custom-select"
 import { useCurrency } from "@/hooks/use-currency"
 
@@ -15,6 +16,10 @@ interface Props {
   accounts: Account[]
   /** Account preselected as the source (e.g. the card the action came from). */
   defaultFromId?: string
+  /** Account preselected as the destination (e.g. a credit card being paid). */
+  defaultToId?: string
+  /** Prefilled amount in INR (e.g. a card's outstanding balance). */
+  defaultAmountInr?: number
   onClose: () => void
   onSave: () => void
 }
@@ -22,20 +27,31 @@ interface Props {
 /** Move money between two own accounts. Creates two linked transaction legs
  *  sharing a transfer_group_id: an expense out of the source account and an
  *  income into the destination — neither counts as real cashflow. */
-export function TransferModal({ accounts, defaultFromId, onClose, onSave }: Readonly<Props>) {
-  const { symbol, currency, toINR } = useCurrency()
+export function TransferModal({ accounts, defaultFromId, defaultToId, defaultAmountInr, onClose, onSave }: Readonly<Props>) {
+  const { symbol, currency, toINR, convert } = useCurrency()
   const { user } = useUser()
   const { activeProfile } = useProfile()
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState(() => {
-    const fromId = defaultFromId || accounts[0]?.id || ""
-    const toId = accounts.find(a => a.id !== fromId)?.id || ""
-    return { from_id: fromId, to_id: toId, amount: "", date: todayLocalISO(), note: "" }
+    const toId = defaultToId || ""
+    const fromId =
+      defaultFromId ||
+      // Paying a card: default the source to the first cash/bank account.
+      (toId ? cashAndBankAccounts(accounts).find(a => a.id !== toId)?.id : undefined) ||
+      accounts.find(a => a.id !== toId)?.id ||
+      ""
+    const resolvedTo = toId || accounts.find(a => a.id !== fromId)?.id || ""
+    const amount = defaultAmountInr && defaultAmountInr > 0
+      ? String(Math.round(convert(defaultAmountInr) * 100) / 100)
+      : ""
+    return { from_id: fromId, to_id: resolvedTo, amount, date: todayLocalISO(), note: "" }
   })
 
   const todayStr = todayLocalISO()
-  const options = accounts.map(a => ({ value: a.id, label: a.name }))
+  const toAccount = accounts.find(a => a.id === form.to_id)
+  const payingCard = !!toAccount && isCreditCard(toAccount)
+  const options = accounts.map(a => ({ value: a.id, label: isCreditCard(a) ? `${a.name} (card)` : a.name }))
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -93,7 +109,7 @@ export function TransferModal({ accounts, defaultFromId, onClose, onSave }: Read
       ...common,
       type: "expense",
       account_id: form.from_id,
-      description: note || `Transfer to ${toName}`,
+      description: note || (payingCard ? `Card bill · ${toName}` : `Transfer to ${toName}`),
     })
     if (outLeg.error) {
       setSaving(false)
@@ -105,7 +121,7 @@ export function TransferModal({ accounts, defaultFromId, onClose, onSave }: Read
       ...common,
       type: "income",
       account_id: form.to_id,
-      description: note || `Transfer from ${fromName}`,
+      description: note || (payingCard ? `Bill payment from ${fromName}` : `Transfer from ${fromName}`),
     })
     if (inLeg.error) {
       // Don't leave a one-sided transfer behind — roll back the out leg.
@@ -128,7 +144,7 @@ export function TransferModal({ accounts, defaultFromId, onClose, onSave }: Read
         </div>
 
         <div className="flex items-center justify-between p-5 border-b border-black/[0.04] dark:border-white/[0.06]">
-          <h2 className="text-lg font-bold text-[#1d1d1f] dark:text-white">Transfer Money</h2>
+          <h2 className="text-lg font-bold text-[#1d1d1f] dark:text-white">{payingCard ? "Pay Card Bill" : "Transfer Money"}</h2>
           <button onClick={onClose} className="p-2 rounded-full hover:bg-[#f5f5f7] dark:hover:bg-white/[0.08] transition-all">
             <X className="w-5 h-5 text-[#86868b]" />
           </button>
@@ -199,14 +215,14 @@ export function TransferModal({ accounts, defaultFromId, onClose, onSave }: Read
               type="text"
               value={form.note}
               onChange={(e) => setForm(prev => ({ ...prev, note: e.target.value }))}
-              placeholder="e.g. ATM withdrawal"
+              placeholder={payingCard ? "e.g. August statement" : "e.g. ATM withdrawal"}
               className="mt-1 w-full px-4 py-3 rounded-xl bg-[#f5f5f7] dark:bg-white/[0.06] border-0 text-sm text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10"
             />
           </div>
 
           {error && (
             <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 rounded-xl px-4 py-3">
-              Couldn&apos;t transfer: {error}
+              Couldn&apos;t {payingCard ? "pay" : "transfer"}: {error}
             </p>
           )}
 
@@ -215,8 +231,8 @@ export function TransferModal({ accounts, defaultFromId, onClose, onSave }: Read
             disabled={saving || !form.amount || !form.from_id || !form.to_id || form.from_id === form.to_id}
             className="w-full py-3 rounded-xl bg-[#1d1d1f] dark:bg-white/[0.12] text-white font-medium hover:opacity-90 transition-all disabled:opacity-50"
           >
-            {saving && <><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Transferring...</>}
-            {!saving && "Transfer"}
+            {saving && <><Loader2 className="w-4 h-4 animate-spin inline mr-2" />{payingCard ? "Paying..." : "Transferring..."}</>}
+            {!saving && (payingCard ? "Pay Bill" : "Transfer")}
           </button>
         </form>
       </div>

@@ -56,9 +56,15 @@ export interface Account {
   user_id: string
   profile_id?: string | null
   name: string
-  type: "bank" | "cash"
+  type: "bank" | "cash" | "credit_card"
+  /** For credit cards: an outstanding amount is stored as a NEGATIVE opening
+   *  balance, so the derived balance stays "money in minus money out". */
   opening_balance: number
   opening_date: string
+  /** Credit cards only. */
+  credit_limit?: number | null
+  /** Credit cards only: day of month the bill is due (1–31). */
+  bill_due_day?: number | null
   created_at: string
   updated_at: string
 }
