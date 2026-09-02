@@ -1,13 +1,13 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import { Repeat } from "lucide-react"
+import { Repeat, RotateCcw } from "lucide-react"
 import { useUser } from "@/hooks/use-auth"
 import { useSipPayments, mergeSipPaymentInCache } from "@/hooks/use-sip-payments"
 import { useQueryClient } from "@tanstack/react-query"
 import type { Sip, SipPayment, Transaction } from "@/lib/types"
 import { monthKeyFromDate, sipStatusForMonth, sipAppliesToMonth } from "@/lib/finance/monthly-cashflow"
-import { markSipPaid, unmarkSipPaid, markAllSipsPaid } from "@/lib/finance/sip-payments"
+import { markSipPaid, unmarkSipPaid, markAllSipsPaid, skipSip, unskipSip } from "@/lib/finance/sip-payments"
 import { useCurrency } from "@/hooks/use-currency"
 
 function ordinal(n: number): string {
@@ -50,7 +50,7 @@ export function SipMonthChecklist({ sips, profileId, monthKey: monthKeyProp, tra
     [transactions, profileId],
   )
 
-  const { unpaid, paid } = useMemo(
+  const { unpaid, paid, skipped } = useMemo(
     () => sipStatusForMonth(activeSips, payments, monthKey, scopedTx),
     [activeSips, payments, monthKey, scopedTx],
   )
@@ -62,7 +62,7 @@ export function SipMonthChecklist({ sips, profileId, monthKey: monthKeyProp, tra
     [payments, monthKey],
   )
 
-  if (activeSips.length === 0 || unpaid.length === 0) return null
+  if (activeSips.length === 0 || (unpaid.length === 0 && skipped.length === 0)) return null
 
   function invalidate() {
     queryClient.invalidateQueries({ queryKey: ["sip_payments"] })
@@ -103,6 +103,41 @@ export function SipMonthChecklist({ sips, profileId, monthKey: monthKeyProp, tra
     }
   }
 
+  async function skip(sip: Sip) {
+    if (!user || busy) return
+    setBusy(true)
+    try {
+      const result = await skipSip(sip, monthKey)
+      syncPayment(result.payment)
+      if (!result.ok) {
+        window.dispatchEvent(
+          new CustomEvent("finboom:write-error", { detail: result.error ?? "Could not skip" }),
+        )
+      }
+      invalidate()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function undoSkip(sip: Sip) {
+    if (!user || busy) return
+    const row = paymentBySipId.get(sip.id)
+    if (!row) return
+    setBusy(true)
+    try {
+      const result = await unskipSip(row)
+      if (!result.ok) {
+        window.dispatchEvent(
+          new CustomEvent("finboom:write-error", { detail: result.error ?? "Could not undo skip" }),
+        )
+      }
+      invalidate()
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function markAllPaid() {
     if (!user || busy || unpaid.length === 0) return
     setBusy(true)
@@ -132,11 +167,12 @@ export function SipMonthChecklist({ sips, profileId, monthKey: monthKeyProp, tra
       <div className="flex items-center justify-between gap-2">
         <div>
           <h3 className="text-sm font-semibold text-[#1d1d1f] dark:text-white">SIPs · {monthLabel}</h3>
-          <p className="text-[11px] text-[#86868b]">Mark paid to add Investment expenses</p>
+          <p className="text-[11px] text-[#86868b]">Mark paid to add Investment expenses, or skip a month</p>
         </div>
         <div className="text-right flex flex-col items-end gap-1">
           <p className="text-[11px] text-[#86868b]">
-            {paid.length}/{activeSips.length} done
+            {paid.length + skipped.length}/{activeSips.length} done
+            {skipped.length > 0 && ` · ${skipped.length} skipped`}
           </p>
           {unpaid.length > 0 && (
             <button
@@ -155,12 +191,9 @@ export function SipMonthChecklist({ sips, profileId, monthKey: monthKeyProp, tra
         {unpaid.map((sip) => {
           const label = sip.fund_name || sip.name
           return (
-            <button
+            <div
               key={sip.id}
-              type="button"
-              disabled={busy}
-              onClick={() => togglePaid(sip, false)}
-              className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-all bg-[#f5f5f7]/80 dark:bg-white/[0.04] border border-transparent hover:bg-[#ebebed] dark:hover:bg-white/[0.06]"
+              className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 bg-[#f5f5f7]/80 dark:bg-white/[0.04] border border-transparent"
             >
               <span className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center bg-white dark:bg-white/10 text-[#86868b]">
                 <Repeat className="w-4 h-4" />
@@ -173,10 +206,55 @@ export function SipMonthChecklist({ sips, profileId, monthKey: monthKeyProp, tra
                   {formatCurrency(Number(sip.amount))} · {ordinal(sip.sip_day)} of month
                 </span>
               </span>
-              <span className="text-[11px] font-medium flex-shrink-0 text-[#86868b]">
-                Mark paid
+              <span className="flex items-center gap-1.5 flex-shrink-0">
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => skip(sip)}
+                  className="text-[11px] font-medium px-2.5 py-1 rounded-lg text-[#86868b] hover:bg-white dark:hover:bg-white/10 disabled:opacity-50"
+                >
+                  Skip
+                </button>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => togglePaid(sip, false)}
+                  className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-white dark:bg-white/10 text-[#1d1d1f] dark:text-white hover:shadow-sm disabled:opacity-50"
+                >
+                  Mark paid
+                </button>
               </span>
-            </button>
+            </div>
+          )
+        })}
+        {skipped.map((sip) => {
+          const label = sip.fund_name || sip.name
+          return (
+            <div
+              key={sip.id}
+              className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 bg-transparent border border-dashed border-[#d2d2d7] dark:border-white/10 opacity-70"
+            >
+              <span className="flex-shrink-0 w-8 h-8 rounded-lg flex items-center justify-center bg-[#f5f5f7] dark:bg-white/5 text-[#86868b]">
+                <Repeat className="w-4 h-4" />
+              </span>
+              <span className="flex-1 min-w-0">
+                <span className="block text-sm font-medium truncate text-[#86868b] line-through">
+                  {label}
+                </span>
+                <span className="text-[11px] text-[#86868b]">
+                  Skipped this month · {formatCurrency(Number(sip.amount))}
+                </span>
+              </span>
+              <button
+                type="button"
+                disabled={busy}
+                onClick={() => undoSkip(sip)}
+                className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-lg text-[#1d1d1f] dark:text-white hover:bg-[#f5f5f7] dark:hover:bg-white/10 disabled:opacity-50 flex-shrink-0"
+              >
+                <RotateCcw className="w-3 h-3" />
+                Undo skip
+              </button>
+            </div>
           )
         })}
       </div>

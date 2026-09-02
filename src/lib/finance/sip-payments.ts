@@ -7,15 +7,6 @@ export function sipExpenseDescription(sip: Sip): string {
   return `SIP: ${label}`
 }
 
-export const MONTH_FORWARD_DESCRIPTION = "Previous month's forward"
-
-/** YYYY-MM for the calendar month before `monthKey`. */
-export function previousMonthKey(monthKey: string): string {
-  const [y, m] = monthKey.split("-").map(Number)
-  const d = new Date(y, m - 2, 1)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`
-}
-
 function isOnline(): boolean {
   return typeof navigator !== "undefined" ? navigator.onLine : true
 }
@@ -98,6 +89,39 @@ export async function markSipPaid(
   }
 }
 
+/** Skip a SIP for a month — no expense is created and it no longer counts as due. */
+export async function skipSip(
+  sip: Sip,
+  monthKey: string,
+): Promise<{ ok: boolean; error?: string; payment?: SipPayment }> {
+  if (!isOnline()) {
+    return { ok: false, error: "Go online to skip SIPs" }
+  }
+  try {
+    const res = await fetch("/api/sip-payments", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sipId: sip.id, monthKey, skip: true }),
+    })
+    const data = await res.json()
+    const payment = data.payment as SipPayment | undefined
+    if (res.status === 409 && payment) {
+      await put("sip_payments", payment)
+      return { ok: true, payment }
+    }
+    if (!res.ok || !payment) {
+      return { ok: false, error: data.error ?? "Could not skip" }
+    }
+    await put("sip_payments", payment)
+    return { ok: true, payment }
+  } catch {
+    return { ok: false, error: "Network error — try again" }
+  }
+}
+
+/** Undo a skip (same as unmarking — the month row is removed). */
+export const unskipSip = unmarkSipPaid
+
 export async function unmarkSipPaid(payment: SipPayment): Promise<{ ok: boolean; error?: string }> {
   if (!isOnline()) {
     return { ok: false, error: "Go online to undo" }
@@ -137,55 +161,4 @@ export async function markAllSipsPaid(
     } else failed++
   }
   return { marked, failed, payments }
-}
-
-/** Carry surplus left from the previous month into this month as income. */
-export async function ensureMonthCarryForward(
-  userId: string,
-  profileId: string,
-  monthKey: string,
-  amount: number,
-  existingTransactions: Transaction[],
-): Promise<boolean> {
-  if (amount <= 0) return false
-  const isForward = (t: Pick<Transaction, "type" | "description" | "date">) =>
-    t.type === "income" &&
-    t.description === MONTH_FORWARD_DESCRIPTION &&
-    (t.date || "").startsWith(monthKey)
-  if (existingTransactions.some(isForward)) return false
-
-  // The caller's list can be stale (React-query state mid-refetch), so re-check
-  // against the server right before writing. If the check itself fails (offline),
-  // fall back to the local-list verdict above rather than blocking the insert.
-  try {
-    const { createClient } = await import("@/utils/supabase/client")
-    const { data: existing, error: checkError } = await createClient()
-      .from("transactions")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("profile_id", profileId)
-      .eq("type", "income")
-      .eq("description", MONTH_FORWARD_DESCRIPTION)
-      .gte("date", `${monthKey}-01`)
-      .lte("date", `${monthKey}-31`)
-      .limit(1)
-    if (!checkError && existing && existing.length > 0) return false
-  } catch {
-    // Network failure — proceed on the local check only.
-  }
-
-  const { insertRow } = await import("@/lib/offline")
-  const firstDay = `${monthKey}-01`
-
-  const { error } = await insertRow("transactions", {
-    user_id: userId,
-    profile_id: profileId,
-    type: "income",
-    category: "other",
-    amount,
-    description: MONTH_FORWARD_DESCRIPTION,
-    date: firstDay,
-    currency: "INR",
-  })
-  return !error
 }

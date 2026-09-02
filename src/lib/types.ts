@@ -115,6 +115,8 @@ export interface SipPayment {
   paid_date: string
   amount?: number | null
   transaction_id?: string | null
+  /** "skipped" = intentionally not invested this month; no expense row. Defaults to "paid". */
+  status?: "paid" | "skipped"
   created_at: string
   updated_at: string
 }

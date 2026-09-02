@@ -69,7 +69,11 @@ export function sipAppliesToMonth(sip: Sip, monthKey: string): boolean {
   return !start || monthKey >= start
 }
 
-/** Per-SIP paid / unpaid status for a calendar month. */
+export function isSkippedPayment(p: Pick<SipPayment, "status">): boolean {
+  return p.status === "skipped"
+}
+
+/** Per-SIP paid / skipped / unpaid status for a calendar month. */
 export function sipStatusForMonth(
   sips: Sip[],
   payments: SipPayment[],
@@ -77,18 +81,22 @@ export function sipStatusForMonth(
   transactions: Transaction[] = [],
 ): {
   paidIds: Set<string>
+  skippedIds: Set<string>
   unpaid: Sip[]
   paid: Sip[]
+  skipped: Sip[]
   unpaidAmount: number
   paidAmount: number
 } {
+  const monthPayments = payments.filter((p) => p.month === monthKey)
+  const skippedIds = new Set(monthPayments.filter(isSkippedPayment).map((p) => p.sip_id))
   const paidIds = new Set(
-    payments.filter((p) => p.month === monthKey).map((p) => p.sip_id),
+    monthPayments.filter((p) => !isSkippedPayment(p)).map((p) => p.sip_id),
   )
   const active = sips.filter((s) => s.active && sipAppliesToMonth(s, monthKey))
   const monthTx = transactionsInMonth(transactions, monthKey)
   for (const sip of active) {
-    if (paidIds.has(sip.id)) continue
+    if (paidIds.has(sip.id) || skippedIds.has(sip.id)) continue
     const desc = sipExpenseDescription(sip)
     const hasExpense = monthTx.some(
       (t) =>
@@ -98,12 +106,15 @@ export function sipStatusForMonth(
     )
     if (hasExpense) paidIds.add(sip.id)
   }
-  const unpaid = active.filter((s) => !paidIds.has(s.id))
+  const unpaid = active.filter((s) => !paidIds.has(s.id) && !skippedIds.has(s.id))
   const paid = active.filter((s) => paidIds.has(s.id))
+  const skipped = active.filter((s) => skippedIds.has(s.id))
   return {
     paidIds,
+    skippedIds,
     unpaid,
     paid,
+    skipped,
     unpaidAmount: unpaid.reduce((sum, s) => sum + Number(s.amount), 0),
     paidAmount: paid.reduce((sum, s) => sum + Number(s.amount), 0),
   }

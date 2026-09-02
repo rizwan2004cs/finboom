@@ -3,7 +3,7 @@ import { auth } from "@clerk/nextjs/server"
 import { createAdminClient } from "@/utils/supabase/admin"
 import { sipExpenseDescription } from "@/lib/finance/sip-payments"
 
-/** Mark a SIP paid for a month — creates investment expense + sip_payment row. */
+/** Mark a SIP paid (creates investment expense + sip_payment row) or skipped (sip_payment row only) for a month. */
 export async function POST(request: Request) {
   const { userId } = await auth()
   if (!userId) {
@@ -13,6 +13,7 @@ export async function POST(request: Request) {
   const body = await request.json()
   const sipId = body.sipId as string | undefined
   const monthKey = body.monthKey as string | undefined
+  const skip = body.skip === true
 
   if (!sipId || !monthKey || !/^\d{4}-\d{2}$/.test(monthKey)) {
     return NextResponse.json({ error: "Invalid sipId or monthKey" }, { status: 400 })
@@ -50,10 +51,37 @@ export async function POST(request: Request) {
     .maybeSingle()
 
   if (existing) {
-    return NextResponse.json(
-      { error: "Already marked paid for this month", payment: existing },
-      { status: 409 },
-    )
+    const existingSkipped = existing.status === "skipped"
+    if (skip || !existingSkipped) {
+      return NextResponse.json(
+        {
+          error: existingSkipped ? "Already skipped for this month" : "Already marked paid for this month",
+          payment: existing,
+        },
+        { status: 409 },
+      )
+    }
+    // Marking paid on top of a skip: the skip row is replaced by the payment.
+    await supabase.from("sip_payments").delete().eq("id", existing.id).eq("user_id", userId)
+  }
+
+  if (skip) {
+    const { data: payment, error: skipError } = await supabase
+      .from("sip_payments")
+      .insert({
+        user_id: userId,
+        sip_id: sipId,
+        month: monthKey,
+        paid_date: `${monthKey}-01`,
+        amount: 0,
+        status: "skipped",
+      })
+      .select()
+      .single()
+    if (skipError || !payment) {
+      return NextResponse.json({ error: skipError?.message ?? "Could not skip SIP" }, { status: 500 })
+    }
+    return NextResponse.json({ payment, skipped: true })
   }
 
   const description = sipExpenseDescription(sip)
@@ -163,7 +191,7 @@ export async function GET(request: Request) {
   return NextResponse.json({ payments: data ?? [] })
 }
 
-/** Unmark a SIP payment — removes linked expense too. */
+/** Unmark a SIP payment or skip — removes the linked expense too, if any. */
 export async function DELETE(request: Request) {
   const { userId } = await auth()
   if (!userId) {

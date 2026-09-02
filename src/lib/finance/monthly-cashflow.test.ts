@@ -95,6 +95,22 @@ describe("sipStatusForMonth", () => {
     expect(status.paidAmount).toBe(1000)
   })
 
+  it("keeps skipped SIPs out of unpaid and out of the due amount", () => {
+    const sips = [
+      { id: "a", active: true, amount: 1000 } as Sip,
+      { id: "b", active: true, amount: 2000 } as Sip,
+    ]
+    const payments = [
+      { sip_id: "a", month: "2026-07", status: "skipped" } as import("@/lib/types").SipPayment,
+    ]
+    const status = sipStatusForMonth(sips, payments, "2026-07")
+    expect(status.skipped.map((s) => s.id)).toEqual(["a"])
+    expect(status.paid).toHaveLength(0)
+    expect(status.unpaid.map((s) => s.id)).toEqual(["b"])
+    expect(status.unpaidAmount).toBe(2000)
+    expect(availableAfterUnpaidSips([], sips, payments, "2026-07")).toBe(-2000)
+  })
+
   it("treats matching investment expenses as paid when no sip_payment row", () => {
     const sips = [{ id: "a", active: true, amount: 1000, fund_name: "ABC Fund" } as Sip]
     const txs = [
