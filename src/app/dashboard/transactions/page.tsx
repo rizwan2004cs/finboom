@@ -22,8 +22,9 @@ import { useAppDialog } from "@/components/app-dialog"
 import { useCurrency } from "@/hooks/use-currency"
 import { formatDueDate, todayLocalISO } from "@/lib/utils"
 import { TransactionCategoryBreakdown } from "@/components/transactions/category-breakdown"
-import { availableAfterUnpaidSips, monthKeyFromDate } from "@/lib/finance/monthly-cashflow"
-import { ensureMonthCarryForward, previousMonthKey } from "@/lib/finance/sip-payments"
+import { availableAfterUnpaidSips, monthKeyFromDate, sipStatusForMonth } from "@/lib/finance/monthly-cashflow"
+
+const LEGACY_MONTH_FORWARD_DESCRIPTION = "Previous month's forward"
 
 export default function TransactionsPageWrapper() {
   return (
@@ -91,85 +92,37 @@ function TransactionsPage() {
   const { data: sipPayments = [] } = useSipPayments(user?.id)
   const { accounts } = useAccounts()
 
-  const prevMonthKey = useMemo(() => previousMonthKey(monthFilter), [monthFilter])
-  const prevStartDate = `${prevMonthKey}-01`
-  const prevLastDay = new Date(
-    parseInt(prevMonthKey.slice(0, 4)),
-    parseInt(prevMonthKey.slice(5, 7)),
-    0,
-  ).getDate()
-  const prevEndDate = `${prevMonthKey}-${String(prevLastDay).padStart(2, "0")}`
-
-  const { data: prevMonthTransactions = [] } = useOfflineQuery<Transaction>(
-    "transactions", user?.id, {
-      filters: [
-        { column: "profile_id", op: "eq", value: activeProfile?.id ?? "" },
-        { column: "date", op: "gte", value: prevStartDate },
-        { column: "date", op: "lte", value: prevEndDate },
-      ],
-      enabled: !!activeProfile,
-      queryKey: [`prev-${prevMonthKey}`],
+  const { unpaidSipAmount, leftAfterSips } = useMemo(() => {
+    const { unpaidAmount } = sipStatusForMonth(sips, sipPayments, monthFilter, transactions)
+    return {
+      unpaidSipAmount: unpaidAmount,
+      leftAfterSips: availableAfterUnpaidSips(transactions, sips, sipPayments, monthFilter),
     }
-  )
-
-  const leftAfterSips = useMemo(
-    () => availableAfterUnpaidSips(transactions, sips, sipPayments, monthFilter),
-    [transactions, sips, sipPayments, monthFilter],
-  )
+  }, [transactions, sips, sipPayments, monthFilter])
 
   const currentCalendarMonth = monthKeyFromDate()
 
-  // One carry-forward attempt per profile+month. The effect's deps resolve at
-  // different times (transactions can still be [] while prevMonthTransactions
-  // has data), and ensureMonthCarryForward's dedupe scans the passed-in array —
-  // so re-runs against a stale/empty list inserted duplicate income rows.
-  const carryForwardKeyRef = useRef<string | null>(null)
-
+  // The app used to auto-insert a "Previous month's forward" income row on the
+  // 1st. That feature is gone; remove any such row still sitting in the viewed
+  // month so each month starts from zero.
+  const legacyForwardCleanupRef = useRef<string | null>(null)
   useEffect(() => {
-    // `loading` gates on the current month's transactions actually being
-    // fetched, so the dedupe check inside ensureMonthCarryForward sees the
-    // real list (including an already-existing carry-forward row).
-    if (!user || !activeProfile || loading || monthFilter !== currentCalendarMonth) return
-    const prevLeft = availableAfterUnpaidSips(
-      prevMonthTransactions,
-      sips,
-      sipPayments,
-      prevMonthKey,
+    if (!user || !activeProfile || loading) return
+    const stale = transactions.filter(
+      (t) =>
+        t.type === "income" &&
+        t.category === "other" &&
+        t.description === LEGACY_MONTH_FORWARD_DESCRIPTION,
     )
-    if (prevLeft <= 0) return
-
+    if (stale.length === 0) return
     const runKey = `${activeProfile.id}:${monthFilter}`
-    if (carryForwardKeyRef.current === runKey) return
-    carryForwardKeyRef.current = runKey
-
-    let cancelled = false
+    if (legacyForwardCleanupRef.current === runKey) return
+    legacyForwardCleanupRef.current = runKey
     ;(async () => {
-      const created = await ensureMonthCarryForward(
-        user.id,
-        activeProfile.id,
-        monthFilter,
-        prevLeft,
-        transactions,
-      )
-      if (!cancelled && created) {
-        queryClient.invalidateQueries({ queryKey: ["transactions"] })
-      }
+      for (const t of stale) await deleteRow("transactions", t.id)
+      queryClient.invalidateQueries({ queryKey: ["transactions"] })
     })()
-
-    return () => { cancelled = true }
-  }, [
-    user,
-    activeProfile,
-    loading,
-    monthFilter,
-    currentCalendarMonth,
-    prevMonthKey,
-    prevMonthTransactions,
-    sips,
-    sipPayments,
-    transactions,
-    queryClient,
-  ])
+  }, [user, activeProfile, loading, transactions, monthFilter, queryClient])
 
   const partyLinkByTxId = useMemo(() => {
     const partyName = new Map(parties.map(p => [p.id, p.name]))
@@ -361,7 +314,11 @@ function TransactionsPage() {
             {savingsRate.toFixed(0)}%
           </p>
           <p className="text-[10px] text-[#86868b] mt-1">
-            Left {formatCurrency(leftAfterSips)}
+            {unpaidSipAmount > 0
+              ? leftAfterSips >= 0
+                ? `Left ${formatCurrency(leftAfterSips)} after ${formatCurrency(unpaidSipAmount)} SIPs`
+                : `Short ${formatCurrency(-leftAfterSips)} for ${formatCurrency(unpaidSipAmount)} SIPs`
+              : `Left ${formatCurrency(leftAfterSips)}`}
           </p>
         </div>
       </div>
