@@ -176,3 +176,28 @@ describe("credit cards", () => {
     expect(spendGuardError(acc({ type: "credit_card", credit_limit: null }), -500000, 1)).toBeNull()
   })
 })
+
+describe("computeNetWorth", () => {
+  it("adds cash & bank to assets and card dues to liabilities, one formula everywhere", async () => {
+    const { computeNetWorth } = await import("./net-worth")
+    const accounts = [
+      acc({ id: "b1", type: "bank", opening_balance: 0 }),
+      acc({ id: "c1", type: "credit_card", opening_balance: -6353 }),
+    ]
+    const txs = [
+      { id: "t1", account_id: "b1", type: "income", amount: 59000, date: "2026-09-01" } as Transaction,
+    ]
+    const w = computeNetWorth({
+      assets: [{ current_value: 133629 }],
+      liabilities: [],
+      accounts,
+      transactions: txs,
+    })
+    expect(w.investments).toBe(133629)
+    expect(w.cashAndBank).toBe(59000)
+    expect(w.cardDues).toBe(6353)
+    expect(w.totalAssets).toBe(192629)
+    expect(w.totalLiabilities).toBe(6353)
+    expect(w.netWorth).toBe(186276)
+  })
+})

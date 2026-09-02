@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/utils/supabase/admin"
+import { computeNetWorth, NET_WORTH_SNAPSHOT_META } from "@/lib/finance/net-worth"
 
 const CRON_SECRET = process.env.CRON_SECRET
 
@@ -45,40 +46,53 @@ export async function GET(req: NextRequest) {
       continue
     }
 
-    const [{ data: assets }, { data: liabilities }] = await Promise.all([
-      supabase
-        .from("assets")
-        .select("current_value, asset_class")
-        .eq("user_id", profile.user_id)
-        .eq("profile_id", profile.id),
-      supabase
-        .from("liabilities")
-        .select("outstanding_amount")
-        .eq("user_id", profile.user_id)
-        .eq("profile_id", profile.id),
-    ])
+    const [{ data: assets }, { data: liabilities }, { data: accounts }, { data: transactions }] =
+      await Promise.all([
+        supabase
+          .from("assets")
+          .select("current_value, asset_class")
+          .eq("user_id", profile.user_id)
+          .eq("profile_id", profile.id),
+        supabase
+          .from("liabilities")
+          .select("outstanding_amount")
+          .eq("user_id", profile.user_id)
+          .eq("profile_id", profile.id),
+        supabase
+          .from("accounts")
+          .select("id, type, opening_balance, opening_date")
+          .eq("user_id", profile.user_id)
+          .eq("profile_id", profile.id),
+        supabase
+          .from("transactions")
+          .select("account_id, type, amount, date")
+          .eq("user_id", profile.user_id)
+          .eq("profile_id", profile.id)
+          .not("account_id", "is", null),
+      ])
 
-    const totalAssets = (assets || []).reduce(
-      (sum, a) => sum + Number(a.current_value),
-      0
-    )
-    const totalLiabilities = (liabilities || []).reduce(
-      (sum, l) => sum + Number(l.outstanding_amount),
-      0
-    )
+    // Same formula as the dashboard and the manual "Take snapshot" button.
+    const wealth = computeNetWorth({
+      assets: assets || [],
+      liabilities: liabilities || [],
+      accounts: accounts || [],
+      transactions: transactions || [],
+    })
 
     const breakdown: Record<string, number> = {}
     for (const a of assets || []) {
       const cls = a.asset_class
       breakdown[cls] = (breakdown[cls] || 0) + Number(a.current_value)
     }
+    breakdown[NET_WORTH_SNAPSHOT_META.cashAndBank] = wealth.cashAndBank
+    breakdown[NET_WORTH_SNAPSHOT_META.cardDues] = wealth.cardDues
 
     await supabase.from("snapshots").insert({
       user_id: profile.user_id,
       profile_id: profile.id,
-      total_assets: totalAssets,
-      total_liabilities: totalLiabilities,
-      net_worth: totalAssets - totalLiabilities,
+      total_assets: wealth.totalAssets,
+      total_liabilities: wealth.totalLiabilities,
+      net_worth: wealth.netWorth,
       asset_breakdown: breakdown,
       currency: "INR",
       snapshot_date: snapshotDate,

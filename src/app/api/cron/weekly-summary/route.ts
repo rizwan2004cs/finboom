@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/utils/supabase/admin"
+import { computeNetWorth } from "@/lib/finance/net-worth"
 import webpush from "web-push"
 import { sendWeeklyReports, type WeeklyReportEntry } from "@/lib/email/send"
 
@@ -48,17 +49,25 @@ export async function GET(req: NextRequest) {
   const reportEntries: WeeklyReportEntry[] = []
 
   for (const userId of uniqueUserIds) {
-    const [{ data: assets }, { data: liabilities }] = await Promise.all([
-      supabase.from("assets").select("name, current_value").eq("user_id", userId),
-      supabase.from("liabilities").select("outstanding_amount").eq("user_id", userId),
-    ])
+    const [{ data: assets }, { data: liabilities }, { data: accounts }, { data: transactions }] =
+      await Promise.all([
+        supabase.from("assets").select("name, current_value").eq("user_id", userId),
+        supabase.from("liabilities").select("outstanding_amount").eq("user_id", userId),
+        supabase.from("accounts").select("id, type, opening_balance, opening_date").eq("user_id", userId),
+        supabase
+          .from("transactions")
+          .select("account_id, type, amount, date")
+          .eq("user_id", userId)
+          .not("account_id", "is", null),
+      ])
 
-    const totalAssets = (assets || []).reduce((sum, a) => sum + Number(a.current_value), 0)
-    const totalLiabilities = (liabilities || []).reduce(
-      (sum, l) => sum + Number(l.outstanding_amount),
-      0,
-    )
-    const currentNetWorth = totalAssets - totalLiabilities
+    // Same formula as the dashboard — see lib/finance/net-worth.ts.
+    const { totalAssets, totalLiabilities, netWorth: currentNetWorth } = computeNetWorth({
+      assets: assets || [],
+      liabilities: liabilities || [],
+      accounts: accounts || [],
+      transactions: transactions || [],
+    })
 
     const { data: latestSnapshots } = await supabase
       .from("snapshots")

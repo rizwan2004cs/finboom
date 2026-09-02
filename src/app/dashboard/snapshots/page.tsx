@@ -8,7 +8,8 @@ import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { useDeleteMutation } from "@/hooks/use-offline-mutation"
 import { useQueryClient } from "@tanstack/react-query"
 import { Camera, TrendingUp, TrendingDown, Trash2 } from "lucide-react"
-import type { Snapshot, Asset, Liability, Transaction, Sip, SipPayment } from "@/lib/types"
+import type { Snapshot, Asset, Liability, Transaction, Sip, SipPayment, Account } from "@/lib/types"
+import { computeNetWorth, NET_WORTH_SNAPSHOT_META } from "@/lib/finance/net-worth"
 import { ASSET_CLASSES } from "@/lib/constants"
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
 import { useAppDialog } from "@/components/app-dialog"
@@ -62,11 +63,12 @@ export default function SnapshotsPage() {
 
     const pfFilter = { column: "profile_id", op: "eq" as const, value: activeProfile.id }
     // Fetch current assets and liabilities
-    const [assetRows, liabilities, txRows, sipRows, paymentRes] = await Promise.all([
+    const [assetRows, liabilities, txRows, sipRows, accountRows, paymentRes] = await Promise.all([
       fetchTable<Asset>("assets", user.id, { filters: [pfFilter] }),
       fetchTable<Liability>("liabilities", user.id, { filters: [pfFilter] }),
       fetchTable<Transaction>("transactions", user.id, { filters: [pfFilter] }),
       fetchTable<Sip>("sips", user.id, { filters: [pfFilter] }),
+      fetchTable<Account>("accounts", user.id, { filters: [pfFilter] }),
       fetch("/api/sip-payments").then(async (r) => {
         const j = await r.json()
         return (j.payments ?? []) as SipPayment[]
@@ -74,12 +76,18 @@ export default function SnapshotsPage() {
     ])
     const paymentRows = paymentRes
 
-    const totalAssets = assetRows.reduce((sum, a) => sum + Number(a.current_value), 0)
-    const totalLiabilities = liabilities.reduce((sum, l) => sum + Number(l.outstanding_amount), 0)
-    const netWorth = totalAssets - totalLiabilities
+    // Same formula as the dashboard — snapshots must never disagree with it.
+    const wealth = computeNetWorth({
+      assets: assetRows, liabilities, accounts: accountRows, transactions: txRows,
+    })
+    const { totalAssets, totalLiabilities, netWorth } = wealth
 
     const todayStr = todayLocalISO()
-    const breakdown = buildSnapshotBreakdown(assetRows, txRows, sipRows, new Date(), paymentRows)
+    const breakdown = {
+      ...buildSnapshotBreakdown(assetRows, txRows, sipRows, new Date(), paymentRows),
+      [NET_WORTH_SNAPSHOT_META.cashAndBank]: wealth.cashAndBank,
+      [NET_WORTH_SNAPSHOT_META.cardDues]: wealth.cardDues,
+    }
 
     const payload = {
       user_id: user.id,

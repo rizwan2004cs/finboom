@@ -5,11 +5,12 @@ import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
 import { insertRow } from "@/lib/offline"
 import { useOfflineQuery } from "@/hooks/use-offline-query"
+import { computeNetWorth } from "@/lib/finance/net-worth"
 import { useDeleteMutation } from "@/hooks/use-offline-mutation"
 import { useQueryClient } from "@tanstack/react-query"
 import { Users, Plus, Trash2, Building2, User2, CheckCircle } from "lucide-react"
 import { useAppDialog } from "@/components/app-dialog"
-import type { Profile, Asset, Liability } from "@/lib/types"
+import type { Profile, Asset, Liability, Account, Transaction } from "@/lib/types"
 import { useCurrency } from "@/hooks/use-currency"
 
 export default function ProfilesPage() {
@@ -27,18 +28,23 @@ export default function ProfilesPage() {
   )
   const { data: allAssets = [] } = useOfflineQuery<Asset>("assets", user?.id)
   const { data: allLiabilities = [] } = useOfflineQuery<Liability>("liabilities", user?.id)
+  const { data: allAccounts = [] } = useOfflineQuery<Account>("accounts", user?.id)
+  const { data: allTransactions = [] } = useOfflineQuery<Transaction>("transactions", user?.id)
   const deleteMut = useDeleteMutation("profiles")
 
   const profileSummaries = useMemo(() => {
     const summaries: Record<string, { assets: number; liabilities: number }> = {}
     for (const profile of profiles) {
-      summaries[profile.id] = {
-        assets: allAssets.filter(a => a.profile_id === profile.id).reduce((sum, a) => sum + Number(a.current_value), 0),
-        liabilities: allLiabilities.filter(l => l.profile_id === profile.id).reduce((sum, l) => sum + Number(l.outstanding_amount), 0),
-      }
+      const wealth = computeNetWorth({
+        assets: allAssets.filter(a => a.profile_id === profile.id),
+        liabilities: allLiabilities.filter(l => l.profile_id === profile.id),
+        accounts: allAccounts.filter(a => a.profile_id === profile.id),
+        transactions: allTransactions.filter(t => t.profile_id === profile.id),
+      })
+      summaries[profile.id] = { assets: wealth.totalAssets, liabilities: wealth.totalLiabilities }
     }
     return summaries
-  }, [profiles, allAssets, allLiabilities])
+  }, [profiles, allAssets, allLiabilities, allAccounts, allTransactions])
 
   async function createProfile(e: React.FormEvent) {
     e.preventDefault()

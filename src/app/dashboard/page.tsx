@@ -16,6 +16,7 @@ import { useCurrency } from "@/hooks/use-currency"
 import { useSipPayments } from "@/hooks/use-sip-payments"
 import { useAccounts } from "@/hooks/use-accounts"
 import { accountBalance, cashAndBankAccounts, summarizeCards } from "@/lib/finance/accounts"
+import { computeNetWorth } from "@/lib/finance/net-worth"
 
 export default function DashboardPage() {
   const { formatCurrency } = useCurrency()
@@ -57,12 +58,10 @@ export default function DashboardPage() {
 
   const loading = loadingAssets || loadingLiabilities || loadingGoals || loadingTransactions || !user || !activeProfile
 
-  const totalAssets = assets.reduce((sum, a) => sum + Number(a.current_value), 0)
-  // Credit card dues count against net worth alongside loans.
+  // One formula for every screen — see lib/finance/net-worth.ts.
+  const wealth = computeNetWorth({ assets, liabilities, accounts, transactions })
+  const { totalAssets, totalLiabilities, netWorth } = wealth
   const cardSummary = summarizeCards(accounts, transactions)
-  const totalLiabilities =
-    liabilities.reduce((sum, l) => sum + Number(l.outstanding_amount), 0) + cardSummary.totalOutstanding
-  const netWorth = totalAssets - totalLiabilities
   
   // Snapshots arrive newest-first; present oldest→newest for the chart.
   const orderedSnapshots = [...snapshots].reverse()
@@ -215,7 +214,10 @@ export default function DashboardPage() {
             </div>
           </div>
           <p className="text-[28px] font-semibold mt-2 text-[#1d1d1f]">{formatCurrency(totalAssets)}</p>
-          <p className="text-[12px] text-[#86868b] mt-1">{assets.length} investments tracked</p>
+          <p className="text-[12px] text-[#86868b] mt-1">
+            {formatCurrency(wealth.investments)} in {assets.length} investment{assets.length === 1 ? "" : "s"}
+            {wealth.cashAndBank !== 0 && ` · ${formatCurrency(wealth.cashAndBank)} cash & bank`}
+          </p>
         </div>
 
         {/* Total Liabilities */}
@@ -227,7 +229,10 @@ export default function DashboardPage() {
             </div>
           </div>
           <p className="text-[28px] font-semibold mt-2 text-[#1d1d1f]">{formatCurrency(totalLiabilities)}</p>
-          <p className="text-[12px] text-[#86868b] mt-1">{liabilities.length} active loans</p>
+          <p className="text-[12px] text-[#86868b] mt-1">
+            {liabilities.length} active loan{liabilities.length === 1 ? "" : "s"}
+            {wealth.cardDues > 0 && ` · ${formatCurrency(wealth.cardDues)} card dues`}
+          </p>
         </div>
       </div>
 

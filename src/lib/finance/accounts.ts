@@ -26,7 +26,10 @@ function signedAmount(t: Pick<Transaction, "type" | "amount">): number {
  *  Transactions dated before the opening as-of date are skipped — the opening
  *  balance already reflects them, so applying them again would double-count
  *  (ISO date strings compare lexicographically). */
-export function accountBalance(account: Account, transactions: Transaction[]): number {
+export function accountBalance(
+  account: Pick<Account, "id" | "opening_balance" | "opening_date">,
+  transactions: Pick<Transaction, "account_id" | "type" | "amount" | "date">[],
+): number {
   let balance = Number(account.opening_balance)
   for (const t of transactions) {
     if (t.account_id !== account.id || t.date < account.opening_date) continue
