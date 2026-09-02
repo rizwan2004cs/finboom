@@ -6,9 +6,9 @@ import { useProfile } from "@/hooks/use-profile"
 import { deleteRow, insertRow } from "@/lib/offline"
 import { isValidISODate, isFutureISODate, todayLocalISO } from "@/lib/utils"
 import { X, Loader2, ArrowDown } from "lucide-react"
-import { TRANSFER_CATEGORY } from "@/lib/constants"
+import { CREDIT_CARD_BILL_CATEGORY, TRANSFER_CATEGORY } from "@/lib/constants"
 import type { Account, Transaction } from "@/lib/types"
-import { cashAndBankAccounts, isCreditCard } from "@/lib/finance/accounts"
+import { cashAndBankAccounts, isCreditCard, untrackedCardDues } from "@/lib/finance/accounts"
 import { CustomSelect } from "@/components/custom-select"
 import { useCurrency } from "@/hooks/use-currency"
 
@@ -20,6 +20,9 @@ interface Props {
   defaultToId?: string
   /** Prefilled amount in INR (e.g. a card's outstanding balance). */
   defaultAmountInr?: number
+  /** Profile transactions — needed to work out how much of a card payment
+   *  clears pre-tracking dues (logged as an expense, not a transfer). */
+  transactions?: Transaction[]
   onClose: () => void
   onSave: () => void
 }
@@ -27,8 +30,8 @@ interface Props {
 /** Move money between two own accounts. Creates two linked transaction legs
  *  sharing a transfer_group_id: an expense out of the source account and an
  *  income into the destination — neither counts as real cashflow. */
-export function TransferModal({ accounts, defaultFromId, defaultToId, defaultAmountInr, onClose, onSave }: Readonly<Props>) {
-  const { symbol, currency, toINR, convert } = useCurrency()
+export function TransferModal({ accounts, defaultFromId, defaultToId, defaultAmountInr, transactions = [], onClose, onSave }: Readonly<Props>) {
+  const { symbol, currency, toINR, convert, formatCurrency } = useCurrency()
   const { user } = useUser()
   const { activeProfile } = useProfile()
   const [saving, setSaving] = useState(false)
@@ -51,6 +54,10 @@ export function TransferModal({ accounts, defaultFromId, defaultToId, defaultAmo
   const todayStr = todayLocalISO()
   const toAccount = accounts.find(a => a.id === form.to_id)
   const payingCard = !!toAccount && isCreditCard(toAccount)
+  // Portion of this payment that clears dues from before the card was tracked.
+  const untrackedDues = payingCard && toAccount ? untrackedCardDues(toAccount, transactions) : 0
+  const enteredInr = Math.round(toINR(parseFloat(form.amount) || 0, currency) * 100) / 100
+  const expensePortion = payingCard ? Math.min(Math.max(0, enteredInr), untrackedDues) : 0
   const options = accounts.map(a => ({ value: a.id, label: isCreditCard(a) ? `${a.name} (card)` : a.name }))
 
   async function handleSubmit(e: React.FormEvent) {
@@ -105,16 +112,48 @@ export function TransferModal({ accounts, defaultFromId, defaultToId, defaultAmo
       updated_at: new Date().toISOString(),
     }
 
-    const outLeg = await insertRow<Transaction>("transactions", {
-      ...common,
-      type: "expense",
-      account_id: form.from_id,
-      description: note || (payingCard ? `Card bill · ${toName}` : `Transfer to ${toName}`),
-    })
-    if (outLeg.error) {
-      setSaving(false)
-      setError(outLeg.error)
-      return
+    // Money leaving the source account. For a card bill, the slice that clears
+    // pre-tracking dues is a real expense (those swipes were never logged);
+    // anything beyond it was already expensed at swipe time, so it's a transfer.
+    const expenseInr = payingCard ? Math.min(amountInr, untrackedCardDues(toAcc!, transactions)) : 0
+    const transferOutInr = Math.round((amountInr - expenseInr) * 100) / 100
+    const created: string[] = []
+    const rollback = async () => {
+      for (const id of created) await deleteRow("transactions", id)
+    }
+
+    if (expenseInr > 0) {
+      const billLeg = await insertRow<Transaction>("transactions", {
+        ...common,
+        type: "expense",
+        category: CREDIT_CARD_BILL_CATEGORY,
+        amount: expenseInr,
+        account_id: form.from_id,
+        description: note || `Credit card bill · ${toName}`,
+      })
+      if (billLeg.error) {
+        setSaving(false)
+        setError(billLeg.error)
+        return
+      }
+      if (billLeg.data?.id) created.push(billLeg.data.id)
+    }
+
+    if (transferOutInr > 0) {
+      const outLeg = await insertRow<Transaction>("transactions", {
+        ...common,
+        type: "expense",
+        amount: transferOutInr,
+        account_id: form.from_id,
+        description: note || (payingCard ? `Card bill · ${toName}` : `Transfer to ${toName}`),
+      })
+      if (outLeg.error) {
+        await rollback()
+        setSaving(false)
+        setError(outLeg.error)
+        return
+      }
+      if (outLeg.data?.id) created.push(outLeg.data.id)
     }
 
     const inLeg = await insertRow<Transaction>("transactions", {
@@ -124,8 +163,8 @@ export function TransferModal({ accounts, defaultFromId, defaultToId, defaultAmo
       description: note || (payingCard ? `Bill payment from ${fromName}` : `Transfer from ${fromName}`),
     })
     if (inLeg.error) {
-      // Don't leave a one-sided transfer behind — roll back the out leg.
-      if (outLeg.data?.id) await deleteRow("transactions", outLeg.data.id)
+      // Don't leave a one-sided transfer behind — roll back what was written.
+      await rollback()
       setSaving(false)
       setError(inLeg.error)
       return
@@ -193,6 +232,14 @@ export function TransferModal({ accounts, defaultFromId, defaultToId, defaultAmo
               className="mt-1 w-full px-4 py-3 rounded-xl bg-[#f5f5f7] dark:bg-white/[0.06] border-0 text-2xl font-bold text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10 text-center"
             />
           </div>
+
+          {payingCard && expensePortion > 0 && (
+            <p className="text-[11px] text-[#86868b] bg-[#f5f5f7] dark:bg-white/[0.06] rounded-xl px-3 py-2">
+              {formatCurrency(expensePortion)} of this clears dues from before you started tracking this card, so it is
+              recorded as a <span className="font-medium text-[#1d1d1f] dark:text-white">Credit Card Bill</span> expense
+              {enteredInr > expensePortion ? "; the rest was already logged when you spent it, so it moves as a transfer." : "."}
+            </p>
+          )}
 
           {/* Date */}
           <div>

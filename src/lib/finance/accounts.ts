@@ -174,3 +174,26 @@ export function spendGuardError(
   }
   return null
 }
+
+/** Dues on a card that were incurred before it was tracked (its opening
+ *  outstanding) and have not yet been cleared by bill payments. Payments are
+ *  applied to these oldest dues first. Those spends were never logged as
+ *  expenses, so the payment that clears them is the expense. */
+export function untrackedCardDues(
+  card: Pick<Account, "id" | "type" | "opening_balance" | "opening_date">,
+  transactions: Pick<Transaction, "account_id" | "type" | "date" | "amount" | "category">[],
+): number {
+  if (!isCreditCard(card)) return 0
+  const opening = Math.max(0, -Number(card.opening_balance))
+  if (opening === 0) return 0
+  const paid = transactions
+    .filter(
+      (t) =>
+        t.account_id === card.id &&
+        t.type === "income" &&
+        t.category === TRANSFER_CATEGORY &&
+        t.date >= card.opening_date,
+    )
+    .reduce((sum, t) => sum + Number(t.amount), 0)
+  return Math.max(0, opening - paid)
+}

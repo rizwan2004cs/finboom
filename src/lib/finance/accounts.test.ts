@@ -10,6 +10,7 @@ import {
   nextBillDueDate,
   spendGuardError,
   summarizeCards,
+  untrackedCardDues,
   withoutAccountMovements,
 } from "./accounts"
 import { sumCashflow } from "./monthly-cashflow"
@@ -199,5 +200,26 @@ describe("computeNetWorth", () => {
     expect(w.totalAssets).toBe(192629)
     expect(w.totalLiabilities).toBe(6353)
     expect(w.netWorth).toBe(186276)
+  })
+})
+
+describe("untrackedCardDues", () => {
+  const card = acc({ id: "c1", type: "credit_card", opening_balance: -6353, opening_date: "2026-09-01" })
+  it("is the opening outstanding until bill payments clear it", () => {
+    expect(untrackedCardDues(card, [])).toBe(6353)
+    const partPaid = [
+      { account_id: "c1", type: "income", category: "transfer", amount: 2000, date: "2026-09-02" } as Transaction,
+      // a swipe on the card doesn't change what's untracked
+      { account_id: "c1", type: "expense", category: "food", amount: 500, date: "2026-09-02" } as Transaction,
+    ]
+    expect(untrackedCardDues(card, partPaid)).toBe(4353)
+    const fullyPaid = [
+      { account_id: "c1", type: "income", category: "transfer", amount: 6353, date: "2026-09-02" } as Transaction,
+    ]
+    expect(untrackedCardDues(card, fullyPaid)).toBe(0)
+  })
+  it("is zero for cash/bank accounts and cards opened with no dues", () => {
+    expect(untrackedCardDues(acc({ type: "bank", opening_balance: 500 }), [])).toBe(0)
+    expect(untrackedCardDues(acc({ type: "credit_card", opening_balance: 0 }), [])).toBe(0)
   })
 })

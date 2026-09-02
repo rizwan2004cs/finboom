@@ -357,6 +357,7 @@ export default function AccountsPage() {
       {showTransfer && (
         <TransferModal
           accounts={accounts}
+          transactions={transactions}
           defaultFromId={transferFromId}
           onClose={() => setShowTransfer(false)}
           onSave={() => { setShowTransfer(false); invalidate() }}
@@ -365,6 +366,7 @@ export default function AccountsPage() {
       {payCard && (
         <TransferModal
           accounts={accounts}
+          transactions={transactions}
           defaultFromId={primaryId && primaryId !== payCard.id ? primaryId : undefined}
           defaultToId={payCard.id}
           defaultAmountInr={cardOutstanding(balances.get(payCard.id) ?? 0)}

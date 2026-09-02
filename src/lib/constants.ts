@@ -55,6 +55,7 @@ export const EXPENSE_CATEGORIES = [
   { id: 'personal', label: 'Personal Care', icon: 'Sparkles' },
   { id: 'travel', label: 'Travel', icon: 'Plane' },
   { id: 'gifts', label: 'Gifts & Donations', icon: 'Gift' },
+  { id: 'credit_card_bill', label: 'Credit Card Bill', icon: 'CreditCard' },
   { id: 'other', label: 'Other', icon: 'MoreHorizontal' },
 ] as const
 
@@ -76,6 +77,9 @@ export const INCOME_CATEGORIES = [
  *  reality. Neither is real income/expense — aggregations exclude them via
  *  isAccountMovement in @/lib/finance/accounts. Not listed in the
  *  income/expense category pickers on purpose. */
+/** Expense category used for the part of a card bill payment that clears dues
+ *  incurred BEFORE the card was tracked (those spends were never logged). */
+export const CREDIT_CARD_BILL_CATEGORY = 'credit_card_bill'
 export const TRANSFER_CATEGORY = 'transfer'
 export const ADJUSTMENT_CATEGORY = 'adjustment'
 
