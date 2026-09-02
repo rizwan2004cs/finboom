@@ -1,6 +1,13 @@
 import type { Asset, Sip, SipPayment, Transaction } from "@/lib/types"
-import { sipExpenseDescription } from "@/lib/finance/sip-payments"
 import { isAccountMovement } from "@/lib/finance/accounts"
+
+/** Description written on the expense row a SIP payment creates. Lives here
+ *  (not in sip-payments.ts) so server code can import sipStatusForMonth
+ *  without dragging the IndexedDB client into its bundle. */
+export function sipExpenseDescription(sip: Pick<Sip, "name" | "fund_name">): string {
+  const label = sip.fund_name || sip.name
+  return `SIP: ${label}`
+}
 
 /** YYYY-MM for a calendar month. */
 export function monthKeyFromDate(date: Date = new Date()): string {
@@ -69,6 +76,10 @@ export function sipAppliesToMonth(sip: Sip, monthKey: string): boolean {
   return !start || monthKey >= start
 }
 
+/** sip_payments.transaction_id arrived with migration 20260705130000; rows
+ *  created before it legitimately have no link. */
+const SIP_PAYMENT_LINKS_SINCE = "2026-07-05"
+
 export function isSkippedPayment(p: Pick<SipPayment, "status">): boolean {
   return p.status === "skipped"
 }
@@ -90,21 +101,29 @@ export function sipStatusForMonth(
 } {
   const monthPayments = payments.filter((p) => p.month === monthKey)
   const skippedIds = new Set(monthPayments.filter(isSkippedPayment).map((p) => p.sip_id))
-  const paidIds = new Set(
-    monthPayments.filter((p) => !isSkippedPayment(p)).map((p) => p.sip_id),
-  )
-  const active = sips.filter((s) => s.active && sipAppliesToMonth(s, monthKey))
   const monthTx = transactionsInMonth(transactions, monthKey)
+  const hasSipExpense = (sip: Sip) => {
+    const desc = sipExpenseDescription(sip)
+    return monthTx.some(
+      (t) => t.type === "expense" && t.category === "investment" && t.description === desc,
+    )
+  }
+  const sipById = new Map(sips.map((s) => [s.id, s]))
+  const paidIds = new Set<string>()
+  for (const p of monthPayments) {
+    if (isSkippedPayment(p)) continue
+    // Deleting the SIP's expense nulls transaction_id (FK ON DELETE SET NULL)
+    // but leaves the row. Such an orphan only counts as paid while the
+    // expense is actually present in the month; otherwise the SIP is due again.
+    // Rows written before the column existed never had a link — leave them paid.
+    const legacyRow = !!p.created_at && p.created_at < SIP_PAYMENT_LINKS_SINCE
+    const sip = p.transaction_id == null && !legacyRow ? sipById.get(p.sip_id) : undefined
+    if (!sip || hasSipExpense(sip)) paidIds.add(p.sip_id)
+  }
+  const active = sips.filter((s) => s.active && sipAppliesToMonth(s, monthKey))
   for (const sip of active) {
     if (paidIds.has(sip.id) || skippedIds.has(sip.id)) continue
-    const desc = sipExpenseDescription(sip)
-    const hasExpense = monthTx.some(
-      (t) =>
-        t.type === "expense" &&
-        t.category === "investment" &&
-        t.description === desc,
-    )
-    if (hasExpense) paidIds.add(sip.id)
+    if (hasSipExpense(sip)) paidIds.add(sip.id)
   }
   const unpaid = active.filter((s) => !paidIds.has(s.id) && !skippedIds.has(s.id))
   const paid = active.filter((s) => paidIds.has(s.id))
@@ -163,7 +182,7 @@ export function buildSnapshotBreakdown(
   const { income, expense, surplus } = sumCashflow(transactionsInMonth(transactions, monthKey))
   // Pass transactions so SIPs already logged as investment expenses count as paid
   // (otherwise they'd be subtracted twice: once in surplus, once in unpaidAmount).
-  const { unpaidAmount, paidIds } = sipStatusForMonth(sips, sipPayments, monthKey, transactions)
+  const { unpaidAmount } = sipStatusForMonth(sips, sipPayments, monthKey, transactions)
   const liquid = sumLiquidAssets(assets)
   const liquidAfterSips = Math.max(0, liquid - unpaidAmount)
   const availableThisMonth = surplus - unpaidAmount

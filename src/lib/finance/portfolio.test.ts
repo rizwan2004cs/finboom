@@ -110,3 +110,20 @@ describe("computeTaxSaverTotal", () => {
     expect(total).toBe(150_000)
   })
 })
+
+describe("computeConcentration with cash & bank", () => {
+  it("counts account balances as liquid and in the total", () => {
+    const assets = [
+      { name: "Nifty", asset_class: "mutual_fund", current_value: 90000 },
+      { name: "Flat", asset_class: "real_estate", current_value: 10000 },
+    ] as Parameters<typeof computeConcentration>[0]
+    const without = computeConcentration(assets)
+    const withCash = computeConcentration(assets, 100000)
+    expect(without.liquidPct).toBe(0)
+    expect(withCash.total).toBe(200000)
+    expect(withCash.liquidPct).toBe(50)
+    expect(withCash.warnings.some((w) => w.includes("quickly accessible"))).toBe(false)
+    // negative (overdrawn) cash adds nothing
+    expect(computeConcentration(assets, -500).total).toBe(100000)
+  })
+})

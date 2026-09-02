@@ -130,15 +130,23 @@ export interface ConcentrationResult {
   warnings: string[]
 }
 
-export function computeConcentration(assets: AssetLike[]): ConcentrationResult {
-  const total = assets.reduce((s, a) => s + Number(a.current_value), 0)
-  if (total <= 0) {
-    return { total: 0, hhi: 0, diversificationScore: 0, liquidPct: 0, equityPct: 0, debtPct: 0, warnings: [] }
+/** `extraLiquid` = cash & bank account balances (tracked as accounts, not
+ *  assets) so the liquidity check doesn't ignore money sitting in the bank. */
+export function computeConcentration(assets: AssetLike[], extraLiquid = 0): ConcentrationResult {
+  const liquidExtra = Math.max(0, extraLiquid)
+  // Concentration (top holding, classes, HHI, equity/debt) is a question about
+  // the INVESTED portfolio, so it uses the assets-only total; only liquidity
+  // asks "of everything I hold, how much is quickly accessible".
+  const invested = assets.reduce((s, a) => s + Number(a.current_value), 0)
+  const total = invested + liquidExtra
+  if (total <= 0 || assets.length === 0 || invested <= 0) {
+    // Nothing invested: no concentration to measure; cash alone is 100% liquid.
+    return { total: Math.max(0, total), hhi: 0, diversificationScore: 0, liquidPct: total > 0 ? 100 : 0, equityPct: 0, debtPct: 0, warnings: [] }
   }
 
   const sortedHoldings = [...assets].sort((a, b) => Number(b.current_value) - Number(a.current_value))
   const top = sortedHoldings[0]
-  const topHolding = { name: top.name, pct: (Number(top.current_value) / total) * 100 }
+  const topHolding = { name: top.name, pct: (Number(top.current_value) / invested) * 100 }
 
   const classes = computeClassAllocation(assets)
   const topClass = classes[0] ? { label: classes[0].label, pct: classes[0].pct } : undefined
@@ -152,7 +160,7 @@ export function computeConcentration(assets: AssetLike[]): ConcentrationResult {
   const debtPct = macro.find((m) => m.bucket === "debt")?.pct ?? 0
   const liquidValue = assets
     .filter((a) => LIQUID_CLASSES.has(a.asset_class))
-    .reduce((s, a) => s + Number(a.current_value), 0)
+    .reduce((s, a) => s + Number(a.current_value), 0) + liquidExtra
   const liquidPct = (liquidValue / total) * 100
 
   const warnings: string[] = []

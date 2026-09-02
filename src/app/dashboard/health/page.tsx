@@ -1,14 +1,20 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useMemo, useState } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
 import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { useInsertMutation, useUpdateMutation } from "@/hooks/use-offline-mutation"
+import { useAccounts } from "@/hooks/use-accounts"
 import { Shield, Heart, AlertTriangle, CheckCircle, Info } from "lucide-react"
 import type { HealthCheck, Asset, Liability, Goal, Transaction } from "@/lib/types"
-import { computeWealthCheck, type WealthDimension } from "@/lib/finance/wealth-check"
-import { isAccountMovement } from "@/lib/finance/accounts"
+import {
+  EMERGENCY_FUND_TARGET_MONTHS,
+  averageMonthlyCashflow,
+  computeWealthCheck,
+  emergencyFundMonths,
+  type WealthDimension,
+} from "@/lib/finance/wealth-check"
 import { useCurrency } from "@/hooks/use-currency"
 
 export default function HealthPage() {
@@ -26,7 +32,6 @@ export default function HealthPage() {
     emergency_fund_months: 0,
     monthly_expenses: 0,
   })
-  const [monthlyIncome, setMonthlyIncome] = useState(0)
 
   const { activeProfile } = useProfile()
   const pf = activeProfile ? [{ column: "profile_id", op: "eq" as const, value: activeProfile.id }] : undefined
@@ -34,6 +39,7 @@ export default function HealthPage() {
   const { data: assets = [] } = useOfflineQuery<Asset>("assets", user?.id, { filters: pf, enabled: !!activeProfile })
   const { data: liabilities = [] } = useOfflineQuery<Liability>("liabilities", user?.id, { filters: pf, enabled: !!activeProfile })
   const { data: goals = [] } = useOfflineQuery<Goal>("goals", user?.id, { filters: pf, enabled: !!activeProfile })
+  const { accounts } = useAccounts()
 
   // Persist through the same offline-first layer as the rest of the app
   // (Supabase + IndexedDB + sync queue) so saves survive reloads and offline
@@ -53,26 +59,18 @@ export default function HealthPage() {
   })
   const saving = insertHealth.isPending || updateHealth.isPending
 
-  // Sync fetched data into local state for editing
-  useEffect(() => {
-    if (healthData) setHealth(healthData)
-  }, [healthData])
+  // Sync the fetched row into the editable form state. Done during render
+  // (React's "adjust state when a prop changes" pattern) rather than in an
+  // effect, so the first paint already shows the saved values.
+  const [syncedRow, setSyncedRow] = useState<typeof healthData | undefined>(undefined)
+  if (healthData && healthData !== syncedRow) {
+    setSyncedRow(healthData)
+    setHealth(healthData)
+  }
 
-  useEffect(() => {
-    // Average income over the last 6 calendar months, divided by the number of
-    // months that actually had income — not by an arbitrary count/3, which
-    // overestimated monthly income roughly 3× and skewed every income-based score.
-    const now = new Date()
-    const windowStart = new Date(now.getFullYear(), now.getMonth() - 5, 1)
-    const incomes = txData.filter(t => t.type === "income" && !isAccountMovement(t) && new Date(t.date) >= windowStart)
-    if (incomes.length > 0) {
-      const total = incomes.reduce((sum, t) => sum + Number(t.amount), 0)
-      const months = new Set(incomes.map(t => t.date.slice(0, 7)))
-      setMonthlyIncome(months.size > 0 ? total / months.size : 0)
-    } else {
-      setMonthlyIncome(0)
-    }
-  }, [txData])
+  // Average income over the last 6 calendar months (same window and month
+  // bucketing as the Wealth Check savings dimension).
+  const monthlyIncome = useMemo(() => averageMonthlyCashflow(txData, "income"), [txData])
 
   async function saveHealth() {
     if (!user || !activeProfile) return
@@ -100,7 +98,6 @@ export default function HealthPage() {
   const annualIncome = monthlyIncome * 12
   const idealTermCover = annualIncome * 10 // 10x annual income
   const idealHealthCover = Math.max(500000, annualIncome * 0.5) // 50% of annual or 5L min
-  const idealEmergencyMonths = 6
 
   // Without an income estimate we can't judge term-cover adequacy, so score 0
   // ("unknown") rather than dividing by a 1-rupee floor that always yields 100%.
@@ -110,13 +107,21 @@ export default function HealthPage() {
   const healthScore = health.has_health_insurance
     ? Math.min(100, (health.health_insurance_cover / Math.max(idealHealthCover, 1)) * 100)
     : 0
-  const emergencyScore = Math.min(100, (health.emergency_fund_months / idealEmergencyMonths) * 100)
-  const overallScore = Math.round((termScore + healthScore + emergencyScore) / 3)
 
   const wealthCheck = useMemo(
-    () => computeWealthCheck({ assets, liabilities, transactions: txData, goals, health, monthlyIncome }),
-    [assets, liabilities, txData, goals, health, monthlyIncome]
+    () => computeWealthCheck({ assets, liabilities, transactions: txData, goals, health, monthlyIncome, accounts }),
+    [assets, liabilities, txData, goals, health, monthlyIncome, accounts]
   )
+  // The emergency-fund card shares the Wealth Check dimension so both agree:
+  // months come from live cash & bank balances whenever accounts exist.
+  const emergencyDim = wealthCheck.dimensions.find((d) => d.key === "emergency")
+  const emergencyScore = emergencyDim?.score ?? 0
+  const fund = useMemo(
+    () => emergencyFundMonths({ health, accounts, transactions: txData }),
+    [health, accounts, txData]
+  )
+  const fundDerived = fund.source === "derived"
+  const overallScore = Math.round((termScore + healthScore + emergencyScore) / 3)
   const wealthCheckActions = useMemo(
     () =>
       wealthCheck.dimensions
@@ -324,22 +329,34 @@ export default function HealthPage() {
                 />
               </div>
               <div>
-                <label className="text-xs text-[#86868b]">Months Saved</label>
+                <label className="text-xs text-[#86868b]">
+                  {fundDerived ? "Months Saved (from Cash & Bank)" : "Months Saved"}
+                </label>
                 <input
                   type="number"
                   step="0.5"
-                  value={health.emergency_fund_months || ""}
-                  onChange={(e) => setHealth(prev => ({ ...prev, emergency_fund_months: Number(e.target.value) }))}
+                  readOnly={fundDerived}
+                  value={fundDerived ? Math.round(fund.months * 10) / 10 : health.emergency_fund_months || ""}
+                  onChange={(e) => {
+                    if (fundDerived) return
+                    setHealth(prev => ({ ...prev, emergency_fund_months: Number(e.target.value) }))
+                  }}
                   placeholder="e.g. 3"
-                  className="mt-1 w-full px-4 py-2.5 rounded-xl bg-[#f5f5f7] border-0 text-sm text-[#1d1d1f] placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10"
+                  className={`mt-1 w-full px-4 py-2.5 rounded-xl bg-[#f5f5f7] border-0 text-sm text-[#1d1d1f] placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 ${fundDerived ? "opacity-70 cursor-default" : ""}`}
                 />
               </div>
             </div>
 
-            {health.monthly_expenses > 0 && (
+            {fundDerived ? (
               <p className="text-xs text-[#86868b] flex items-center gap-1">
                 <Info className="w-3 h-3" />
-                You need {formatCompact(health.monthly_expenses * 6)} for 6 months
+                Cash &amp; bank {formatCompact(fund.cashAndBank)} ÷ {formatCompact(fund.monthlyExpense)}/month
+                {!health.monthly_expenses && " (6-month average)"} — you need {formatCompact(fund.monthlyExpense * EMERGENCY_FUND_TARGET_MONTHS)} for {EMERGENCY_FUND_TARGET_MONTHS} months
+              </p>
+            ) : health.monthly_expenses > 0 && (
+              <p className="text-xs text-[#86868b] flex items-center gap-1">
+                <Info className="w-3 h-3" />
+                You need {formatCompact(health.monthly_expenses * EMERGENCY_FUND_TARGET_MONTHS)} for {EMERGENCY_FUND_TARGET_MONTHS} months
               </p>
             )}
 
@@ -398,10 +415,10 @@ export default function HealthPage() {
               Get health insurance with at least {formatCompact(500000)} cover. Medical costs are rising rapidly.
             </li>
           )}
-          {health.emergency_fund_months < 6 && (
+          {emergencyDim?.action && (
             <li className="flex items-start gap-2 text-sm text-[#6e6e73]">
               <span className="text-[#86868b] mt-0.5">•</span>
-              Build your emergency fund to 6 months of expenses ({health.monthly_expenses > 0 ? formatCompact(health.monthly_expenses * 6) : "calculate your expenses first"}).
+              {emergencyDim.action}
             </li>
           )}
           {overallScore >= 80 && (

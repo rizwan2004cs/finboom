@@ -1,5 +1,11 @@
 -- FinBoom Database Schema
 -- Run this in Supabase SQL Editor (https://supabase.com/dashboard → SQL Editor)
+--
+-- supabase/migrations/ is canonical; this file is a convenience snapshot of the
+-- app-synced tables for provisioning a fresh environment and must be kept in
+-- step with it. Server-only tables (notifications, push_subscriptions,
+-- device_tokens, email_preferences, exchange_rates, blog_*) live only in the
+-- migrations and are not reproduced here.
 
 -- Enable UUID generation
 create extension if not exists "uuid-ossp";
@@ -19,7 +25,7 @@ create table if not exists profiles (
 create table if not exists assets (
   id uuid default uuid_generate_v4() primary key,
   user_id text not null,
-  profile_id uuid references profiles(id) on delete set null,
+  profile_id uuid references profiles(id) on delete cascade,
   name text not null,
   asset_class text not null,
   current_value numeric not null default 0,
@@ -35,7 +41,7 @@ create table if not exists assets (
 create table if not exists liabilities (
   id uuid default uuid_generate_v4() primary key,
   user_id text not null,
-  profile_id uuid references profiles(id) on delete set null,
+  profile_id uuid references profiles(id) on delete cascade,
   name text not null,
   liability_type text not null,
   outstanding_amount numeric not null default 0,
@@ -58,7 +64,7 @@ create table if not exists liabilities (
 create table if not exists accounts (
   id uuid default gen_random_uuid() primary key,
   user_id text not null,
-  profile_id uuid references profiles(id) on delete set null,
+  profile_id uuid references profiles(id) on delete cascade,
   name text not null,
   type text not null default 'bank' check (type in ('bank', 'cash', 'credit_card')),
   opening_balance numeric not null default 0,
@@ -73,7 +79,7 @@ create table if not exists accounts (
 create table if not exists transactions (
   id uuid default uuid_generate_v4() primary key,
   user_id text not null,
-  profile_id uuid references profiles(id) on delete set null,
+  profile_id uuid references profiles(id) on delete cascade,
   type text not null check (type in ('income', 'expense')),
   category text not null,
   amount numeric not null default 0,
@@ -90,7 +96,7 @@ create table if not exists transactions (
 create table if not exists goals (
   id uuid default uuid_generate_v4() primary key,
   user_id text not null,
-  profile_id uuid references profiles(id) on delete set null,
+  profile_id uuid references profiles(id) on delete cascade,
   name text not null,
   target_amount numeric not null default 0,
   current_amount numeric not null default 0,
@@ -107,7 +113,7 @@ create table if not exists goals (
 create table if not exists snapshots (
   id uuid default uuid_generate_v4() primary key,
   user_id text not null,
-  profile_id uuid references profiles(id) on delete set null,
+  profile_id uuid references profiles(id) on delete cascade,
   total_assets numeric not null default 0,
   total_liabilities numeric not null default 0,
   net_worth numeric not null default 0,
@@ -122,7 +128,7 @@ create table if not exists snapshots (
 create table if not exists health_checks (
   id uuid default uuid_generate_v4() primary key,
   user_id text not null,
-  profile_id uuid references profiles(id) on delete set null,
+  profile_id uuid references profiles(id) on delete cascade,
   has_term_insurance boolean default false,
   term_insurance_cover numeric default 0,
   has_health_insurance boolean default false,
@@ -166,6 +172,9 @@ create table if not exists party_transactions (
   due_date date,
   notes text,
   linked_transaction_id uuid references transactions(id) on delete set null,
+  -- Repayment created from an entry's "Settle" button records WHICH
+  -- lent/borrowed entry it settles (otherwise repayments allocate LIFO).
+  settles_transaction_id uuid references party_transactions(id) on delete set null,
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
@@ -174,7 +183,7 @@ create table if not exists party_transactions (
 create table if not exists budgets (
   id uuid default uuid_generate_v4() primary key,
   user_id text not null,
-  profile_id uuid references profiles(id) on delete set null,
+  profile_id uuid references profiles(id) on delete cascade,
   month text not null,
   category text not null,
   amount numeric not null default 0,
@@ -189,7 +198,7 @@ create unique index if not exists budgets_unique_entry
 create table if not exists sips (
   id uuid default uuid_generate_v4() primary key,
   user_id text not null,
-  profile_id uuid references profiles(id) on delete set null,
+  profile_id uuid references profiles(id) on delete cascade,
   name text not null,
   fund_name text,
   amount numeric not null default 0,
@@ -201,6 +210,26 @@ create table if not exists sips (
   created_at timestamptz default now(),
   updated_at timestamptz default now()
 );
+
+-- SIP payments: one row per (sip_id, month) marking a SIP as paid or skipped
+-- for that calendar month. `transaction_id` links the auto-created investment
+-- expense; deleting that expense removes the payment row too so the SIP shows
+-- as due again.
+create table if not exists sip_payments (
+  id uuid default gen_random_uuid() primary key,
+  user_id text not null,
+  sip_id uuid not null references sips(id) on delete cascade,
+  month text not null check (month ~ '^\d{4}-\d{2}$'),
+  paid_date date not null default current_date,
+  amount numeric,
+  transaction_id uuid references transactions(id) on delete cascade,
+  status text not null default 'paid' check (status in ('paid', 'skipped')),
+  created_at timestamptz default now(),
+  updated_at timestamptz default now()
+);
+
+create unique index if not exists sip_payments_unique_sip_month
+  on sip_payments (sip_id, month);
 
 -- Feature Board table (personal backlog of app feature ideas)
 create table if not exists feature_ideas (
@@ -222,20 +251,22 @@ begin
 end;
 $$ language plpgsql;
 
-create or replace trigger set_updated_at_assets before update on assets for each row execute function update_updated_at_column();
-create or replace trigger set_updated_at_liabilities before update on liabilities for each row execute function update_updated_at_column();
--- INSERT included so offline-created rows replayed later get a server
--- timestamp visible to other devices' delta sync.
+-- All fire on INSERT as well as UPDATE so offline-created rows replayed later
+-- get a server timestamp visible to other devices' delta sync (a client-sent
+-- updated_at would otherwise sit behind their watermark forever).
+create or replace trigger set_updated_at_assets before insert or update on assets for each row execute function update_updated_at_column();
+create or replace trigger set_updated_at_liabilities before insert or update on liabilities for each row execute function update_updated_at_column();
 create or replace trigger set_updated_at_transactions before insert or update on transactions for each row execute function update_updated_at_column();
-create or replace trigger set_updated_at_goals before update on goals for each row execute function update_updated_at_column();
-create or replace trigger set_updated_at_snapshots before update on snapshots for each row execute function update_updated_at_column();
-create or replace trigger set_updated_at_profiles before update on profiles for each row execute function update_updated_at_column();
-create or replace trigger set_updated_at_parties before update on parties for each row execute function update_updated_at_column();
-create or replace trigger set_updated_at_party_transactions before update on party_transactions for each row execute function update_updated_at_column();
-create or replace trigger set_updated_at_budgets before update on budgets for each row execute function update_updated_at_column();
-create or replace trigger set_updated_at_health_checks before update on health_checks for each row execute function update_updated_at_column();
-create or replace trigger set_updated_at_sips before update on sips for each row execute function update_updated_at_column();
-create or replace trigger set_updated_at_feature_ideas before update on feature_ideas for each row execute function update_updated_at_column();
+create or replace trigger set_updated_at_goals before insert or update on goals for each row execute function update_updated_at_column();
+create or replace trigger set_updated_at_snapshots before insert or update on snapshots for each row execute function update_updated_at_column();
+create or replace trigger set_updated_at_profiles before insert or update on profiles for each row execute function update_updated_at_column();
+create or replace trigger set_updated_at_parties before insert or update on parties for each row execute function update_updated_at_column();
+create or replace trigger set_updated_at_party_transactions before insert or update on party_transactions for each row execute function update_updated_at_column();
+create or replace trigger set_updated_at_budgets before insert or update on budgets for each row execute function update_updated_at_column();
+create or replace trigger set_updated_at_health_checks before insert or update on health_checks for each row execute function update_updated_at_column();
+create or replace trigger set_updated_at_sips before insert or update on sips for each row execute function update_updated_at_column();
+create or replace trigger set_updated_at_sip_payments before insert or update on sip_payments for each row execute function update_updated_at_column();
+create or replace trigger set_updated_at_feature_ideas before insert or update on feature_ideas for each row execute function update_updated_at_column();
 create or replace trigger set_updated_at_accounts before insert or update on accounts for each row execute function update_updated_at_column();
 
 -- Indexes for fast lookups
@@ -250,6 +281,7 @@ create index if not exists idx_parties_user_id on parties(user_id);
 create index if not exists idx_party_transactions_user_id on party_transactions(user_id);
 create index if not exists idx_party_transactions_party_id on party_transactions(party_id);
 create index if not exists idx_party_transactions_due_date on party_transactions(due_date);
+create index if not exists idx_party_transactions_settles on party_transactions(settles_transaction_id);
 
 create index if not exists idx_budgets_user_id on budgets(user_id);
 create index if not exists idx_budgets_month on budgets(user_id, profile_id, month);
@@ -259,6 +291,9 @@ create index if not exists idx_health_checks_updated_at on health_checks(updated
 
 create index if not exists idx_sips_user_id on sips(user_id);
 create index if not exists idx_sips_profile on sips(user_id, profile_id);
+
+create index if not exists idx_sip_payments_user_id on sip_payments(user_id);
+create index if not exists idx_sip_payments_transaction_id on sip_payments(transaction_id);
 
 create index if not exists idx_feature_ideas_user_id on feature_ideas(user_id);
 
@@ -277,6 +312,7 @@ create index if not exists idx_parties_updated_at on parties(updated_at);
 create index if not exists idx_party_transactions_updated_at on party_transactions(updated_at);
 create index if not exists idx_budgets_updated_at on budgets(updated_at);
 create index if not exists idx_sips_updated_at on sips(updated_at);
+create index if not exists idx_sip_payments_updated_at on sip_payments(updated_at);
 create index if not exists idx_feature_ideas_updated_at on feature_ideas(updated_at);
 create index if not exists idx_accounts_updated_at on accounts(updated_at);
 
@@ -298,6 +334,7 @@ alter table party_transactions enable row level security;
 alter table budgets enable row level security;
 alter table health_checks enable row level security;
 alter table sips enable row level security;
+alter table sip_payments enable row level security;
 alter table feature_ideas enable row level security;
 alter table accounts enable row level security;
 
@@ -335,6 +372,9 @@ create policy "health_checks_owner_all" on health_checks for all to authenticate
   using ((select auth.jwt() ->> 'sub') = user_id) with check ((select auth.jwt() ->> 'sub') = user_id);
 
 create policy "sips_owner_all" on sips for all to authenticated
+  using ((select auth.jwt() ->> 'sub') = user_id) with check ((select auth.jwt() ->> 'sub') = user_id);
+
+create policy "sip_payments_owner_all" on sip_payments for all to authenticated
   using ((select auth.jwt() ->> 'sub') = user_id) with check ((select auth.jwt() ->> 'sub') = user_id);
 
 create policy "accounts_owner_all" on accounts for all to authenticated

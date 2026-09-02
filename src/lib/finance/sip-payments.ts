@@ -2,10 +2,9 @@ import type { Sip, SipPayment, Transaction } from "@/lib/types"
 import { todayLocalISO } from "@/lib/utils"
 import { put, remove as idbRemove } from "@/lib/offline/db"
 
-export function sipExpenseDescription(sip: Sip): string {
-  const label = sip.fund_name || sip.name
-  return `SIP: ${label}`
-}
+// Defined in monthly-cashflow.ts (IDB-free) so server code can use it; kept
+// here for existing importers.
+export { sipExpenseDescription } from "@/lib/finance/monthly-cashflow"
 
 function isOnline(): boolean {
   return typeof navigator !== "undefined" ? navigator.onLine : true

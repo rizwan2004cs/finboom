@@ -7,11 +7,12 @@ import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { useDeleteMutation } from "@/hooks/use-offline-mutation"
 import { useQueryClient } from "@tanstack/react-query"
 import { Plus, Repeat, Trash2, Edit2, Bell, BellOff, CalendarClock } from "lucide-react"
-import type { Sip } from "@/lib/types"
+import type { Sip, Transaction } from "@/lib/types"
 import { useAppDialog } from "@/components/app-dialog"
 import { useCurrency } from "@/hooks/use-currency"
 import { AddSipModal } from "@/components/modals/add-sip-modal"
 import { SipMonthChecklist } from "@/components/sip-month-checklist"
+import { monthKeyFromDate } from "@/lib/finance/monthly-cashflow"
 
 function ordinal(n: number): string {
   const v = n % 100
@@ -38,6 +39,23 @@ export default function SipsPage() {
       order: { column: "sip_day", ascending: true },
       filters: pf,
       enabled: !!activeProfile,
+    }
+  )
+
+  // This month's transactions feed the checklist so a SIP expense logged by
+  // hand (or on another device) reads as paid here exactly as it does on the
+  // Transactions page. Same local-date window derivation as that page.
+  const monthKey = monthKeyFromDate()
+  const lastDayOfMonth = new Date(parseInt(monthKey.slice(0, 4)), parseInt(monthKey.slice(5, 7)), 0).getDate()
+  const { data: monthTransactions = [] } = useOfflineQuery<Transaction>(
+    "transactions", user?.id, {
+      filters: [
+        { column: "profile_id", op: "eq", value: activeProfile?.id ?? "" },
+        { column: "date", op: "gte", value: `${monthKey}-01` },
+        { column: "date", op: "lte", value: `${monthKey}-${String(lastDayOfMonth).padStart(2, "0")}` },
+      ],
+      enabled: !!activeProfile,
+      queryKey: [monthKey],
     }
   )
   const loading = isLoading || !user || !activeProfile
@@ -92,7 +110,12 @@ export default function SipsPage() {
         </button>
       </div>
 
-      <SipMonthChecklist sips={sips} profileId={activeProfile?.id} />
+      <SipMonthChecklist
+        sips={sips}
+        profileId={activeProfile?.id}
+        monthKey={monthKey}
+        transactions={monthTransactions}
+      />
 
       {/* SIP List */}
       {sips.length === 0 ? (

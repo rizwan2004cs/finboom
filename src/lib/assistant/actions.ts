@@ -5,6 +5,8 @@
 // executes it through the same offline-first mutations the manual UI uses —
 // so validation, sync, and Cash & Bank tagging all behave identically.
 
+import { isValidCategoryFor } from "@/lib/finance/transaction-guard"
+
 export type AssistantAction =
   | {
       kind: "add_transaction"
@@ -24,6 +26,9 @@ export type AssistantAction =
       date: string
       due_date?: string
       notes?: string
+      // Cash/bank account the money moves through (null = untracked), tagged
+      // on the linked income/expense exactly like the party modal does.
+      account_id?: string | null
     }
   | {
       kind: "add_asset"
@@ -93,17 +98,36 @@ export type AssistantMessage = { role: "user" | "assistant"; content: string }
 export type AssistantContext = {
   today: string // YYYY-MM-DD
   month: string // YYYY-MM
-  accounts: Array<{ id: string; name: string; type: string; balance: number }>
+  // Active profile's accounts only. A card's `balance` is its ledger balance
+  // (≤ 0 while dues are owed); `outstanding` / `available` are what the model
+  // should reason with for cards (`available` null = no limit recorded).
+  accounts: Array<{
+    id: string
+    name: string
+    type: "bank" | "cash" | "credit_card"
+    balance: number
+    opening_date: string
+    outstanding?: number
+    available?: number | null
+    dueDate?: string | null
+  }>
   // The user's usual money source (last account used on this profile) — like
   // a UPI app's default account. Unstated accounts default to this.
   defaultAccountId?: string
   parties: Array<{ id: string; name: string; balance: number }>
   assets: Array<{ id: string; name: string; asset_class: string; current_value: number }>
   budgets: Array<{ category: string; amount: number }>
-  sips: Array<{ id: string; name: string; amount: number; paidThisMonth: boolean }>
+  sips: Array<{
+    id: string
+    name: string
+    amount: number
+    paidThisMonth: boolean
+    // Skipped = intentionally not invested this month; done, not due.
+    skippedThisMonth: boolean
+  }>
   // Newest first — lets the model resolve "yesterday's 500" to a real id.
-  // `linked` marks transactions backing a party entry or SIP payment, whose
-  // edits/deletes carry extra logic.
+  // `linked` marks transactions backing a party entry or SIP payment, transfer
+  // legs and balance adjustments — rows whose edits/deletes carry extra logic.
   recentTransactions: Array<{
     id: string
     type: "income" | "expense"
@@ -111,14 +135,17 @@ export type AssistantContext = {
     category: string
     description?: string
     date: string
-    linked?: "party" | "sip"
+    linked?: "party" | "sip" | "transfer" | "adjustment"
   }>
   stats: {
+    // Real cashflow only (transfers/adjustments excluded), month-to-date.
     incomeTotal: number
     expenseTotal: number
     expenseByCategory: Record<string, number>
     totalAssetValue: number
+    // Cash + bank balances (cards excluded) and total card dues, separately.
     totalAccountBalance: number
+    cardDues: number
   }
 }
 
@@ -128,6 +155,11 @@ const ISO_MONTH = /^\d{4}-\d{2}$/
 
 function validAmount(n: unknown): n is number {
   return typeof n === "number" && Number.isFinite(n) && n > 0 && n <= MAX_AMOUNT
+}
+
+// account_id is optional: absent, null (untracked) or a non-empty id string.
+function validAccountRef(v: unknown): boolean {
+  return v === undefined || v === null || (typeof v === "string" && v.length > 0)
 }
 
 // Sanity-check a model-proposed action. Returns null when anything about it
@@ -141,8 +173,11 @@ export function validateAction(raw: unknown): (AssistantAction & { summary: stri
   switch (a.kind) {
     case "add_transaction":
       if ((a.type !== "income" && a.type !== "expense") || !validAmount(a.amount)) return null
-      if (typeof a.category !== "string" || !a.category) return null
+      // Same category rules as the modal's picker: transfer, adjustment and
+      // credit_card_bill can never be written as a plain transaction.
+      if (typeof a.category !== "string" || !isValidCategoryFor(a.type, a.category)) return null
       if (typeof a.date !== "string" || !ISO_DATE.test(a.date)) return null
+      if (!validAccountRef(a.account_id)) return null
       return a as AssistantAction & { summary: string }
     case "add_party_transaction": {
       const types = ["lent", "borrowed", "received_back", "paid_back"]
@@ -150,6 +185,7 @@ export function validateAction(raw: unknown): (AssistantAction & { summary: stri
       if (typeof a.date !== "string" || !ISO_DATE.test(a.date)) return null
       if (!a.party_id && !(typeof a.new_party_name === "string" && a.new_party_name.trim())) return null
       if (a.due_date && (typeof a.due_date !== "string" || !ISO_DATE.test(a.due_date))) return null
+      if (!validAccountRef(a.account_id)) return null
       return a as AssistantAction & { summary: string }
     }
     case "add_asset":
@@ -163,7 +199,8 @@ export function validateAction(raw: unknown): (AssistantAction & { summary: stri
       if (a.invested_value !== undefined && !validAmount(a.invested_value)) return null
       return a as AssistantAction & { summary: string }
     case "set_budget":
-      if (typeof a.category !== "string" || !a.category || !validAmount(a.amount)) return null
+      if (typeof a.category !== "string" || !isValidCategoryFor("expense", a.category)) return null
+      if (!validAmount(a.amount)) return null
       if (typeof a.month !== "string" || !ISO_MONTH.test(a.month)) return null
       return a as AssistantAction & { summary: string }
     case "update_transaction": {
@@ -178,6 +215,17 @@ export function validateAction(raw: unknown): (AssistantAction & { summary: stri
       if (a.amount !== undefined && !validAmount(a.amount)) return null
       if (a.type !== undefined && a.type !== "income" && a.type !== "expense") return null
       if (a.date !== undefined && (typeof a.date !== "string" || !ISO_DATE.test(a.date))) return null
+      // The row's current type is unknown here, so a category must be valid
+      // for the given type, or for either when type is not being changed;
+      // execute() re-checks against the merged row.
+      if (a.category !== undefined) {
+        if (typeof a.category !== "string") return null
+        const ok =
+          a.type !== undefined
+            ? isValidCategoryFor(a.type, a.category)
+            : isValidCategoryFor("income", a.category) || isValidCategoryFor("expense", a.category)
+        if (!ok) return null
+      }
       return a as AssistantAction & { summary: string }
     }
     case "delete_transaction":

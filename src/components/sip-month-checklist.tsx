@@ -26,11 +26,13 @@ interface Props {
   profileId?: string
   /** Defaults to current calendar month (YYYY-MM). */
   monthKey?: string
-  /** Used to detect SIP expenses already logged without a sip_payment row. */
-  transactions?: Transaction[]
+  /** The month's transactions — required so every checklist detects a SIP
+   *  expense already logged without a sip_payment row (otherwise two pages
+   *  would disagree on whether the same SIP is done). */
+  transactions: Transaction[]
 }
 
-export function SipMonthChecklist({ sips, profileId, monthKey: monthKeyProp, transactions = [] }: Props) {
+export function SipMonthChecklist({ sips, profileId, monthKey: monthKeyProp, transactions }: Props) {
   const { user } = useUser()
   const { formatCompact: formatCurrency } = useCurrency()
   const queryClient = useQueryClient()

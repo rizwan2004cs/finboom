@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useSyncExternalStore } from "react"
 import { PieChart, Pie, Cell, Tooltip } from "recharts"
 import { useCurrency } from "@/hooks/use-currency"
 
@@ -13,7 +13,6 @@ interface AllocationItem {
 
 interface Props {
   data: AllocationItem[]
-  total: number
 }
 
 const COLORS_LIGHT = [
@@ -28,19 +27,24 @@ const COLORS_DARK = [
   "#e5e5ea", "#b0b0b4",
 ]
 
-export function AllocationChart({ data, total }: Props) {
-  const { formatCompact: formatCurrency } = useCurrency()
-  const [isDark, setIsDark] = useState(false)
-  const [mounted, setMounted] = useState(false)
+// External-store bindings for hydration and the dark-mode class on <html>.
+const subscribeNoop = () => () => {}
+const readIsDark = () => document.documentElement.classList.contains("dark")
+function subscribeThemeClass(onChange: () => void) {
+  const observer = new MutationObserver(onChange)
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] })
+  return () => observer.disconnect()
+}
 
-  useEffect(() => {
-    setMounted(true)
-    const check = () => setIsDark(document.documentElement.classList.contains("dark"))
-    check()
-    const observer = new MutationObserver(check)
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] })
-    return () => observer.disconnect()
-  }, [])
+export function AllocationChart({ data }: Props) {
+  const { formatCompact: formatCurrency } = useCurrency()
+  // Percentages are shares of what is plotted, so the legend always sums to
+  // 100% — a caller-supplied total (e.g. one including cash & bank) did not.
+  const total = data.reduce((sum, d) => sum + d.value, 0)
+  // Recharts can't server-render, so the pie is skipped until hydration; the
+  // theme is read from the <html> class list and re-read when it changes.
+  const mounted = useSyncExternalStore(subscribeNoop, () => true, () => false)
+  const isDark = useSyncExternalStore(subscribeThemeClass, readIsDark, () => false)
 
   const COLORS = isDark ? COLORS_DARK : COLORS_LIGHT
 
@@ -97,7 +101,7 @@ export function AllocationChart({ data, total }: Props) {
             />
             <span className="text-[12px] text-[#6e6e73] dark:text-[#aeaeb2] truncate flex-1">{item.name}</span>
             <span className="text-[12px] font-medium text-[#1d1d1f] dark:text-[#f5f5f7]">
-              {((item.value / total) * 100).toFixed(0)}%
+              {(total > 0 ? (item.value / total) * 100 : 0).toFixed(0)}%
             </span>
           </div>
         ))}

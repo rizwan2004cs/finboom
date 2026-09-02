@@ -210,7 +210,7 @@ export interface PartyTransaction {
 export interface AppNotification {
   id: string
   user_id: string
-  type: 'overdue_payment' | 'due_approaching' | 'goal_milestone' | 'large_transaction' | 'sip_reminder'
+  type: 'overdue_payment' | 'due_approaching' | 'goal_milestone' | 'large_transaction' | 'sip_reminder' | 'budget_exceeded'
   title: string
   body: string
   data: Record<string, unknown>

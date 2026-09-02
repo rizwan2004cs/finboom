@@ -31,7 +31,10 @@ export const LIABILITY_TYPES = [
   { id: 'car_loan', label: 'Car Loan', icon: 'Car' },
   { id: 'personal_loan', label: 'Personal Loan', icon: 'User' },
   { id: 'education_loan', label: 'Education Loan', icon: 'GraduationCap' },
-  { id: 'credit_card', label: 'Credit Card Debt', icon: 'CreditCard' },
+  // Card dues are derived from credit_card ACCOUNTS now (see
+  // @/lib/finance/accounts); this entry stays only so existing rows keep their
+  // label. Pickers hide legacy types unless the row already uses one.
+  { id: 'credit_card', label: 'Credit Card Debt', icon: 'CreditCard', legacy: true },
   { id: 'gold_loan', label: 'Gold Loan', icon: 'Gem' },
   { id: 'other', label: 'Other', icon: 'MoreHorizontal' },
 ] as const

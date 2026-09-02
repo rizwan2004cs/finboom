@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/utils/supabase/admin"
-import { computeNetWorth } from "@/lib/finance/net-worth"
+import { loadUserNetWorthReport } from "@/lib/finance/net-worth-baseline"
 import { sendWeeklyReports, type WeeklyReportEntry } from "@/lib/email/send"
 
 const CRON_SECRET = process.env.CRON_SECRET
@@ -25,8 +25,16 @@ export async function GET(req: NextRequest) {
   }
 
   const supabase = createAdminClient()
-  const { data: users } = await supabase.from("profiles").select("user_id")
-  const uniqueUserIds = [...new Set((users || []).map((u) => u.user_id))]
+  // Snapshots are per profile, so the live number and its baseline are both
+  // built per profile and summed (see lib/finance/net-worth-baseline.ts).
+  const { data: profileRows } = await supabase.from("profiles").select("id, user_id, name")
+  const profilesByUser = new Map<string, { id: string; name: string }[]>()
+  for (const p of (profileRows || []) as { id: string; user_id: string; name: string }[]) {
+    const list = profilesByUser.get(p.user_id)
+    if (list) list.push({ id: p.id, name: p.name })
+    else profilesByUser.set(p.user_id, [{ id: p.id, name: p.name }])
+  }
+  const uniqueUserIds = [...profilesByUser.keys()]
 
   // Compare against the most recent snapshot from at least ~20 days ago, so we
   // skip this month's fresh snapshot and land on last month's.
@@ -34,39 +42,21 @@ export async function GET(req: NextRequest) {
   const reportEntries: WeeklyReportEntry[] = []
 
   for (const userId of uniqueUserIds) {
-    const [{ data: assets }, { data: liabilities }, { data: accounts }, { data: transactions }] =
-      await Promise.all([
-        supabase.from("assets").select("name, current_value").eq("user_id", userId),
-        supabase.from("liabilities").select("outstanding_amount").eq("user_id", userId),
-        supabase.from("accounts").select("id, type, opening_balance, opening_date").eq("user_id", userId),
-        supabase
-          .from("transactions")
-          .select("account_id, type, amount, date")
-          .eq("user_id", userId)
-          .not("account_id", "is", null),
-      ])
-
-    // Same formula as the dashboard — see lib/finance/net-worth.ts.
-    const { totalAssets, totalLiabilities, netWorth: currentNetWorth } = computeNetWorth({
-      assets: assets || [],
-      liabilities: liabilities || [],
-      accounts: accounts || [],
-      transactions: transactions || [],
-    })
-
-    const { data: priorSnapshots } = await supabase
-      .from("snapshots")
-      .select("net_worth, snapshot_date")
-      .eq("user_id", userId)
-      .lte("snapshot_date", cutoff)
-      .order("snapshot_date", { ascending: false })
-      .limit(1)
+    const profiles = profilesByUser.get(userId) ?? []
+    const [report, { data: assets }] = await Promise.all([
+      loadUserNetWorthReport(supabase, userId, profiles, cutoff),
+      supabase
+        .from("assets")
+        .select("name, current_value")
+        .eq("user_id", userId)
+        .in("profile_id", profiles.map((p) => p.id)),
+    ])
+    const { totalAssets, totalLiabilities, netWorth: currentNetWorth, comparableNetWorth, previousNetWorth } = report
 
     let change: WeeklyReportEntry["change"] = null
-    const prior = priorSnapshots?.[0]
-    if (prior) {
-      const previousNetWorth = Number(prior.net_worth)
-      const diff = currentNetWorth - previousNetWorth
+    if (previousNetWorth !== null) {
+      // Old snapshots predate the cash & bank / card-dues formula; diff like-for-like.
+      const diff = comparableNetWorth - previousNetWorth
       const pctChange = previousNetWorth !== 0 ? (diff / Math.abs(previousNetWorth)) * 100 : 0
       change = {
         direction: diff > 0 ? "up" : diff < 0 ? "down" : "flat",
@@ -89,6 +79,7 @@ export async function GET(req: NextRequest) {
       liabilitiesLabel: formatINR(totalLiabilities),
       change,
       topMovers,
+      profiles: report.profiles.map((p) => ({ name: p.name, netWorthLabel: formatINR(p.netWorth) })),
     })
   }
 

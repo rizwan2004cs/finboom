@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
 import { useAccounts } from "@/hooks/use-accounts"
@@ -18,7 +18,7 @@ import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/constants"
 import { CategoryIcon } from "@/components/category-icon"
 import type { Party, Transaction } from "@/lib/types"
 import { accountBalance, isCreditCard, spendGuardError } from "@/lib/finance/accounts"
-import { getPreferredAccountId } from "@/lib/accounts/default-account"
+import { getPreferredAccountId, getPrimaryAccountId, setPrimaryAccountId } from "@/lib/accounts/default-account"
 import { CustomSelect } from "@/components/custom-select"
 import { useCurrency } from "@/hooks/use-currency"
 
@@ -55,8 +55,10 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
     amount: initialAmount,
     description: transaction?.description || "",
     date: transaction?.date || todayLocalISO(),
-    // "Paid from / Received in" account. New transactions default to the last
-    // account used on this profile (optional-with-memory, Vyapar-style).
+    // "Paid from / Received in" account. New transactions default to the
+    // primary / last-used account on this profile (optional-with-memory,
+    // Vyapar-style). Seeded without the accounts list (it may still be
+    // loading); re-resolved direction-aware below once it is in.
     account_id: transaction
       ? transaction.account_id || ""
       : (typeof window !== "undefined" && activeProfile
@@ -66,15 +68,29 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
     due_date: "",
   })
   const [error, setError] = useState("")
+  // Set once the user picks an account themselves — the direction-aware
+  // re-resolve below must never override an explicit choice.
+  const accountTouchedRef = useRef(false)
 
   const newPartyPhoneInvalid = newPartyPhone.length > 0 && !isValidPhone(newPartyPhone)
   const todayStr = todayLocalISO()
+  const direction = form.type === "income" ? "in" : "out"
 
   useEffect(() => {
     if (!user) return
     fetchTable<Party>("parties", user.id, { order: { column: "name", ascending: true } })
       .then(data => setParties(data))
   }, [user])
+
+  // Once accounts are known, resolve the default against the real list and
+  // the direction: a stale (deleted) id falls through to the next candidate,
+  // and money coming IN never defaults to a credit card (the last-used key
+  // holds a card id after any card expense).
+  useEffect(() => {
+    if (isEditing || !accountsFetched || !activeProfile || accountTouchedRef.current) return
+    const preferred = getPreferredAccountId(activeProfile.id, accounts, direction)
+    setForm(prev => (prev.account_id === preferred ? prev : { ...prev, account_id: preferred }))
+  }, [isEditing, accountsFetched, activeProfile, accounts, direction])
 
   // A remembered account may have been deleted (or belong to a stale key) —
   // once the list is in, only ids present in it count. While accounts are
@@ -111,6 +127,13 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (!user) return
+
+    // A leg of a transfer / card-bill payment shares a transfer_group_id with
+    // its counterpart; rewriting one side here would desync both balances.
+    if (transaction?.transfer_group_id) {
+      setError("This entry is one side of a transfer — manage it from Cash & Bank.")
+      return
+    }
 
     const amount = parseFloat(form.amount)
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -220,6 +243,12 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
       } catch {
         /* storage may be unavailable (private mode) */
       }
+      // A starred account that no longer exists would keep shadowing the
+      // last-used one — drop it (only against a fully loaded list).
+      if (accountsFetched) {
+        const primary = getPrimaryAccountId(activeProfile.id)
+        if (primary && !accounts.some(a => a.id === primary)) setPrimaryAccountId(activeProfile.id, null)
+      }
     }
 
     setSaving(false)
@@ -255,7 +284,13 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
             </button>
             <button
               type="button"
-              onClick={() => setForm(prev => ({ ...prev, type: "income", category: "" }))}
+              onClick={() => setForm(prev => {
+                // Income can't be "received in" a credit card — drop a card tag
+                // (the direction-aware effect re-defaults new entries).
+                const current = accounts.find(a => a.id === prev.account_id)
+                const account_id = current && isCreditCard(current) ? "" : prev.account_id
+                return { ...prev, type: "income", category: "", account_id }
+              })}
               className={`flex-1 py-2.5 rounded-lg text-sm font-medium transition-all ${
                 form.type === "income" ? "bg-white dark:bg-white/[0.12] text-[#1d1d1f] dark:text-white shadow-sm" : "text-[#86868b]"
               }`}
@@ -337,7 +372,7 @@ export function AddTransactionModal({ transaction, onClose, onSave }: Props) {
             </label>
             <CustomSelect
               value={validAccountId}
-              onChange={(val) => setForm(prev => ({ ...prev, account_id: val }))}
+              onChange={(val) => { accountTouchedRef.current = true; setForm(prev => ({ ...prev, account_id: val })) }}
               options={[
                 { value: "", label: "Not tracked" },
                 ...accounts.map(a => ({ value: a.id, label: isCreditCard(a) ? `${a.name} (card)` : a.name })),

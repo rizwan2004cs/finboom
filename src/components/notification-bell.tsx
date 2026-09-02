@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState, useRef } from "react"
-import { Bell, Check, Trash2, HandCoins, Target, AlertTriangle, ArrowUpRight, Repeat } from "lucide-react"
+import { Bell, Check, Trash2, HandCoins, Target, AlertTriangle, ArrowUpRight, Repeat, Wallet } from "lucide-react"
 import { createClient } from "@/utils/supabase/client"
 import { useUser } from "@/hooks/use-auth"
 import { Tooltip } from "@/components/tooltip"
@@ -13,6 +13,7 @@ const TYPE_ICONS: Record<string, typeof Bell> = {
   goal_milestone: Target,
   large_transaction: ArrowUpRight,
   sip_reminder: Repeat,
+  budget_exceeded: Wallet,
 }
 
 const TYPE_COLORS: Record<string, string> = {
@@ -21,6 +22,7 @@ const TYPE_COLORS: Record<string, string> = {
   goal_milestone: "text-green-500",
   large_transaction: "text-blue-500",
   sip_reminder: "text-indigo-500",
+  budget_exceeded: "text-red-500",
 }
 
 export function NotificationBell() {

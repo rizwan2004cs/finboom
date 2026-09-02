@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createAdminClient } from "@/utils/supabase/admin"
-import { computeNetWorth } from "@/lib/finance/net-worth"
+import { loadUserNetWorthReport } from "@/lib/finance/net-worth-baseline"
 import webpush from "web-push"
 import { sendWeeklyReports, type WeeklyReportEntry } from "@/lib/email/send"
 
@@ -41,50 +41,41 @@ export async function GET(req: NextRequest) {
   const supabase = createAdminClient()
   const pushEnabled = configureWebPush()
 
-  const { data: users } = await supabase.from("profiles").select("user_id")
-  const uniqueUserIds = [...new Set((users || []).map((u) => u.user_id))]
+  // Snapshots are per profile, so the live number and its baseline are both
+  // built per profile and summed (see lib/finance/net-worth-baseline.ts).
+  const { data: profileRows } = await supabase.from("profiles").select("id, user_id, name")
+  const profilesByUser = new Map<string, { id: string; name: string }[]>()
+  for (const p of (profileRows || []) as { id: string; user_id: string; name: string }[]) {
+    const list = profilesByUser.get(p.user_id)
+    if (list) list.push({ id: p.id, name: p.name })
+    else profilesByUser.set(p.user_id, [{ id: p.id, name: p.name }])
+  }
+  const uniqueUserIds = [...profilesByUser.keys()]
 
   let notificationsSent = 0
   let subscriptionsCleaned = 0
   const reportEntries: WeeklyReportEntry[] = []
 
   for (const userId of uniqueUserIds) {
-    const [{ data: assets }, { data: liabilities }, { data: accounts }, { data: transactions }] =
-      await Promise.all([
-        supabase.from("assets").select("name, current_value").eq("user_id", userId),
-        supabase.from("liabilities").select("outstanding_amount").eq("user_id", userId),
-        supabase.from("accounts").select("id, type, opening_balance, opening_date").eq("user_id", userId),
-        supabase
-          .from("transactions")
-          .select("account_id, type, amount, date")
-          .eq("user_id", userId)
-          .not("account_id", "is", null),
-      ])
+    const profiles = profilesByUser.get(userId) ?? []
+    const [report, { data: assets }] = await Promise.all([
+      loadUserNetWorthReport(supabase, userId, profiles),
+      supabase
+        .from("assets")
+        .select("name, current_value")
+        .eq("user_id", userId)
+        .in("profile_id", profiles.map((p) => p.id)),
+    ])
+    const { totalAssets, totalLiabilities, netWorth: currentNetWorth, comparableNetWorth, previousNetWorth } = report
 
-    // Same formula as the dashboard — see lib/finance/net-worth.ts.
-    const { totalAssets, totalLiabilities, netWorth: currentNetWorth } = computeNetWorth({
-      assets: assets || [],
-      liabilities: liabilities || [],
-      accounts: accounts || [],
-      transactions: transactions || [],
-    })
-
-    const { data: latestSnapshots } = await supabase
-      .from("snapshots")
-      .select("net_worth, snapshot_date")
-      .eq("user_id", userId)
-      .order("snapshot_date", { ascending: false })
-      .limit(1)
-
-    const previousSnapshot = latestSnapshots?.[0]
     let body: string
     let change: WeeklyReportEntry["change"] = null
 
-    if (!previousSnapshot) {
+    if (previousNetWorth === null) {
       body = `Your net worth is ${formatINR(currentNetWorth)}`
     } else {
-      const previousNetWorth = Number(previousSnapshot.net_worth)
-      const diff = currentNetWorth - previousNetWorth
+      // Old snapshots predate the cash & bank / card-dues formula; diff like-for-like.
+      const diff = comparableNetWorth - previousNetWorth
       const pctChange = previousNetWorth !== 0 ? (diff / Math.abs(previousNetWorth)) * 100 : 0
       change = {
         direction: diff > 0 ? "up" : diff < 0 ? "down" : "flat",
@@ -115,6 +106,7 @@ export async function GET(req: NextRequest) {
       liabilitiesLabel: formatINR(totalLiabilities),
       change,
       topMovers,
+      profiles: report.profiles.map((p) => ({ name: p.name, netWorthLabel: formatINR(p.netWorth) })),
     })
 
     if (!pushEnabled) continue

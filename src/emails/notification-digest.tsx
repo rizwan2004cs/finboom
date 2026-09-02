@@ -20,6 +20,7 @@ interface NotificationDigestEmailProps {
 const PRIORITY = [
   "overdue_payment",
   "due_approaching",
+  "budget_exceeded",
   "sip_reminder",
   "goal_milestone",
   "large_transaction",

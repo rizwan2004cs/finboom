@@ -28,6 +28,16 @@ import { AddPartyModal } from "@/components/modals/add-party-modal"
 import { EditPartyModal } from "@/components/modals/edit-party-modal"
 import { useCurrency } from "@/hooks/use-currency"
 import { formatDueDate, todayLocalISO } from "@/lib/utils"
+import { deleteTransactionWithLinks } from "@/lib/finance/delete-transaction"
+import {
+  entriesDueInWindow,
+  entryOutstanding,
+  isEntryOpen,
+  outstandingByEntry,
+  overdueEntries,
+  partyNetBalances,
+  receivableDueInWindow,
+} from "@/lib/finance/parties"
 
 const typeConfig = {
   lent: { label: "Gave", icon: ArrowUpRight, color: "text-red-600", bg: "bg-red-50 dark:bg-red-500/10" },
@@ -105,69 +115,53 @@ function PartiesPageInner() {
     if (searchParams.get("action") === "add") setShowAddTransaction(true)
   }, [searchParams])
 
-  // Legacy entries (no linked_transaction_id) get their auto-created transaction
-  // matched by description/amount/date. Goes through the offline data layer so
-  // the cached list is searched when the network is down, and re-verifies the
-  // match locally because fetchTable's failure fallback returns the unfiltered
-  // cache. Returns false when the lookup itself failed — callers must then keep
-  // the ledger entry rather than silently orphaning the linked transaction.
-  async function deleteLegacyLinkedTransaction(ptx: PartyTransaction & { party?: Party }): Promise<boolean> {
-    const partyName = ptx.party?.name || ""
-    const descMap: Record<string, { type: string; desc: string }> = {
-      lent: { type: "expense", desc: `Lent to ${partyName}` },
-      received_back: { type: "income", desc: `Received back from ${partyName}` },
-      borrowed: { type: "income", desc: `Borrowed from ${partyName}` },
-      paid_back: { type: "expense", desc: `Paid back to ${partyName}` },
-    }
-    const expected = descMap[ptx.type]
-    if (!expected || !partyName) return true
-    try {
-      const rows = await fetchTable<Transaction>("transactions", ptx.user_id, {
-        filters: [
-          { column: "type", op: "eq", value: expected.type },
-          { column: "description", op: "eq", value: expected.desc },
-          { column: "date", op: "eq", value: ptx.date },
-        ],
-      })
-      const linked = rows.find(
-        t =>
-          t.type === expected.type &&
-          t.description === expected.desc &&
-          t.date === ptx.date &&
-          Number(t.amount) === Number(ptx.amount),
-      )
-      if (linked) await deleteRow("transactions", linked.id)
-      return true
-    } catch {
-      return false
-    }
+  // In-flight guard: a double-click re-enters before the cache invalidates
+  // and would run the cascade twice while the first delete is still settling.
+  const deleteInFlightRef = useRef(false)
+
+  // Remove the income/expense row a party entry created, together with
+  // whatever hangs off it, through the shared helper so this page, the
+  // Transactions page and the assistant cascade identically (and offline).
+  // The helper also removes every party row linked to that transaction —
+  // the entry itself included — so the ids it took care of are returned and
+  // the caller skips them. Returns null when the delete failed.
+  async function deleteLinkedTransaction(ptx: PartyTransaction): Promise<Set<string> | null> {
+    const linkedId = ptx.linked_transaction_id
+    if (!linkedId || !user) return new Set()
+    // fetchTable's failure fallback hands back the unfiltered cache, so the
+    // match is re-verified locally.
+    const linked = (await fetchTable<Transaction>("transactions", user.id, {
+      filters: [{ column: "id", op: "eq", value: linkedId }],
+    })).find(t => t.id === linkedId)
+    // Already gone (deleted from the Transactions page) — nothing to cascade.
+    if (!linked) return new Set()
+    const result = await deleteTransactionWithLinks(user.id, linked, { partyTransactions: rawTx })
+    if (result.error) return null
+    return new Set(result.deletedPartyTransactions.map(p => p.id))
   }
 
-  // In-flight guard: a double-click re-enters before the cache invalidates,
-  // and the legacy description-match could then delete a *twin* entry's
-  // linked transaction while the first delete is still settling.
-  const deleteInFlightRef = useRef(false)
+  function invalidateAfterCascade() {
+    invalidateParties()
+    queryClient.invalidateQueries({ queryKey: ["transactions"] })
+    queryClient.invalidateQueries({ queryKey: ["sip_payments"] })
+  }
 
   async function handleDelete(id: string) {
     if (deleteInFlightRef.current) return
     deleteInFlightRef.current = true
     try {
       const ptx = transactions.find(tx => tx.id === id)
-      if (ptx) {
-        if (ptx.linked_transaction_id) {
-          // Direct link exists
-          await deleteRow("transactions", ptx.linked_transaction_id)
-        } else if (!(await deleteLegacyLinkedTransaction(ptx))) {
-          window.dispatchEvent(
-            new CustomEvent("finboom:write-error", {
-              detail: "Couldn't reach the linked transaction — nothing was deleted. Try again.",
-            }),
-          )
-          return
-        }
+      const handled = ptx ? await deleteLinkedTransaction(ptx) : new Set<string>()
+      if (!handled) {
+        window.dispatchEvent(
+          new CustomEvent("finboom:write-error", {
+            detail: "Couldn't delete the linked transaction — nothing was deleted. Try again.",
+          }),
+        )
+        return
       }
-      await deleteRow("party_transactions", id)
-      invalidateParties()
+      if (!handled.has(id)) await deleteRow("party_transactions", id)
+      invalidateAfterCascade()
     } finally {
       deleteInFlightRef.current = false
     }
@@ -177,49 +171,47 @@ function PartiesPageInner() {
     if (deleteInFlightRef.current) return
     deleteInFlightRef.current = true
     try {
-      // Delete linked transactions for all party_transactions of this party
       const partyTxs = transactions.filter(tx => tx.party_id === id)
+      const handled = new Set<string>()
       for (const ptx of partyTxs) {
-        if (ptx.linked_transaction_id) {
-          await deleteRow("transactions", ptx.linked_transaction_id)
-        } else if (!(await deleteLegacyLinkedTransaction(ptx))) {
+        if (handled.has(ptx.id)) continue
+        const done = await deleteLinkedTransaction(ptx)
+        if (!done) {
           window.dispatchEvent(
             new CustomEvent("finboom:write-error", {
-              detail: "Couldn't reach linked transactions — party not deleted. Try again.",
+              detail: "Couldn't delete linked transactions — party not deleted. Try again.",
             }),
           )
           setDeletingPartyId(null)
           return
         }
+        for (const pid of done) handled.add(pid)
+      }
+      // Remove the remaining entries explicitly rather than relying on the
+      // server's ON DELETE CASCADE — that cascade never reaches IndexedDB
+      // (delta sync can't see deletes), so offline the rows would linger and
+      // keep counting in receivables. Queued deletes are idempotent against it.
+      for (const ptx of partyTxs) {
+        if (!handled.has(ptx.id)) await deleteRow("party_transactions", ptx.id)
       }
       await deleteRow("parties", id)
       setDeletingPartyId(null)
       setSelectedPartyId(null)
-      invalidateParties()
+      invalidateAfterCascade()
     } finally {
       deleteInFlightRef.current = false
     }
   }
 
-  // Calculate net balance per party
+  // Net balance per party (shared allocator — same numbers as the dashboard
+  // and the assistant). Every party appears, even with no entries.
   const partyBalances = useMemo(() => {
-    const map = new Map<string, { party: Party; balance: number; txCount: number }>()
-
-    for (const p of parties) {
-      map.set(p.id, { party: p, balance: 0, txCount: 0 })
-    }
-
-    for (const tx of transactions) {
-      const entry = map.get(tx.party_id)
-      if (!entry) continue
-      entry.txCount++
-      if (tx.type === "lent") entry.balance += Number(tx.amount)
-      else if (tx.type === "received_back") entry.balance -= Number(tx.amount)
-      else if (tx.type === "borrowed") entry.balance -= Number(tx.amount)
-      else if (tx.type === "paid_back") entry.balance += Number(tx.amount)
-    }
-
-    return Array.from(map.values()).sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance))
+    const net = partyNetBalances(transactions)
+    const txCount = new Map<string, number>()
+    for (const tx of transactions) txCount.set(tx.party_id, (txCount.get(tx.party_id) ?? 0) + 1)
+    return parties
+      .map(party => ({ party, balance: net.get(party.id) ?? 0, txCount: txCount.get(party.id) ?? 0 }))
+      .sort((a, b) => Math.abs(b.balance) - Math.abs(a.balance))
   }, [parties, transactions])
 
   const filteredPartyBalances = useMemo(() => {
@@ -236,92 +228,35 @@ function PartiesPageInner() {
     .filter(p => p.balance < 0)
     .reduce((sum, p) => sum + Math.abs(p.balance), 0)
 
-  // Net outstanding per party (used for summary cards and settle actions).
-  const balanceByParty = new Map(partyBalances.map(p => [p.party.id, p.balance]))
-
-  // Remaining outstanding per individual obligation. Repayments carrying
-  // settles_transaction_id (entry-level Settle, or picked in the modal's
-  // "settles which entry" select) reduce THAT entry first; any unlinked
-  // repayment (or the overflow of a linked one) is allocated LIFO — newest
-  // obligation first, matching how people actually settle ("that last ₹500").
-  // This lets a fully-repaid entry drop off the overdue list even when the
-  // party still has other open obligations.
-  const outstandingByTx = useMemo(() => {
-    const remaining = new Map<string, number>()
-    const byParty = new Map<string, PartyTransaction[]>()
-    for (const tx of transactions) {
-      const list = byParty.get(tx.party_id)
-      if (list) list.push(tx)
-      else byParty.set(tx.party_id, [tx])
-    }
-    const allocate = (txs: PartyTransaction[], obligation: string, repayment: string) => {
-      const obligations = txs
-        .filter(t => t.type === obligation)
-        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-      const open = new Map(obligations.map(o => [o.id, Number(o.amount)]))
-
-      // Phase 1: targeted repayments hit their linked entry; overflow (and
-      // repayments without a link) feed the LIFO pool.
-      let pool = 0
-      for (const t of txs.filter(t => t.type === repayment)) {
-        const target = t.settles_transaction_id
-        const cur = target ? open.get(target) : undefined
-        if (target && cur !== undefined) {
-          const used = Math.min(cur, Number(t.amount))
-          open.set(target, cur - used)
-          pool += Number(t.amount) - used
-        } else {
-          pool += Number(t.amount)
-        }
-      }
-
-      // Phase 2: LIFO the pool over whatever is still open (newest first).
-      for (const ob of [...obligations].reverse()) {
-        const cur = open.get(ob.id) ?? 0
-        const used = Math.min(cur, pool)
-        pool -= used
-        remaining.set(ob.id, cur - used)
-      }
-    }
-    for (const txs of byParty.values()) {
-      allocate(txs, "lent", "received_back")
-      allocate(txs, "borrowed", "paid_back")
-    }
-    return remaining
-  }, [transactions])
+  // Remaining outstanding per individual obligation (targeted
+  // settles_transaction_id first, then LIFO) — see lib/finance/parties.ts.
+  const outstandingByTx = useMemo(() => outstandingByEntry(transactions), [transactions])
 
   // An obligation is unsettled while it still has an outstanding remainder.
-  const isUnsettled = (tx: PartyTransaction) => {
-    if (tx.type !== "lent" && tx.type !== "borrowed") return false
-    return (outstandingByTx.get(tx.id) ?? Number(tx.amount)) > 0
-  }
+  const isUnsettled = (tx: PartyTransaction) => isEntryOpen(tx, outstandingByTx)
 
   // Still-open lent/borrowed entries, newest first — the settle modal offers
   // these so a repayment can be pinned to a specific entry.
   const openObligations = useMemo(
     () =>
       transactions
-        .filter(
-          t =>
-            (t.type === "lent" || t.type === "borrowed") &&
-            (outstandingByTx.get(t.id) ?? Number(t.amount)) > 0
-        )
+        .filter(t => isEntryOpen(t, outstandingByTx))
         .map(t => ({
           id: t.id,
           party_id: t.party_id,
           type: t.type as "lent" | "borrowed",
           date: t.date,
           amount: Number(t.amount),
-          outstanding: outstandingByTx.get(t.id) ?? Number(t.amount),
+          outstanding: entryOutstanding(t, outstandingByTx),
         }))
         .sort((a, b) => b.date.localeCompare(a.date)),
     [transactions, outstandingByTx]
   )
 
-  // Due within 30 days — sum the individual due-dated entries (NOT the whole
-  // party net balance), so setting a due date on one transaction doesn't pull
-  // the entire party balance into this card. Cap each party's contribution at
-  // its net outstanding so a partial repayment can't overstate what's due.
+  // Receivable within 30 days — Σ remaining outstanding of `lent` entries with
+  // a due date in the window, the same figure the dashboard "Receivable in
+  // 30 Days" tile shows. Borrowed entries are excluded on purpose: mixing
+  // money owed to you with money you owe made one number mean two things.
   // Compare YYYY-MM-DD strings in local time. `new Date("YYYY-MM-DD")` parses
   // as UTC midnight, which made entries due *today* read as overdue from
   // 05:30 IST and simultaneously drop out of the due-soon window.
@@ -329,20 +264,12 @@ function PartiesPageInner() {
   const in30Days = new Date()
   in30Days.setDate(in30Days.getDate() + 30)
   const plus30Str = `${in30Days.getFullYear()}-${String(in30Days.getMonth() + 1).padStart(2, "0")}-${String(in30Days.getDate()).padStart(2, "0")}`
-  const dueSoon = transactions.filter(tx => {
-    if (!tx.due_date || !isUnsettled(tx)) return false
-    return tx.due_date >= todayStr && tx.due_date <= plus30Str
-  })
-  const dueSoonAmount = dueSoon.reduce(
-    (sum, tx) => sum + (outstandingByTx.get(tx.id) ?? Number(tx.amount)),
-    0,
-  )
+  const dueSoon = entriesDueInWindow(transactions, todayStr, plus30Str, outstandingByTx)
+    .filter(tx => tx.type === "lent")
+  const dueSoonAmount = receivableDueInWindow(transactions, todayStr, plus30Str)
 
   // Overdue items — still-outstanding receivables and payables past their due date.
-  const overdue = transactions.filter(tx => {
-    if (!tx.due_date || !isUnsettled(tx)) return false
-    return tx.due_date < todayStr
-  })
+  const overdue = overdueEntries(transactions, todayStr, outstandingByTx)
 
   function handleSettle(
     partyId: string,
@@ -435,13 +362,13 @@ function PartiesPageInner() {
 
         <div className="liquid-glass rounded-2xl p-5">
           <div className="flex items-center justify-between">
-            <p className="text-[14px] text-[#86868b] font-medium">Due in 30 Days</p>
+            <p className="text-[14px] text-[#86868b] font-medium">Receivable in 30 Days</p>
             <div className="w-9 h-9 rounded-xl bg-orange-50 dark:bg-orange-500/10 flex items-center justify-center">
               <Clock className="w-5 h-5 text-orange-600" />
             </div>
           </div>
           <p className="text-[28px] font-semibold mt-2 text-orange-700 dark:text-orange-500">{formatCurrency(dueSoonAmount)}</p>
-          <p className="text-[12px] text-[#86868b] mt-1">{dueSoon.length} {dueSoon.length === 1 ? "entry" : "entries"} upcoming</p>
+          <p className="text-[12px] text-[#86868b] mt-1">{dueSoon.length} {dueSoon.length === 1 ? "entry" : "entries"} due to you</p>
         </div>
       </div>
 
@@ -459,7 +386,6 @@ function PartiesPageInner() {
           </div>
           <div className="space-y-2">
             {overdue.map(tx => {
-              const balance = balanceByParty.get(tx.party_id) ?? 0
               // "T00:00:00" forces local-time parsing; a bare date string is UTC.
               const due = new Date(`${tx.due_date!}T00:00:00`)
               due.setHours(0, 0, 0, 0)
@@ -486,7 +412,7 @@ function PartiesPageInner() {
                     </p>
                   </div>
                   <p className="text-sm font-semibold text-red-700 dark:text-red-400 tabular-nums">
-                    {formatCurrency(outstandingByTx.get(tx.id) ?? Number(tx.amount))}
+                    {formatCurrency(entryOutstanding(tx, outstandingByTx))}
                   </p>
                   {/* Direction comes from the entry being settled, not the
                       party's net balance — with mixed lent+borrowed entries
@@ -496,7 +422,7 @@ function PartiesPageInner() {
                     onClick={() =>
                       handleSettle(tx.party_id, tx.type === "lent" ? 1 : -1, {
                         id: tx.id,
-                        amount: outstandingByTx.get(tx.id) ?? Number(tx.amount),
+                        amount: entryOutstanding(tx, outstandingByTx),
                       })
                     }
                     className="shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#1d1d1f] dark:bg-white text-white dark:text-[#1d1d1f] hover:opacity-90 transition-opacity"

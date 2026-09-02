@@ -4,9 +4,19 @@ import { useCallback, useEffect, useRef, useState } from "react"
 import { useQueryClient } from "@tanstack/react-query"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
-import { fetchTable, insertRow, updateRow, deleteRow } from "@/lib/offline"
-import { accountBalance, spendGuardError } from "@/lib/finance/accounts"
+import { fetchTable, insertRow, updateRow, deleteRow, getAll } from "@/lib/offline"
+import {
+  accountBalance,
+  cashAndBankAccounts,
+  isAccountMovement,
+  summarizeCards,
+} from "@/lib/finance/accounts"
+import { sumCashflow, transactionsInMonth, sipStatusForMonth } from "@/lib/finance/monthly-cashflow"
+import { transactionDateError, spendGuardFor, isValidCategoryFor } from "@/lib/finance/transaction-guard"
+import { deleteTransactionWithLinks } from "@/lib/finance/delete-transaction"
+import { partyNetBalances } from "@/lib/finance/parties"
 import { getPreferredAccountId } from "@/lib/accounts/default-account"
+import { ADJUSTMENT_CATEGORY, TRANSFER_CATEGORY } from "@/lib/constants"
 import { todayLocalISO } from "@/lib/utils"
 import type {
   Account,
@@ -54,6 +64,44 @@ type PendingAction = AssistantAction & { summary: string }
 
 const HISTORY_LIMIT = 40
 const SESSION_LIMIT = 15
+
+// sip_payments is owned by /api/sip-payments; offline (or when the call
+// fails) fall back to the IndexedDB copy the hook keeps warm, so paid/skipped
+// SIPs are not all presented as due.
+async function loadSipPayments(): Promise<SipPayment[]> {
+  try {
+    const res = await fetch("/api/sip-payments")
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json()
+    return (data.payments ?? []) as SipPayment[]
+  } catch {
+    return getAll<SipPayment>("sip_payments").catch(() => [] as SipPayment[])
+  }
+}
+
+// Parties are household-level (no profile_id); an entry belongs to a profile
+// through the transaction it created. Legacy rows without a link are kept —
+// they show under every profile rather than vanishing.
+function scopePartyTxToProfile<T extends Pick<PartyTransaction, "linked_transaction_id">>(
+  partyTx: T[],
+  profileTxIds: Set<string>
+): T[] {
+  return partyTx.filter((t) => !t.linked_transaction_id || profileTxIds.has(t.linked_transaction_id))
+}
+
+// How a transaction is tied to something else — the model must not edit
+// transfer legs / adjustments, and party/SIP links carry cascade logic.
+function linkKind(
+  t: Transaction,
+  partyLinkedTx: Set<string>,
+  sipLinkedTx: Set<string>
+): "party" | "sip" | "transfer" | "adjustment" | undefined {
+  if (t.transfer_group_id || t.category === TRANSFER_CATEGORY) return "transfer"
+  if (t.category === ADJUSTMENT_CATEGORY) return "adjustment"
+  if (partyLinkedTx.has(t.id)) return "party"
+  if (sipLinkedTx.has(t.id)) return "sip"
+  return undefined
+}
 
 export function AssistantChat() {
   const { user } = useUser()
@@ -191,54 +239,58 @@ export function AssistantChat() {
         fetchTable<Transaction>("transactions", uid),
         fetchTable<PartyTransaction>("party_transactions", uid),
         fetchTable<Sip>("sips", uid),
-        fetch("/api/sip-payments")
-          .then((r) => r.json())
-          .then((d) => (d.payments ?? []) as SipPayment[])
-          .catch(() => [] as SipPayment[]),
+        loadSipPayments(),
       ])
 
+    const profileAccounts = accounts.filter((a) => a.profile_id === pid)
     const profileTx = allTx.filter((t) => t.profile_id === pid)
-    const monthTx = profileTx.filter((t) => t.date >= `${month}-01`)
+    const profileSips = sips.filter((s) => s.profile_id === pid)
+    // Month-to-date, real cashflow only — the same window and filter the
+    // Transactions page summary cards use.
+    const monthTx = transactionsInMonth(profileTx, month).filter((t) => t.date <= today)
+    const { income: incomeTotal, expense: expenseTotal } = sumCashflow(monthTx)
     const expenseByCategory: Record<string, number> = {}
-    let incomeTotal = 0
-    let expenseTotal = 0
     for (const t of monthTx) {
-      const amt = Number(t.amount)
-      if (t.type === "income") incomeTotal += amt
-      else {
-        expenseTotal += amt
-        expenseByCategory[t.category] = (expenseByCategory[t.category] ?? 0) + amt
-      }
+      if (t.type !== "expense" || isAccountMovement(t)) continue
+      expenseByCategory[t.category] = (expenseByCategory[t.category] ?? 0) + Number(t.amount)
     }
 
+    const profileTxIds = new Set(profileTx.map((t) => t.id))
+    const scopedPartyTx = scopePartyTxToProfile(partyTx, profileTxIds)
     // Net balance per party: what they still owe (positive) or are owed.
-    const balanceByParty = new Map<string, number>()
-    for (const t of partyTx) {
-      const amt = Number(t.amount)
-      const sign = t.type === "lent" ? 1 : t.type === "received_back" ? -1 : t.type === "borrowed" ? -1 : 1
-      balanceByParty.set(t.party_id, (balanceByParty.get(t.party_id) ?? 0) + sign * amt)
-    }
+    const balanceByParty = partyNetBalances(scopedPartyTx)
 
-    // Transactions backing a party entry or SIP payment carry extra logic on
-    // edit/delete — flag them so the model warns instead of breaking links.
-    const partyLinkedTx = new Set(partyTx.map((t) => t.linked_transaction_id).filter(Boolean))
-    const sipLinkedTx = new Set(sipPayments.map((p) => p.transaction_id).filter(Boolean))
-    const paidSips = new Set(sipPayments.filter((p) => p.month === month).map((p) => p.sip_id))
+    const partyLinkedTx = new Set(
+      partyTx.map((t) => t.linked_transaction_id).filter((id): id is string => !!id)
+    )
+    const sipLinkedTx = new Set(
+      sipPayments.map((p) => p.transaction_id).filter((id): id is string => !!id)
+    )
+    // Single source of truth for paid/skipped: handles skipped rows and SIPs
+    // whose investment expense was logged without a payment row.
+    const sipStatus = sipStatusForMonth(profileSips, sipPayments, month, profileTx)
+    const cards = summarizeCards(profileAccounts, allTx)
+    const cardById = new Map(cards.cards.map((c) => [c.account.id, c]))
 
     return {
       today,
       month,
-      accounts: accounts.map((a) => ({
-        id: a.id,
-        name: a.name,
-        type: a.type,
-        balance: accountBalance(a, allTx),
-      })),
-      // Primary (starred) account wins; else the last one used on this profile.
-      defaultAccountId: (() => {
-        const preferred = getPreferredAccountId(pid)
-        return preferred && accounts.some((a) => a.id === preferred) ? preferred : undefined
-      })(),
+      accounts: profileAccounts.map((a) => {
+        const card = cardById.get(a.id)
+        return {
+          id: a.id,
+          name: a.name,
+          type: a.type,
+          balance: card ? card.balance : accountBalance(a, allTx),
+          opening_date: a.opening_date,
+          ...(card
+            ? { outstanding: card.outstanding, available: card.available, dueDate: card.dueDate }
+            : {}),
+        }
+      }),
+      // Primary (starred) account wins; else the last one used on this profile
+      // (only ids that still exist on this profile).
+      defaultAccountId: getPreferredAccountId(pid, profileAccounts) || undefined,
       parties: parties.map((p) => ({
         id: p.id,
         name: p.name,
@@ -255,30 +307,30 @@ export function AssistantChat() {
       budgets: budgets
         .filter((b) => b.profile_id === pid)
         .map((b) => ({ category: b.category, amount: Number(b.amount) })),
-      sips: sips
-        .filter((s) => s.profile_id === pid && s.active)
+      sips: profileSips
+        .filter((s) => s.active)
         .map((s) => ({
           id: s.id,
           name: s.name,
           amount: Number(s.amount),
-          paidThisMonth: paidSips.has(s.id),
+          paidThisMonth: sipStatus.paidIds.has(s.id),
+          skippedThisMonth: sipStatus.skippedIds.has(s.id),
         })),
       recentTransactions: [...profileTx]
         .sort((a, b) => b.date.localeCompare(a.date))
         .slice(0, 25)
-        .map((t) => ({
-          id: t.id,
-          type: t.type,
-          amount: Number(t.amount),
-          category: t.category,
-          description: t.description || undefined,
-          date: t.date,
-          ...(partyLinkedTx.has(t.id)
-            ? { linked: "party" as const }
-            : sipLinkedTx.has(t.id)
-              ? { linked: "sip" as const }
-              : {}),
-        })),
+        .map((t) => {
+          const linked = linkKind(t, partyLinkedTx, sipLinkedTx)
+          return {
+            id: t.id,
+            type: t.type,
+            amount: Number(t.amount),
+            category: t.category,
+            description: t.description || undefined,
+            date: t.date,
+            ...(linked ? { linked } : {}),
+          }
+        }),
       stats: {
         incomeTotal,
         expenseTotal,
@@ -286,7 +338,12 @@ export function AssistantChat() {
         totalAssetValue: assets
           .filter((a) => a.profile_id === pid)
           .reduce((s, a) => s + Number(a.current_value), 0),
-        totalAccountBalance: accounts.reduce((s, a) => s + accountBalance(a, allTx), 0),
+        // Money actually held — cards are dues, not cash (dashboard parity).
+        totalAccountBalance: cashAndBankAccounts(profileAccounts).reduce(
+          (s, a) => s + accountBalance(a, allTx),
+          0
+        ),
+        cardDues: cards.totalOutstanding,
       },
     }
   }, [user, activeProfile])
@@ -297,18 +354,18 @@ export function AssistantChat() {
     const uid = user!.id
     const pid = activeProfile!.id
     if (q.scope === "party_ledger") {
-      const txs = await fetchTable<PartyTransaction>("party_transactions", uid, {
-        filters: [{ column: "party_id", op: "eq", value: q.party_id! }],
-      })
-      let netOwedToUser = 0
+      const [partyRows, allTx] = await Promise.all([
+        fetchTable<PartyTransaction>("party_transactions", uid, {
+          filters: [{ column: "party_id", op: "eq", value: q.party_id! }],
+        }),
+        fetchTable<Transaction>("transactions", uid),
+      ])
+      const profileTxIds = new Set(allTx.filter((t) => t.profile_id === pid).map((t) => t.id))
+      const txs = scopePartyTxToProfile(partyRows, profileTxIds)
+      const netOwedToUser = partyNetBalances(txs).get(q.party_id!) ?? 0
       const entries = [...txs]
         .sort((a, b) => a.date.localeCompare(b.date))
-        .map((t) => {
-          const amt = Number(t.amount)
-          netOwedToUser +=
-            t.type === "lent" ? amt : t.type === "received_back" ? -amt : t.type === "borrowed" ? -amt : amt
-          return { date: t.date, type: t.type, amount: amt, due_date: t.due_date ?? null }
-        })
+        .map((t) => ({ date: t.date, type: t.type, amount: Number(t.amount), due_date: t.due_date ?? null }))
       return { scope: "party_ledger", netOwedToUser, entries: entries.slice(-20) }
     }
     const today = todayLocalISO()
@@ -326,13 +383,17 @@ export function AssistantChat() {
         (!q.category || t.category === q.category) &&
         (!q.type || t.type === q.type)
     )
-    const byCategory: Record<string, number> = {}
-    let total = 0
-    for (const t of matched) {
-      total += Number(t.amount)
-      byCategory[t.category] = (byCategory[t.category] ?? 0) + Number(t.amount)
+    // Transfers and adjustments are not spending or earning; keep income and
+    // expense apart so "how much did I spend" is never an income+expense sum.
+    const real = matched.filter((t) => !isAccountMovement(t))
+    const { income, expense, surplus } = sumCashflow(real)
+    const incomeByCategory: Record<string, number> = {}
+    const expenseByCategory: Record<string, number> = {}
+    for (const t of real) {
+      const map = t.type === "income" ? incomeByCategory : expenseByCategory
+      map[t.category] = (map[t.category] ?? 0) + Number(t.amount)
     }
-    const sample = [...matched]
+    const sample = [...real]
       .sort((a, b) => b.date.localeCompare(a.date))
       .slice(0, 10)
       .map((t) => ({
@@ -343,7 +404,19 @@ export function AssistantChat() {
         category: t.category,
         description: t.description ?? null,
       }))
-    return { scope: "transactions", from, to, count: matched.length, total, byCategory, sample }
+    return {
+      scope: "transactions",
+      from,
+      to,
+      count: real.length,
+      income,
+      expense,
+      surplus,
+      incomeByCategory,
+      expenseByCategory,
+      movementsExcluded: matched.length - real.length,
+      sample,
+    }
   }
 
   // One model round-trip; auto-runs read-only queries and feeds the result
@@ -416,20 +489,45 @@ export function AssistantChat() {
     const uid = user!.id
     const pid = activeProfile!.id
 
+    // Resolve a model-supplied account id against THIS profile's accounts,
+    // with the full transaction history the balance guards need. `strict`
+    // rejects unknown ids (a hallucinated or other-profile id must never be
+    // written); non-strict is for an existing row whose account may be gone.
+    async function resolveAccount(
+      accountId: string | null | undefined,
+      { strict = true }: { strict?: boolean } = {}
+    ): Promise<{ account: Account | undefined; allTx: Transaction[] }> {
+      const [accounts, allTx] = await Promise.all([
+        fetchTable<Account>("accounts", uid),
+        fetchTable<Transaction>("transactions", uid),
+      ])
+      if (!accountId) return { account: undefined, allTx }
+      const account = accounts.find((a) => a.id === accountId && a.profile_id === pid)
+      if (!account && strict) throw new Error("That account isn't on this profile — pick one from the list.")
+      return { account, allTx }
+    }
+
+    // Refresh the per-profile default source, same as the manual modals.
+    function rememberLastAccount(accountId: string) {
+      try {
+        localStorage.setItem(`finboom_last_account_${pid}`, accountId)
+      } catch {
+        /* storage unavailable */
+      }
+    }
+
     if (action.kind === "add_transaction") {
-      // Overdraft guard: an expense from a tracked account can't exceed its
-      // balance (mirrors the manual modal's check).
-      if (action.type === "expense" && action.account_id) {
-        const [accounts, allTx] = await Promise.all([
-          fetchTable<Account>("accounts", uid),
-          fetchTable<Transaction>("transactions", uid),
-        ])
-        const account = accounts.find((a) => a.id === action.account_id)
-        if (account) {
-          const balance = accountBalance(account, allTx)
-          const guard = spendGuardError(account, balance, action.amount)
-          if (guard) throw new Error(guard)
-        }
+      // Same guards as the manual modal: pickable category, no future date,
+      // not before the account's opening date, no overdraft / over-limit.
+      if (!isValidCategoryFor(action.type, action.category)) {
+        throw new Error("That category can't be used for a regular transaction.")
+      }
+      const { account, allTx } = await resolveAccount(action.account_id)
+      const dateError = transactionDateError(action.date, account)
+      if (dateError) throw new Error(dateError)
+      if (action.type === "expense" && account) {
+        const guard = spendGuardFor(account, allTx, action.amount)
+        if (guard) throw new Error(guard)
       }
       const { data, error } = await insertRow<{ id: string }>("transactions", {
         user_id: uid,
@@ -444,13 +542,7 @@ export function AssistantChat() {
       })
       if (error || !data) throw new Error(error || "Insert failed")
       // Refresh the per-profile default source, same as the manual modal.
-      if (action.account_id) {
-        try {
-          localStorage.setItem(`finboom_last_account_${pid}`, action.account_id)
-        } catch {
-          /* storage unavailable */
-        }
-      }
+      if (account) rememberLastAccount(account.id)
       return {
         receipt: `Added ${action.summary}`,
         undo: { type: "delete", rows: [{ table: "transactions", id: data.id }] },
@@ -458,9 +550,24 @@ export function AssistantChat() {
     }
 
     if (action.kind === "add_party_transaction") {
+      const moneyOut = action.type === "lent" || action.type === "paid_back"
+      // Guards run before anything is written so a rejection leaves no
+      // half-recorded entry behind (mirrors the party modal).
+      const { account, allTx } = await resolveAccount(action.account_id)
+      const dateError = transactionDateError(action.date, account)
+      if (dateError) throw new Error(dateError)
+      if (moneyOut && account) {
+        const guard = spendGuardFor(account, allTx, action.amount)
+        if (guard) throw new Error(guard)
+      }
+
       let partyId = action.party_id
       const created: Array<{ table: string; id: string }> = []
-      let partyName = ""
+      // Existing party: use its real name so the linked transaction reads
+      // "Lent to Rahul" exactly like the modal writes it.
+      let partyName = partyId
+        ? ((await fetchTable<Party>("parties", uid)).find((p) => p.id === partyId)?.name ?? "")
+        : ""
       if (!partyId) {
         const { data, error } = await insertRow<{ id: string }>("parties", {
           user_id: uid,
@@ -486,8 +593,7 @@ export function AssistantChat() {
 
       // Mirror the manual modal: auto-create the linked income/expense so
       // cash-flow views stay consistent.
-      const moneyOut = action.type === "lent" || action.type === "paid_back"
-      const name = partyName || "party"
+      const name = partyName || "Party"
       const descriptions = {
         received_back: `Received back from ${name}`,
         paid_back: `Paid back to ${name}`,
@@ -503,12 +609,13 @@ export function AssistantChat() {
         description: descriptions[action.type],
         date: action.date,
         currency: "INR",
-        account_id: null,
+        account_id: account?.id ?? null,
       })
       if (tx) {
         created.push({ table: "transactions", id: tx.id })
         await updateRow("party_transactions", pt.id, { linked_transaction_id: tx.id })
       }
+      if (account) rememberLastAccount(account.id)
       return {
         receipt: `Recorded ${action.summary}`,
         undo: { type: "delete", rows: created.reverse() },
@@ -566,25 +673,32 @@ export function AssistantChat() {
       const current = rows[0]
       if (!current) throw new Error("That transaction no longer exists.")
 
-      // A SIP payment's expense is managed by the SIP flow — editing or
-      // deleting it directly would leave the sip_payments row dangling.
-      const sipPayments = await fetch("/api/sip-payments")
-        .then((r) => r.json())
-        .then((d) => (d.payments ?? []) as SipPayment[])
-        .catch(() => [] as SipPayment[])
-      if (sipPayments.some((p) => p.transaction_id === action.transaction_id)) {
-        throw new Error(
-          "That transaction is a SIP payment — unmark the SIP for that month instead of editing it directly."
-        )
-      }
-
-      const linkedParty = (
-        await fetchTable<PartyTransaction>("party_transactions", uid, {
-          filters: [{ column: "linked_transaction_id", op: "eq", value: action.transaction_id }],
-        })
-      )[0]
+      const sipPayments = await loadSipPayments()
+      const isSipLinked = sipPayments.some((p) => p.transaction_id === current.id)
+      const isMovement = !!current.transfer_group_id || isAccountMovement(current)
 
       if (action.kind === "update_transaction") {
+        // Transfer legs and adjustments are managed from Cash & Bank —
+        // patching one row would desync the other leg / the balance fix.
+        if (isMovement) {
+          throw new Error(
+            current.transfer_group_id
+              ? "That's one leg of a transfer — transfers are managed from Cash & Bank. You can delete it (both legs go) but not edit it."
+              : "That's a balance adjustment — adjustments are managed from Cash & Bank."
+          )
+        }
+        // A SIP payment's expense is managed by the SIP flow — editing it
+        // would desync the sip_payments row's amount/date.
+        if (isSipLinked) {
+          throw new Error(
+            "That transaction is a SIP payment — unmark the SIP for that month instead of editing it directly."
+          )
+        }
+        const linkedParty = (
+          await fetchTable<PartyTransaction>("party_transactions", uid, {
+            filters: [{ column: "linked_transaction_id", op: "eq", value: current.id }],
+          })
+        )[0]
         if (linkedParty && action.type !== undefined && action.type !== current.type) {
           throw new Error(
             "This transaction backs a party entry — flipping income/expense would break that link. Edit the party entry instead."
@@ -597,6 +711,21 @@ export function AssistantChat() {
             patch[key] = action[key]
             prev[key] = current[key] ?? null
           }
+        }
+        // Validate the merged row the way the edit modal does: category must
+        // fit the (possibly new) type, the date must be usable for the tagged
+        // account, and an expense must still fit the account's balance/limit —
+        // excluding this row's own old contribution.
+        const next = { ...current, ...patch } as Transaction
+        if (!isValidCategoryFor(next.type, next.category)) {
+          throw new Error(`"${next.category}" isn't a valid ${next.type} category.`)
+        }
+        const { account, allTx } = await resolveAccount(current.account_id, { strict: false })
+        const dateError = transactionDateError(next.date, account)
+        if (dateError) throw new Error(dateError)
+        if (next.type === "expense" && account) {
+          const guard = spendGuardFor(account, allTx, Number(next.amount), current.id)
+          if (guard) throw new Error(guard)
         }
         const { error } = await updateRow("transactions", current.id, patch)
         if (error) throw new Error(error)
@@ -624,21 +753,26 @@ export function AssistantChat() {
         }
       }
 
-      // delete_transaction — cascade the backing party entries, exactly like
-      // the Transactions page delete does, and capture rows for undo.
-      const linkedPartyRows = await fetchTable<PartyTransaction>("party_transactions", uid, {
-        filters: [{ column: "linked_transaction_id", op: "eq", value: action.transaction_id }],
-      })
-      for (const p of linkedPartyRows) await deleteRow("party_transactions", p.id)
-      const { error: delError } = await deleteRow("transactions", current.id)
-      if (delError) throw new Error(delError)
+      // delete_transaction — one shared cascade with the Transactions page:
+      // every transfer leg, backing party entries and the cached SIP payment
+      // go together, and every removed row is captured for Undo.
+      const result = await deleteTransactionWithLinks(uid, current, { sipPayments })
+      if (result.error && result.deleted.length === 0) throw new Error(result.error)
+      const notes: string[] = []
+      if (result.deleted.length > 1) notes.push(`${result.deleted.length} transfer legs removed`)
+      if (result.deletedPartyTransactions.length) notes.push("linked party entry removed")
+      if (isSipLinked) notes.push("SIP no longer marked paid for that month")
+      if (result.error) notes.push(`some rows could not be removed: ${result.error}`)
       return {
-        receipt: `Deleted ${action.summary}${linkedPartyRows.length ? " (linked party entry removed too)" : ""}`,
+        receipt: `Deleted ${action.summary}${notes.length ? ` (${notes.join("; ")})` : ""}`,
         undo: {
           type: "restore",
           rows: [
-            { table: "transactions", row: current as unknown as Record<string, unknown> },
-            ...linkedPartyRows.map((p) => ({
+            ...result.deleted.map((t) => ({
+              table: "transactions",
+              row: t as unknown as Record<string, unknown>,
+            })),
+            ...result.deletedPartyTransactions.map((p) => ({
               table: "party_transactions",
               row: p as unknown as Record<string, unknown>,
             })),

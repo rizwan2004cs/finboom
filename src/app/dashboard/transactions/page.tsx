@@ -5,15 +5,17 @@ import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
 import { useSearchParams } from "next/navigation"
 import { useOfflineQuery } from "@/hooks/use-offline-query"
-import { deleteRow, fetchTable } from "@/lib/offline"
+import { deleteRow } from "@/lib/offline"
 import { useQueryClient } from "@tanstack/react-query"
-import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Edit2, Receipt, User, Banknote, Landmark, Download } from "lucide-react"
+import { Plus, ArrowUpCircle, ArrowDownCircle, Trash2, Edit2, Receipt, User, Download } from "lucide-react"
 import type { Transaction, Party, PartyTransaction, Sip } from "@/lib/types"
 import { EXPENSE_CATEGORIES, INCOME_CATEGORIES, ACCOUNT_MOVEMENT_CATEGORIES } from "@/lib/constants"
 import { isAccountMovement } from "@/lib/finance/accounts"
+import { deleteTransactionWithLinks } from "@/lib/finance/delete-transaction"
 import { useAccounts } from "@/hooks/use-accounts"
 import { CustomSelect } from "@/components/custom-select"
 import { CategoryIcon } from "@/components/category-icon"
+import { AccountTypeIcon } from "@/components/account-type-icon"
 import { AddTransactionModal } from "@/components/modals/add-transaction-modal"
 import { StatementModal } from "@/components/modals/statement-modal"
 import { SipMonthChecklist } from "@/components/sip-month-checklist"
@@ -22,7 +24,7 @@ import { useAppDialog } from "@/components/app-dialog"
 import { useCurrency } from "@/hooks/use-currency"
 import { formatDueDate, todayLocalISO } from "@/lib/utils"
 import { TransactionCategoryBreakdown } from "@/components/transactions/category-breakdown"
-import { availableAfterUnpaidSips, monthKeyFromDate, sipStatusForMonth } from "@/lib/finance/monthly-cashflow"
+import { monthKeyFromDate, sipStatusForMonth, sumCashflow } from "@/lib/finance/monthly-cashflow"
 
 const LEGACY_MONTH_FORWARD_DESCRIPTION = "Previous month's forward"
 
@@ -92,13 +94,25 @@ function TransactionsPage() {
   const { data: sipPayments = [] } = useSipPayments(user?.id)
   const { accounts } = useAccounts()
 
+  /** Full month, honouring the account filter — the base for the list and for
+   *  every summary card, so the Savings Rate % and its "Left ₹X" subtitle
+   *  describe the same set of transactions. */
+  const accountMonthTransactions = useMemo(() => {
+    const matchesAccount = (t: Transaction) =>
+      accountFilter === "all" ||
+      (accountFilter === "none" ? !t.account_id : t.account_id === accountFilter)
+    return transactions.filter(matchesAccount)
+  }, [transactions, accountFilter])
+
   const { unpaidSipAmount, leftAfterSips } = useMemo(() => {
+    // SIP status must see the UNFILTERED month: a "SIP: <fund>" expense paid
+    // from another account still marks that SIP paid.
     const { unpaidAmount } = sipStatusForMonth(sips, sipPayments, monthFilter, transactions)
     return {
       unpaidSipAmount: unpaidAmount,
-      leftAfterSips: availableAfterUnpaidSips(transactions, sips, sipPayments, monthFilter),
+      leftAfterSips: sumCashflow(accountMonthTransactions).surplus - unpaidAmount,
     }
-  }, [transactions, sips, sipPayments, monthFilter])
+  }, [transactions, accountMonthTransactions, sips, sipPayments, monthFilter])
 
   const currentCalendarMonth = monthKeyFromDate()
 
@@ -145,59 +159,26 @@ function TransactionsPage() {
 
   async function deleteTransaction(t: Transaction) {
     // A transfer is two linked legs — deleting only one would silently corrupt
-    // both account balances, so always remove the pair together.
-    if (t.transfer_group_id) {
-      await showConfirm("Delete this transfer? Both sides of it will be removed.", {
-        destructive: true,
-        onConfirm: async () => {
-          const legs = (await fetchTable<Transaction>("transactions", user!.id))
-            .filter(x => x.transfer_group_id === t.transfer_group_id)
-          for (const leg of legs) {
-            let { error } = await deleteRow("transactions", leg.id)
-            if (error) {
-              // One retry so a transient rejection can't strand a one-sided
-              // transfer; if it still fails, stop — the central write-error
-              // toaster surfaces the message rather than pretending success.
-              ;({ error } = await deleteRow("transactions", leg.id))
-              if (error) break
-            }
-          }
-          queryClient.invalidateQueries({ queryKey: ["transactions"] })
-        },
-      })
-      return
-    }
-    const id = t.id
-    await showConfirm("Delete this transaction?", {
+    // both account balances, so the helper always removes the group together
+    // (plus linked party entries and cached SIP payment rows).
+    const message = t.transfer_group_id
+      ? "Delete this transfer? Both sides of it will be removed."
+      : "Delete this transaction?"
+    await showConfirm(message, {
       destructive: true,
       onConfirm: async () => {
-        // Also delete any linked party_transaction (expense mapped to receivable).
-        // Look it up through the offline layer so the cascade also works offline —
-        // a direct Supabase query would silently no-op without a network.
-        try {
-          const linked = (await fetchTable<{ id: string; linked_transaction_id?: string }>(
-            "party_transactions", user!.id
-          )).filter((pt) => pt.linked_transaction_id === id)
-          for (const pt of linked) {
-            await deleteRow("party_transactions", pt.id)
-          }
-        } catch (e) {
-          console.warn("Could not delete linked party transactions:", e)
-        }
-
-        await deleteRow("transactions", id)
+        await deleteTransactionWithLinks(user!.id, t, { sipPayments })
         queryClient.invalidateQueries({ queryKey: ["transactions"] })
         queryClient.invalidateQueries({ queryKey: ["party_transactions"] })
+        queryClient.invalidateQueries({ queryKey: ["sip_payments"] })
       },
     })
   }
 
   const accountById = useMemo(() => new Map(accounts.map(a => [a.id, a])), [accounts])
 
-  const filtered = transactions.filter(t =>
-    (typeFilter === "all" || t.type === typeFilter) &&
-    (accountFilter === "all" ||
-      (accountFilter === "none" ? !t.account_id : t.account_id === accountFilter))
+  const filtered = accountMonthTransactions.filter(t =>
+    typeFilter === "all" || t.type === typeFilter
   )
 
   const todayStr = todayLocalISO()
@@ -205,13 +186,9 @@ function TransactionsPage() {
   /** Month-to-date for current month; full month for past months. Follows the
    *  account filter so the summary cards and Insights match the visible list. */
   const tillDateTransactions = useMemo(() => {
-    const base = transactions.filter(t =>
-      accountFilter === "all" ||
-      (accountFilter === "none" ? !t.account_id : t.account_id === accountFilter)
-    )
-    if (monthFilter !== currentCalendarMonth) return base
-    return base.filter((t) => t.date <= todayStr)
-  }, [transactions, monthFilter, currentCalendarMonth, todayStr, accountFilter])
+    if (monthFilter !== currentCalendarMonth) return accountMonthTransactions
+    return accountMonthTransactions.filter((t) => t.date <= todayStr)
+  }, [accountMonthTransactions, monthFilter, currentCalendarMonth, todayStr])
 
   const periodLabel = useMemo(() => {
     const [y, m] = monthFilter.split("-").map(Number)
@@ -415,9 +392,7 @@ function TransactionsPage() {
                           <p className="text-xs text-[#86868b]">{cat?.label}</p>
                           {account && (
                             <p className="text-xs text-[#86868b] mt-0.5 flex items-center gap-1">
-                              {account.type === "cash"
-                                ? <Banknote className="w-3 h-3 flex-shrink-0" />
-                                : <Landmark className="w-3 h-3 flex-shrink-0" />}
+                              <AccountTypeIcon type={account.type} className="w-3 h-3 flex-shrink-0" />
                               <span className="truncate">{account.name}</span>
                             </p>
                           )}
@@ -437,10 +412,12 @@ function TransactionsPage() {
                           </p>
                         </div>
                         <div className="flex gap-1 ml-1">
-                          {/* Transfer/adjustment entries are managed from the
-                              Cash & Bank page — free-form edits here would
+                          {/* Transfer/adjustment entries — and any leg that
+                              shares a transfer_group_id, like the card-bill
+                              expense a Transfer creates — are managed from
+                              the Cash & Bank page. Free-form edits here would
                               desync the linked leg or the corrected balance. */}
-                          {!movement && (
+                          {!movement && !t.transfer_group_id && (
                             <button
                               onClick={() => setEditTransaction(t)}
                               className="p-1.5 rounded-lg hover:bg-[#f5f5f7] transition-all"

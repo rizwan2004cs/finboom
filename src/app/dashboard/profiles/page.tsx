@@ -3,14 +3,15 @@
 import { useMemo, useState } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
-import { insertRow } from "@/lib/offline"
+import { insertRow, fetchTable, deleteRow, getAll, remove as idbRemove } from "@/lib/offline"
 import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { computeNetWorth } from "@/lib/finance/net-worth"
+import { deleteTransactionWithLinks } from "@/lib/finance/delete-transaction"
 import { useDeleteMutation } from "@/hooks/use-offline-mutation"
 import { useQueryClient } from "@tanstack/react-query"
 import { Users, Plus, Trash2, Building2, User2, CheckCircle } from "lucide-react"
 import { useAppDialog } from "@/components/app-dialog"
-import type { Profile, Asset, Liability, Account, Transaction } from "@/lib/types"
+import type { Profile, Asset, Liability, Account, Transaction, PartyTransaction, Sip, SipPayment } from "@/lib/types"
 import { useCurrency } from "@/hooks/use-currency"
 
 export default function ProfilesPage() {
@@ -64,6 +65,46 @@ export default function ProfilesPage() {
 
   const { showAlert, showConfirm } = useAppDialog()
 
+  // Delete everything the profile owns through the offline layer, then the
+  // profile row. The DB cascades too, but delta sync never sees server-side
+  // deletes, so without this the children would linger in IndexedDB (and in
+  // every offline read) with a dangling profile_id.
+  async function deleteProfileData(profileId: string) {
+    if (!user) return
+    const uid = user.id
+    const byProfile = { filters: [{ column: "profile_id", op: "eq" as const, value: profileId }] }
+
+    const [transactions, partyTransactions, sips] = await Promise.all([
+      fetchTable<Transaction>("transactions", uid, byProfile),
+      fetchTable<PartyTransaction>("party_transactions", uid),
+      fetchTable<Sip>("sips", uid, byProfile),
+    ])
+
+    // Transfers are removed as a group, so a leg can already be gone by the
+    // time the loop reaches it.
+    const removedTx = new Set<string>()
+    for (const tx of transactions) {
+      if (removedTx.has(tx.id)) continue
+      const { deleted } = await deleteTransactionWithLinks(uid, tx, { partyTransactions })
+      for (const leg of deleted) removedTx.add(leg.id)
+    }
+
+    // sip_payments cascade from sips on the server; mirror that in the cache.
+    const sipIds = new Set(sips.map((s) => s.id))
+    if (sipIds.size > 0) {
+      const cachedPayments = await getAll<SipPayment>("sip_payments").catch(() => [] as SipPayment[])
+      for (const p of cachedPayments) {
+        if (sipIds.has(p.sip_id)) await idbRemove("sip_payments", p.id).catch(() => {})
+      }
+    }
+
+    const childTables = ["sips", "budgets", "accounts", "assets", "liabilities", "goals", "snapshots", "health_checks"]
+    for (const table of childTables) {
+      const rows = table === "sips" ? sips : await fetchTable<{ id: string }>(table, uid, byProfile)
+      for (const row of rows) await deleteRow(table, row.id)
+    }
+  }
+
   async function deleteProfile(id: string) {
     if (id === activeProfile?.id) {
       await showAlert("Cannot delete the active profile. Switch to another profile first.")
@@ -72,8 +113,11 @@ export default function ProfilesPage() {
     if (!(await showConfirm("Delete this profile and all associated data?", {
       destructive: true,
       onConfirm: async () => {
+        await deleteProfileData(id)
         await deleteMut.mutateAsync(id)
         await reloadProfiles()
+        // Every table lost rows — refresh all cached queries, not just profiles.
+        queryClient.invalidateQueries()
       },
     }))) return
   }

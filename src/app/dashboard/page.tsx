@@ -17,6 +17,9 @@ import { useSipPayments } from "@/hooks/use-sip-payments"
 import { useAccounts } from "@/hooks/use-accounts"
 import { accountBalance, cashAndBankAccounts, summarizeCards } from "@/lib/finance/accounts"
 import { computeNetWorth } from "@/lib/finance/net-worth"
+import { netWorthComparableTo } from "@/lib/finance/net-worth-baseline"
+import { partyNetBalances, receivableDueInWindow } from "@/lib/finance/parties"
+import { sipStatusForMonth, sipsDueRestOfMonth } from "@/lib/finance/monthly-cashflow"
 
 export default function DashboardPage() {
   const { formatCurrency } = useCurrency()
@@ -72,56 +75,38 @@ export default function DashboardPage() {
   const currentMonthKey = todayLocalISO().slice(0, 7)
   const prevSnapshot = snapshots.find(s => (s.snapshot_date || "").slice(0, 7) < currentMonthKey) ?? null
   const prevNetWorth = prevSnapshot ? Number(prevSnapshot.net_worth) : 0
-  const netWorthChange = prevNetWorth !== 0 ? ((netWorth - prevNetWorth) / Math.abs(prevNetWorth)) * 100 : 0
+  // Older snapshots stored investments − loans; compare like-for-like.
+  const comparableNetWorth = netWorthComparableTo(wealth, prevSnapshot)
+  const netWorthChange = prevNetWorth !== 0 ? ((comparableNetWorth - prevNetWorth) / Math.abs(prevNetWorth)) * 100 : 0
+
+  // Party rows carry no profile_id; scope them through the linked transaction,
+  // which does. Legacy rows without a link belong to no profile in particular,
+  // so they stay counted here and the cards say so.
+  const profileTxIds = new Set(transactions.map(t => t.id))
+  const profilePartyTransactions = partyTransactions.filter(
+    tx => !tx.linked_transaction_id || profileTxIds.has(tx.linked_transaction_id)
+  )
+  const hasUnscopedPartyRows = profilePartyTransactions.some(tx => !tx.linked_transaction_id)
 
   // Party balances — receivable vs payable
-  const partyBalanceMap = new Map<string, number>()
-  for (const tx of partyTransactions) {
-    const current = partyBalanceMap.get(tx.party_id) || 0
-    if (tx.type === "lent") partyBalanceMap.set(tx.party_id, current + Number(tx.amount))
-    else if (tx.type === "received_back") partyBalanceMap.set(tx.party_id, current - Number(tx.amount))
-    else if (tx.type === "borrowed") partyBalanceMap.set(tx.party_id, current - Number(tx.amount))
-    else if (tx.type === "paid_back") partyBalanceMap.set(tx.party_id, current + Number(tx.amount))
-  }
+  const partyBalanceMap = partyNetBalances(profilePartyTransactions)
   const totalReceivable = Array.from(partyBalanceMap.values()).filter(b => b > 0).reduce((s, b) => s + b, 0)
 
   const today = new Date()
   const in30Days = new Date(today)
   in30Days.setDate(in30Days.getDate() + 30)
   // Compare YYYY-MM-DD strings in local time (Date-parsing a bare date string
-  // is UTC midnight, which dropped entries due today), and cap each party's
-  // contribution at its outstanding balance so partial repayments aren't
-  // re-counted — otherwise this card could exceed Total Receivable beside it.
+  // is UTC midnight, which dropped entries due today). Per-entry outstanding
+  // after targeted + LIFO allocation — the same number the Parties page shows.
   const todayStr = todayLocalISO()
   const plus30Str = `${in30Days.getFullYear()}-${String(in30Days.getMonth() + 1).padStart(2, "0")}-${String(in30Days.getDate()).padStart(2, "0")}`
-  const upcomingByParty = new Map<string, number>()
-  for (const tx of partyTransactions) {
-    if (tx.type !== "lent" || !tx.due_date) continue
-    if (tx.due_date < todayStr || tx.due_date > plus30Str) continue
-    if ((partyBalanceMap.get(tx.party_id) || 0) <= 0) continue // party already settled
-    upcomingByParty.set(tx.party_id, (upcomingByParty.get(tx.party_id) || 0) + Number(tx.amount))
-  }
-  const receivableIn30 = Array.from(upcomingByParty.entries()).reduce(
-    (s, [pid, gross]) => s + Math.min(gross, partyBalanceMap.get(pid) || 0),
-    0,
-  )
+  const receivableIn30 = receivableDueInWindow(profilePartyTransactions, todayStr, plus30Str)
 
-  // SIPs still due in the remainder of this month (active only). A SIP scheduled
-  // for a day beyond this month's length (e.g. 31 in April) debits on the last
-  // day, so clamp before comparing — matching the reminder cron's logic.
-  const todayDay = today.getDate()
-  const lastDayThisMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
-  const effectiveSipDay = (day: number) => Math.min(day, lastDayThisMonth)
-  // Exclude SIPs already marked paid this month — they're settled obligations,
-  // not upcoming dues.
-  const paidSipIds = new Set(
-    sipPayments.filter(p => p.month === currentMonthKey).map(p => p.sip_id)
-  )
-  const upcomingSips = sips.filter(
-    s => s.active && !paidSipIds.has(s.id) && effectiveSipDay(s.sip_day) >= todayDay
-  )
-  const sipsDueAmount = upcomingSips.reduce((sum, s) => sum + Number(s.amount), 0)
-  const nextSipDay = upcomingSips.length > 0 ? Math.min(...upcomingSips.map(s => effectiveSipDay(s.sip_day))) : 0
+  // SIPs still due in the remainder of this month. sipStatusForMonth is the
+  // one source of truth for paid/skipped (including SIP expenses logged by
+  // hand); sipsDueRestOfMonth clamps the debit day to the month's length.
+  const { unpaid: unpaidSips } = sipStatusForMonth(sips, sipPayments, currentMonthKey, transactions)
+  const sipsDue = sipsDueRestOfMonth(unpaidSips, today)
 
   // Cash & Bank balances — derived from the same profile-wide transaction set
   const cashAndBank = cashAndBankAccounts(accounts)
@@ -130,6 +115,14 @@ export default function DashboardPage() {
     balance: accountBalance(a, transactions),
   }))
   const totalAccountBalance = accountBalances.reduce((s, b) => s + b.balance, 0)
+
+  // Cards are tracked as accounts (card dues shown separately below), so a
+  // legacy "Credit Card Debt" liability is not a loan.
+  const loanCount = liabilities.filter(l => l.liability_type !== "credit_card").length
+  const legacyCardDues = liabilities
+    .filter(l => l.liability_type === "credit_card")
+    .reduce((s, l) => s + Number(l.outstanding_amount), 0)
+  const cardDuesShown = wealth.cardDues + legacyCardDues
 
   // Asset allocation breakdown
   const allocationData = ASSET_CLASSES.map(cls => {
@@ -230,8 +223,8 @@ export default function DashboardPage() {
           </div>
           <p className="text-[28px] font-semibold mt-2 text-[#1d1d1f]">{formatCurrency(totalLiabilities)}</p>
           <p className="text-[12px] text-[#86868b] mt-1">
-            {liabilities.length} active loan{liabilities.length === 1 ? "" : "s"}
-            {wealth.cardDues > 0 && ` · ${formatCurrency(wealth.cardDues)} card dues`}
+            {loanCount} active loan{loanCount === 1 ? "" : "s"}
+            {cardDuesShown > 0 && ` · ${formatCurrency(cardDuesShown)} card dues`}
           </p>
         </div>
       </div>
@@ -310,7 +303,9 @@ export default function DashboardPage() {
               </div>
             </div>
             <p className="text-[28px] font-semibold mt-2 text-green-700">{formatCurrency(totalReceivable)}</p>
-            <p className="text-[12px] text-[#86868b] mt-1">from parties</p>
+            <p className="text-[12px] text-[#86868b] mt-1">
+              {hasUnscopedPartyRows ? "from parties · includes entries across all profiles" : "from parties"}
+            </p>
           </Link>
 
           <Link href="/dashboard/parties" className="liquid-glass rounded-2xl p-5 transition-all hover:shadow-md">
@@ -321,13 +316,15 @@ export default function DashboardPage() {
               </div>
             </div>
             <p className="text-[28px] font-semibold mt-2 text-orange-700">{formatCurrency(receivableIn30)}</p>
-            <p className="text-[12px] text-[#86868b] mt-1">upcoming dues</p>
+            <p className="text-[12px] text-[#86868b] mt-1">
+              {hasUnscopedPartyRows ? "upcoming dues · across all profiles" : "upcoming dues"}
+            </p>
           </Link>
         </div>
       )}
 
       {/* SIPs due this month */}
-      {upcomingSips.length > 0 && (
+      {sipsDue.count > 0 && (
         <Link href="/dashboard/sips" className="block liquid-glass rounded-2xl p-5 transition-all hover:shadow-md">
           <div className="flex items-center justify-between">
             <p className="text-[14px] text-[#86868b] font-medium">SIPs due this month</p>
@@ -335,9 +332,9 @@ export default function DashboardPage() {
               <Repeat className="w-5 h-5 text-indigo-600" />
             </div>
           </div>
-          <p className="text-[28px] font-semibold mt-2 text-[#1d1d1f]">{formatCurrency(sipsDueAmount)}</p>
+          <p className="text-[28px] font-semibold mt-2 text-[#1d1d1f]">{formatCurrency(sipsDue.amount)}</p>
           <p className="text-[12px] text-[#86868b] mt-1">
-            {upcomingSips.length} SIP{upcomingSips.length > 1 ? "s" : ""} remaining · next on day {nextSipDay}
+            {sipsDue.count} SIP{sipsDue.count > 1 ? "s" : ""} remaining · next on day {sipsDue.nextDay}
           </p>
         </Link>
       )}
@@ -363,7 +360,7 @@ export default function DashboardPage() {
               Manage <ArrowUpRight className="w-3 h-3" />
             </Link>
           </div>
-          <AllocationChart data={allocationData} total={totalAssets} />
+          <AllocationChart data={allocationData} />
         </div>
       </div>
 

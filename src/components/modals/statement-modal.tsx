@@ -4,9 +4,9 @@ import { useState } from "react"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
 import { fetchTable } from "@/lib/offline"
-import { accountLedger } from "@/lib/finance/accounts"
+import { accountLedger, isAccountMovement, isCreditCard, withoutAccountMovements } from "@/lib/finance/accounts"
 import { todayLocalISO } from "@/lib/utils"
-import { EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/constants"
+import { ACCOUNT_MOVEMENT_CATEGORIES, EXPENSE_CATEGORIES, INCOME_CATEGORIES } from "@/lib/constants"
 import { downloadStatementPdf, type StatementRow } from "@/lib/statement/pdf"
 import { CustomSelect } from "@/components/custom-select"
 import type { Account, Transaction } from "@/lib/types"
@@ -26,8 +26,9 @@ const PRESETS: { id: RangePreset; label: string }[] = [
   { id: "custom", label: "Custom dates" },
 ]
 
+// Transfer/adjustment legs appear in ledgers too, so they need labels.
 const CATEGORY_LABELS: Record<string, string> = Object.fromEntries(
-  [...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES].map((c) => [c.id, c.label])
+  [...EXPENSE_CATEGORIES, ...INCOME_CATEGORIES, ...ACCOUNT_MOVEMENT_CATEGORIES].map((c) => [c.id, c.label])
 )
 
 function presetRange(preset: RangePreset): { from: string; to: string } {
@@ -50,11 +51,14 @@ function presetRange(preset: RangePreset): { from: string; to: string } {
   return { from: "0000-01-01", to: today }
 }
 
+/** Category-wise income/expense. Transfers and adjustments are not real
+ *  cashflow, so they are skipped — the same rule as every on-screen breakdown. */
 function categorySummaryOf(
   txs: Array<Pick<Transaction, "type" | "category" | "amount">>
 ): Array<{ category: string; income: number; expense: number }> {
   const map = new Map<string, { income: number; expense: number }>()
   for (const t of txs) {
+    if (isAccountMovement(t)) continue
     const key = CATEGORY_LABELS[t.category] || t.category
     const entry = map.get(key) ?? { income: 0, expense: 0 }
     if (t.type === "income") entry.income += Number(t.amount)
@@ -133,11 +137,15 @@ export function StatementModal({ onClose, accounts, initialAccountId }: Props) {
           credit: t.type === "income" ? Number(t.amount) : undefined,
           balance: balanceAfter,
         }))
+        // Money in/out here include transfer legs on purpose: they must
+        // reconcile opening → closing. Only the category analysis skips them.
+        const card = isCreditCard(account)
         downloadStatementPdf({
-          heading: `${account.name} — Account Statement`,
+          heading: `${account.name} — ${card ? "Card" : "Account"} Statement`,
           profileName: activeProfile.name,
           periodLabel,
           rows,
+          card,
           openingBalance: opening,
           closingBalance: closing,
           totalIn: rows.reduce((s, r) => s + (r.credit ?? 0), 0),
@@ -153,13 +161,16 @@ export function StatementModal({ onClose, accounts, initialAccountId }: Props) {
           debit: t.type === "expense" ? Number(t.amount) : undefined,
           credit: t.type === "income" ? Number(t.amount) : undefined,
         }))
+        // Transfer/adjustment legs stay in the listing but are not income or
+        // expense, so the totals match the Transactions page for the period.
+        const cashflow = withoutAccountMovements(inRangeAll)
         downloadStatementPdf({
           heading: "Transactions Statement",
           profileName: activeProfile.name,
           periodLabel,
           rows,
-          totalIn: rows.reduce((s, r) => s + (r.credit ?? 0), 0),
-          totalOut: rows.reduce((s, r) => s + (r.debit ?? 0), 0),
+          totalIn: cashflow.reduce((s, t) => s + (t.type === "income" ? Number(t.amount) : 0), 0),
+          totalOut: cashflow.reduce((s, t) => s + (t.type === "expense" ? Number(t.amount) : 0), 0),
           categorySummary: categorySummaryOf(inRangeAll),
           fileName: `FinBoom-transactions-statement-${stamp}.pdf`,
         })
@@ -191,7 +202,7 @@ export function StatementModal({ onClose, accounts, initialAccountId }: Props) {
               onChange={setAccountId}
               options={[
                 { value: "", label: "All transactions" },
-                ...accounts.map((a) => ({ value: a.id, label: a.name })),
+                ...accounts.map((a) => ({ value: a.id, label: isCreditCard(a) ? `${a.name} (card)` : a.name })),
               ]}
               className="mt-1"
               variant="glass"

@@ -10,13 +10,13 @@ import {
   sanitizePhone,
   isValidPhone,
   isValidISODate,
-  isFutureISODate,
   todayLocalISO,
   PHONE_MAX_LENGTH,
 } from "@/lib/utils"
 import { X, ArrowUpRight, ArrowDownLeft, ArrowDownRight, ArrowUpLeft, Plus, Loader2 } from "lucide-react"
 import type { Party, Transaction } from "@/lib/types"
-import { accountBalance } from "@/lib/finance/accounts"
+import { isCreditCard } from "@/lib/finance/accounts"
+import { spendGuardFor, transactionDateError } from "@/lib/finance/transaction-guard"
 import { getPreferredAccountId } from "@/lib/accounts/default-account"
 import { PARTY_TRANSACTION_TYPES } from "@/lib/constants"
 import { CustomSelect } from "@/components/custom-select"
@@ -71,23 +71,28 @@ export function AddPartyTransactionModal({
   const [newPartyName, setNewPartyName] = useState("")
   const [newPartyPhone, setNewPartyPhone] = useState("")
   const [newPartyNotes, setNewPartyNotes] = useState("")
+  const initialType = preselectedType || "lent"
+  // Cash/bank account the money moves through — tags the auto-created
+  // transaction so Cash & Bank balances track party lending/borrowing.
+  // Primary (starred) account wins; else the last one used on this profile
+  // (shared with the regular transaction modal). Money coming IN never
+  // defaults to a credit card. Until the account list is in, the stored id
+  // is passed through unverified and re-resolved once it arrives.
+  const preferredAccountId = (direction: "in" | "out") =>
+    typeof window !== "undefined" && activeProfile
+      ? getPreferredAccountId(activeProfile.id, accountsFetched ? accounts : undefined, direction)
+      : ""
   const [form, setForm] = useState({
     party_id: preselectedPartyId || "",
-    type: preselectedType || "lent" as "lent" | "received_back" | "borrowed" | "paid_back",
+    type: initialType as "lent" | "received_back" | "borrowed" | "paid_back",
     amount: prefillAmount || "",
     date: todayLocalISO(),
     due_date: "",
     notes: "",
-    // Cash/bank account the money moves through — tags the auto-created
-    // transaction so Cash & Bank balances track party lending/borrowing.
-    // Defaults to the last account used on this profile (shared with the
-    // regular transaction modal).
-    // Primary (starred) account wins; else the last one used on this profile.
-    account_id:
-      typeof window !== "undefined" && activeProfile
-        ? getPreferredAccountId(activeProfile.id)
-        : "",
+    account_id: preferredAccountId(initialType === "lent" || initialType === "paid_back" ? "out" : "in"),
   })
+  // Once the user picks an account explicitly, stop re-deriving the default.
+  const [accountPicked, setAccountPicked] = useState(false)
   const [error, setError] = useState("")
   // Which open entry this repayment settles ("" = automatic, newest first).
   const [settlesId, setSettlesId] = useState(settlesTransactionId || "")
@@ -105,17 +110,21 @@ export function AddPartyTransactionModal({
   // A stale pick (party/type changed underneath it) silently falls back to auto.
   const validSettlesId = settleCandidates.some(o => o.id === settlesId) ? settlesId : ""
 
-  // A remembered account may have been deleted — once the list is in, only ids
-  // present in it count. While accounts are still loading, pass the id through
-  // unverified so a save racing the fetch isn't silently untagged.
-  const validAccountId = !accountsFetched
-    ? form.account_id
-    : form.account_id && accounts.some(a => a.id === form.account_id)
-      ? form.account_id
-      : ""
-
   // Money leaves on lent/paid_back, arrives on borrowed/received_back.
   const moneyOut = form.type === "lent" || form.type === "paid_back"
+
+  // A remembered account may have been deleted — once the list is in, only ids
+  // present in it count. While accounts are still loading, pass the id through
+  // unverified so a save racing the fetch isn't silently untagged. Until the
+  // user picks one, the default is re-derived from the list (and direction)
+  // so a card never ends up as the "Received in" default.
+  const validAccountId = !accountsFetched
+    ? form.account_id
+    : !accountPicked
+      ? preferredAccountId(moneyOut ? "out" : "in")
+      : form.account_id && accounts.some(a => a.id === form.account_id)
+        ? form.account_id
+        : ""
 
   const newPartyPhoneInvalid = newPartyPhone.length > 0 && !isValidPhone(newPartyPhone)
   const todayStr = todayLocalISO()
@@ -155,8 +164,13 @@ export function AddPartyTransactionModal({
       setError("Enter an amount greater than 0.")
       return
     }
-    if (!isValidISODate(form.date) || isFutureISODate(form.date)) {
-      setError("Pick a valid date — it cannot be in the future.")
+    // Same date rules as every other transaction entry point: not in the
+    // future, and not before the tagged account's opening as-of date (that
+    // account's balance would silently ignore it).
+    const taggedAccount = validAccountId ? accounts.find(a => a.id === validAccountId) : undefined
+    const dateError = transactionDateError(form.date, taggedAccount)
+    if (dateError) {
+      setError(dateError)
       return
     }
     // Due dates only make sense on obligations (lent/borrowed). The field is
@@ -167,20 +181,14 @@ export function AddPartyTransactionModal({
       setError("Due date cannot be before the transaction date.")
       return
     }
-    // A transaction dated before the tagged account's opening as-of date would
-    // be silently ignored by that account's balance — reject it up front.
-    const taggedAccount = validAccountId ? accounts.find(a => a.id === validAccountId) : undefined
-    if (taggedAccount && form.date < taggedAccount.opening_date) {
-      setError(`${taggedAccount.name} tracks its balance from ${taggedAccount.opening_date} — pick a later date or "Not tracked".`)
-      return
-    }
     // Overdraft guard: money leaving a tracked account (lent / paid back)
-    // can't exceed its balance.
+    // can't overdraw cash/bank or exceed a card's credit limit — the same
+    // rule the transaction modal and the assistant apply.
     if (taggedAccount && moneyOut) {
       const allTx = await fetchTable<Transaction>("transactions", user.id)
-      const balance = accountBalance(taggedAccount, allTx)
-      if (balance < amount) {
-        setError(`${taggedAccount.name} has only ₹${balance.toLocaleString("en-IN")} — this would overdraw it. Pick another account or "Not tracked".`)
+      const guard = spendGuardFor(taggedAccount, allTx, amount)
+      if (guard) {
+        setError(guard)
         return
       }
     }
@@ -302,13 +310,20 @@ export function AddPartyTransactionModal({
                   <button
                     key={t.id}
                     type="button"
-                    onClick={() => setForm(prev => ({
-                      ...prev,
-                      type: t.id,
-                      // Drop a leftover due date when switching to a repayment
-                      // type — the field is hidden there and must not be saved.
-                      due_date: t.id === "lent" || t.id === "borrowed" ? prev.due_date : "",
-                    }))}
+                    onClick={() => {
+                      const nextOut = t.id === "lent" || t.id === "paid_back"
+                      const picked = accounts.find(a => a.id === form.account_id)
+                      // Money coming in can't sensibly land on a credit card —
+                      // drop a card pick and fall back to the default.
+                      if (!nextOut && picked && isCreditCard(picked)) setAccountPicked(false)
+                      setForm(prev => ({
+                        ...prev,
+                        type: t.id,
+                        // Drop a leftover due date when switching to a repayment
+                        // type — the field is hidden there and must not be saved.
+                        due_date: t.id === "lent" || t.id === "borrowed" ? prev.due_date : "",
+                      }))
+                    }}
                     className={`flex items-center gap-2 p-3 rounded-xl text-left transition-all ${
                       form.type === t.id
                         ? "bg-[#1d1d1f]/[0.08] dark:bg-white/[0.12] border-2 border-[#1d1d1f] dark:border-white"
@@ -441,8 +456,11 @@ export function AddPartyTransactionModal({
             </label>
             <CustomSelect
               value={validAccountId}
-              onChange={(val) => { setForm(prev => ({ ...prev, account_id: val })); setError("") }}
-              options={[{ value: "", label: "Not tracked" }, ...accounts.map(a => ({ value: a.id, label: a.name }))]}
+              onChange={(val) => { setAccountPicked(true); setForm(prev => ({ ...prev, account_id: val })); setError("") }}
+              options={[
+                { value: "", label: "Not tracked" },
+                ...accounts.map(a => ({ value: a.id, label: isCreditCard(a) ? `${a.name} (card)` : a.name })),
+              ]}
               placeholder="Not tracked"
               className="mt-1"
               variant="glass"

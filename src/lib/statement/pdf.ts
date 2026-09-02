@@ -1,5 +1,6 @@
 import jsPDF from "jspdf"
 import autoTable from "jspdf-autotable"
+import { formatLedgerBalance } from "@/lib/finance/accounts"
 
 // Bank-style statement PDF. Uses "Rs." rather than "₹" — jsPDF's built-in
 // fonts have no rupee glyph, and a broken glyph would ruin the formatting.
@@ -18,6 +19,9 @@ export type StatementOptions = {
   profileName: string
   periodLabel: string
   rows: StatementRow[]
+  // Credit card: balances are money owed, so they print as "Rs. X due" /
+  // "Rs. X credit" under "Outstanding" headings instead of signed numbers.
+  card?: boolean
   openingBalance?: number
   closingBalance?: number
   totalIn: number
@@ -76,11 +80,14 @@ export function downloadStatementPdf(opts: StatementOptions): void {
 
   // Summary block, right-aligned against the meta block
   doc.setFontSize(9.5)
+  const card = !!opts.card
+  const balanceWord = card ? "outstanding" : "balance"
+  const balance = (n: number) => formatLedgerBalance(card, n, inr)
   const summary: string[] = []
-  if (opts.openingBalance !== undefined) summary.push(`Opening balance: ${inr(opts.openingBalance)}`)
+  if (opts.openingBalance !== undefined) summary.push(`Opening ${balanceWord}: ${balance(opts.openingBalance)}`)
   summary.push(`Money in: ${inr(opts.totalIn)}`)
   summary.push(`Money out: ${inr(opts.totalOut)}`)
-  if (opts.closingBalance !== undefined) summary.push(`Closing balance: ${inr(opts.closingBalance)}`)
+  if (opts.closingBalance !== undefined) summary.push(`Closing ${balanceWord}: ${balance(opts.closingBalance)}`)
   summary.forEach((line, i) => doc.text(line, pageWidth - margin, 120 + i * 14, { align: "right" }))
 
   const hasBalance = opts.rows.some((r) => r.balance !== undefined)
@@ -93,7 +100,7 @@ export function downloadStatementPdf(opts: StatementOptions): void {
       ...(hasCategory ? ["Category"] : []),
       "Debit",
       "Credit",
-      ...(hasBalance ? ["Balance"] : []),
+      ...(hasBalance ? [card ? "Outstanding" : "Balance"] : []),
     ],
   ]
   const body = opts.rows.map((r) => [
@@ -102,7 +109,7 @@ export function downloadStatementPdf(opts: StatementOptions): void {
     ...(hasCategory ? [r.category ?? ""] : []),
     r.debit !== undefined ? inr(r.debit) : "",
     r.credit !== undefined ? inr(r.credit) : "",
-    ...(hasBalance ? [r.balance !== undefined ? inr(r.balance) : ""] : []),
+    ...(hasBalance ? [r.balance !== undefined ? balance(r.balance) : ""] : []),
   ])
 
   autoTable(doc, {

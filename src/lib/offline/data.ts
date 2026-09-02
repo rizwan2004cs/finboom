@@ -118,12 +118,14 @@ async function _fetchTableImpl<T>(
       }
       return (data || []) as T[]
     } catch (err) {
+      // Fall through to the cache path below so the caller's filters, order
+      // and limit still apply — returning the raw store here handed callers
+      // the WHOLE table where they asked for a subset.
       console.warn(`[offline] Supabase fetch failed for ${table}, using cache:`, err)
-      return getAll<T>(store)
     }
   }
 
-  // Offline: read from cache
+  // Offline (or the online fetch failed): read from cache
   let cached = await getAll<T>(store)
 
   // Apply client-side filters for offline
@@ -176,11 +178,17 @@ export async function insertRow<T extends { id?: string }>(
   // ordering), and queueing it keeps the true creation time after sync.
   const tempId = data.id as string || crypto.randomUUID()
   const record = { ...data, id: tempId, created_at: (data.created_at as string) || new Date().toISOString() }
+  // Never send updated_at: the server's before-insert trigger stamps it, so a
+  // row created offline and replayed later carries a fresh timestamp that other
+  // devices' delta-sync watermark will pick up. The local copy keeps the client
+  // value so the cached row still sorts/merges sensibly until it syncs.
+  const payload = { ...data }
+  delete payload.updated_at
 
   if (isOnline()) {
     try {
       const supabase = createClient()
-      const { data: result, error } = await supabase.from(table).insert(data).select().single()
+      const { data: result, error } = await supabase.from(table).insert(payload).select().single()
       if (error) throw error
       // Cache the server-returned row (with real ID)
       await put(store, result)
@@ -201,7 +209,7 @@ export async function insertRow<T extends { id?: string }>(
   // duplicate alongside this temp row (and updates/deletes against the temp id
   // would never match the server row).
   await put(store, record)
-  await enqueue(table, "insert", record)
+  await enqueue(table, "insert", { ...payload, id: tempId, created_at: record.created_at })
   return { data: record as unknown as T, error: null, offline: true }
 }
 

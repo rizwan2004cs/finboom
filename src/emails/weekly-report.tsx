@@ -18,6 +18,9 @@ export interface WeeklyReportData {
   change: NetWorthChange | null
   /** Optional top holdings to show a quick breakdown. */
   topMovers?: { label: string; valueLabel: string }[]
+  /** Per-profile net worth; the hero number is their sum. Listed (and the hero
+   *  labelled "across N profiles") only when there is more than one. */
+  profiles?: { name: string; netWorthLabel: string }[]
   unsubscribeUrl?: string
 }
 
@@ -39,11 +42,13 @@ export function WeeklyReportEmail({
   liabilitiesLabel,
   change,
   topMovers,
+  profiles,
   unsubscribeUrl,
 }: WeeklyReportData) {
   const theme = getEmailTheme(period === "month" ? "monthly_report" : "weekly_report")
   const periodWord = period === "month" ? "month" : "week"
   const c = change ? CHANGE_COLORS[change.direction] : null
+  const multiProfile = !!profiles && profiles.length > 1
 
   return (
     <EmailLayout
@@ -57,7 +62,9 @@ export function WeeklyReportEmail({
       </Text>
 
       <Section style={{ ...heroCard, borderTop: `3px solid ${theme.accent}` }} className="fb-item">
-        <Text style={heroLabel} className="fb-muted">Total net worth</Text>
+        <Text style={heroLabel} className="fb-muted">
+          {multiProfile ? `Total net worth · across ${profiles.length} profiles` : "Total net worth"}
+        </Text>
         <Text style={heroValue} className="fb-ink">{netWorthLabel}</Text>
         {c && change ? (
           <span style={{ ...changePill, backgroundColor: c.bg, color: c.fg }}>
@@ -88,6 +95,26 @@ export function WeeklyReportEmail({
           </tr>
         </tbody>
       </table>
+
+      {multiProfile ? (
+        <Section style={{ marginTop: 18 }}>
+          <Text style={breakdownTitle} className="fb-ink">By profile</Text>
+          {profiles.map((p, idx) => (
+            <table key={idx} cellPadding={0} cellSpacing={0} role="presentation" style={{ width: "100%" }}>
+              <tbody>
+                <tr>
+                  <td style={{ padding: "6px 0" }}>
+                    <Text style={moverLabel} className="fb-sub">{p.name}</Text>
+                  </td>
+                  <td style={{ padding: "6px 0", textAlign: "right" }}>
+                    <Text style={moverValue} className="fb-ink">{p.netWorthLabel}</Text>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          ))}
+        </Section>
+      ) : null}
 
       {topMovers && topMovers.length > 0 ? (
         <Section style={{ marginTop: 18 }}>
@@ -132,6 +159,10 @@ WeeklyReportEmail.PreviewProps = {
     { label: "Nifty 50 Index Fund", valueLabel: "₹8,40,000" },
     { label: "Apartment (Pune)", valueLabel: "₹18,00,000" },
     { label: "Emergency Fund (FD)", valueLabel: "₹4,00,000" },
+  ],
+  profiles: [
+    { name: "Personal", netWorthLabel: "₹18,20,000" },
+    { name: "Spouse", netWorthLabel: "₹6,60,000" },
   ],
   unsubscribeUrl: "https://finboom-cyan.vercel.app/dashboard/settings",
 } satisfies WeeklyReportData

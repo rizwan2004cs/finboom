@@ -91,6 +91,20 @@ export function cardAvailable(account: Pick<Account, "credit_limit">, balance: n
   return Math.max(0, limit + balance)
 }
 
+/** Ledger/statement balance label. A card's balance is money owed, so a
+ *  negative balance reads "₹X due", a positive one "₹X credit" (overpaid),
+ *  and zero "No dues"; cash/bank just formats the number. */
+export function formatLedgerBalance(
+  isCard: boolean,
+  balance: number,
+  fmt: (n: number) => string,
+): string {
+  if (!isCard) return fmt(balance)
+  if (balance < 0) return `${fmt(-balance)} due`
+  if (balance > 0) return `${fmt(balance)} credit`
+  return "No dues"
+}
+
 function toISODate(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`
 }

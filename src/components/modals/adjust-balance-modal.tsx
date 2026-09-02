@@ -8,6 +8,7 @@ import { isValidISODate, isFutureISODate, todayLocalISO } from "@/lib/utils"
 import { X, Loader2 } from "lucide-react"
 import { ADJUSTMENT_CATEGORY } from "@/lib/constants"
 import type { Account, Transaction } from "@/lib/types"
+import { formatLedgerBalance, isCreditCard } from "@/lib/finance/accounts"
 import { useCurrency } from "@/hooks/use-currency"
 
 interface Props {
@@ -21,15 +22,22 @@ interface Props {
 /** Vyapar-style "Adjust Cash/Bank": add or reduce money to bring the account
  *  balance back in line with reality. Stored as a single transaction with the
  *  special adjustment category, so it moves the balance without counting as
- *  real income or expense. */
+ *  real income or expense.
+ *
+ *  For a credit card the same row is presented in "dues" terms: a card's
+ *  balance is money owed, so "dues went up" is an expense leg (balance down)
+ *  and "dues went down" an income leg (balance up). Stored semantics are
+ *  identical to cash/bank — only the labels flip. */
 export function AdjustBalanceModal({ account, currentBalance, onClose, onSave }: Readonly<Props>) {
   const { symbol, currency, toINR, formatCurrency } = useCurrency()
   const { user } = useUser()
   const { activeProfile } = useProfile()
+  const card = isCreditCard(account)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState({
-    mode: "add" as "add" | "reduce",
+    // Reconciling a card statement usually means more dues were found.
+    mode: (card ? "reduce" : "add") as "add" | "reduce",
     amount: "",
     date: todayLocalISO(),
     note: "",
@@ -42,6 +50,8 @@ export function AdjustBalanceModal({ account, currentBalance, onClose, onSave }:
     ? Math.round(toINR(amountNum, currency) * 100) / 100
     : 0
   const newBalance = currentBalance + (form.mode === "add" ? amountInr : -amountInr)
+  // Cards read "₹X due" / "₹X credit" / "No dues"; cash/bank the plain number.
+  const balanceLabel = (n: number) => formatLedgerBalance(card, n, formatCurrency)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -103,12 +113,13 @@ export function AdjustBalanceModal({ account, currentBalance, onClose, onSave }:
 
         <form onSubmit={handleSubmit} className="p-5 pb-8 sm:pb-5 space-y-4">
           <p className="text-sm text-[#86868b]">
-            Current balance: <span className="font-semibold text-[#1d1d1f] dark:text-white">{formatCurrency(currentBalance)}</span>
+            {card ? "Outstanding" : "Current balance"}:{" "}
+            <span className="font-semibold text-[#1d1d1f] dark:text-white">{balanceLabel(currentBalance)}</span>
           </p>
 
-          {/* Add / Reduce toggle */}
+          {/* Add / Reduce toggle (cards: dues up / dues down) */}
           <div className="flex bg-[#f5f5f7] dark:bg-white/[0.06] rounded-xl p-1">
-            {(["add", "reduce"] as const).map((m) => (
+            {(card ? (["reduce", "add"] as const) : (["add", "reduce"] as const)).map((m) => (
               <button
                 key={m}
                 type="button"
@@ -117,7 +128,9 @@ export function AdjustBalanceModal({ account, currentBalance, onClose, onSave }:
                   form.mode === m ? "bg-white dark:bg-white/[0.12] text-[#1d1d1f] dark:text-white shadow-sm" : "text-[#86868b]"
                 }`}
               >
-                {m === "add" ? "Add money" : "Reduce money"}
+                {card
+                  ? (m === "reduce" ? "Dues went up" : "Dues went down")
+                  : (m === "add" ? "Add money" : "Reduce money")}
               </button>
             ))}
           </div>
@@ -138,7 +151,7 @@ export function AdjustBalanceModal({ account, currentBalance, onClose, onSave }:
             />
             {amountInr > 0 && (
               <p className="text-[11px] text-[#86868b] mt-1 text-center">
-                New balance: {formatCurrency(newBalance)}
+                {card ? "New outstanding" : "New balance"}: {balanceLabel(newBalance)}
               </p>
             )}
           </div>
@@ -165,14 +178,14 @@ export function AdjustBalanceModal({ account, currentBalance, onClose, onSave }:
               type="text"
               value={form.note}
               onChange={(e) => setForm(prev => ({ ...prev, note: e.target.value }))}
-              placeholder="e.g. Counted cash drawer"
+              placeholder={card ? "e.g. Match card statement" : "e.g. Counted cash drawer"}
               className="mt-1 w-full px-4 py-3 rounded-xl bg-[#f5f5f7] dark:bg-white/[0.06] border-0 text-sm text-[#1d1d1f] dark:text-white placeholder:text-[#86868b] focus:outline-none focus:ring-2 focus:ring-[#1d1d1f]/10 dark:focus:ring-white/10"
             />
           </div>
 
           {error && (
             <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-500/10 rounded-xl px-4 py-3">
-              Couldn&apos;t adjust balance: {error}
+              Couldn&apos;t adjust {card ? "dues" : "balance"}: {error}
             </p>
           )}
 
@@ -182,7 +195,9 @@ export function AdjustBalanceModal({ account, currentBalance, onClose, onSave }:
             className="w-full py-3 rounded-xl bg-[#1d1d1f] dark:bg-white/[0.12] text-white font-medium hover:opacity-90 transition-all disabled:opacity-50"
           >
             {saving && <><Loader2 className="w-4 h-4 animate-spin inline mr-2" />Adjusting...</>}
-            {!saving && (form.mode === "add" ? "Add to Balance" : "Reduce Balance")}
+            {!saving && (card
+              ? (form.mode === "reduce" ? "Increase Dues" : "Reduce Dues")
+              : (form.mode === "add" ? "Add to Balance" : "Reduce Balance"))}
           </button>
         </form>
       </div>

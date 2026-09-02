@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server"
 import { auth } from "@clerk/nextjs/server"
 import { createAdminClient } from "@/utils/supabase/admin"
-import { sipExpenseDescription } from "@/lib/finance/sip-payments"
+import { sipExpenseDescription } from "@/lib/finance/monthly-cashflow"
 
 /** Mark a SIP paid (creates investment expense + sip_payment row) or skipped (sip_payment row only) for a month. */
 export async function POST(request: Request) {
@@ -19,14 +19,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid sipId or monthKey" }, { status: 400 })
   }
 
-  // The payment date must fall inside the month being marked — otherwise the
-  // expense lands in the wrong month's cashflow. Clamp anything else to the
-  // month's first day (client normally sends a correct in-month date).
-  let paidDate = (body.paidDate as string | undefined) ?? new Date().toISOString().slice(0, 10)
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(paidDate) || !paidDate.startsWith(monthKey)) {
-    paidDate = `${monthKey}-01`
-  }
-
   const supabase = createAdminClient()
 
   const { data: sip, error: sipError } = await supabase
@@ -41,6 +33,21 @@ export async function POST(request: Request) {
   }
   if (!sip) {
     return NextResponse.json({ error: "SIP not found" }, { status: 404 })
+  }
+
+  // The payment date must fall inside the month being marked — otherwise the
+  // expense lands in the wrong month's cashflow. Anything else (a missing
+  // date, or today's date when marking a past month) clamps to the SIP's
+  // debit day within that month, so every caller — checklist, assistant,
+  // mark-all — dates the expense the same way. Built from local date parts:
+  // toISOString() is UTC and can drop a month's last day on UTC+ servers.
+  const [y, m] = monthKey.split("-").map(Number)
+  const lastDay = new Date(y, m, 0).getDate()
+  const sipDay = Number(sip.sip_day)
+  const clampedDay = Number.isFinite(sipDay) && sipDay >= 1 ? Math.min(sipDay, lastDay) : 1
+  let paidDate = (body.paidDate as string | undefined) ?? new Date().toISOString().slice(0, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(paidDate) || !paidDate.startsWith(monthKey)) {
+    paidDate = `${monthKey}-${String(clampedDay).padStart(2, "0")}`
   }
 
   const { data: existing } = await supabase
@@ -86,10 +93,6 @@ export async function POST(request: Request) {
 
   const description = sipExpenseDescription(sip)
   const monthStart = `${monthKey}-01`
-  // Build from local date parts — toISOString() is UTC and drops the month's
-  // last day on UTC+ servers, shrinking the reconciliation window.
-  const [y, m] = monthKey.split("-").map(Number)
-  const lastDay = new Date(y, m, 0).getDate()
   const monthEnd = `${monthKey}-${String(lastDay).padStart(2, "0")}`
 
   const { data: existingTx } = await supabase

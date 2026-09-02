@@ -1,16 +1,23 @@
 "use client"
 
 import { useState } from "react"
+import Link from "next/link"
 import { useUser } from "@/hooks/use-auth"
 import { useProfile } from "@/hooks/use-profile"
+import { useAccounts } from "@/hooks/use-accounts"
 import { insertRow, updateRow } from "@/lib/offline"
 import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { useDeleteMutation } from "@/hooks/use-offline-mutation"
 import { useQueryClient } from "@tanstack/react-query"
-import { Plus, Trash2, Edit2, CreditCard, TrendingDown } from "lucide-react"
+import { Plus, Trash2, Edit2, CreditCard, TrendingDown, AlertTriangle } from "lucide-react"
 import type { Liability, Transaction } from "@/lib/types"
 import { LIABILITY_TYPES } from "@/lib/constants"
-import { isAccountMovement } from "@/lib/finance/accounts"
+import { isAccountMovement, summarizeCards } from "@/lib/finance/accounts"
+
+// Card dues live on credit_card ACCOUNTS; this liability type only survives
+// for rows created before that. Recording a card both ways double-counts it.
+const LEGACY_CARD_LIABILITY = "credit_card"
+const isLegacyType = (type: (typeof LIABILITY_TYPES)[number]) => "legacy" in type && type.legacy
 import { CategoryIcon } from "@/components/category-icon"
 import { useAppDialog } from "@/components/app-dialog"
 import { useCurrency } from "@/hooks/use-currency"
@@ -34,6 +41,7 @@ export default function LiabilitiesPage() {
   const { data: transactions = [] } = useOfflineQuery<Transaction>(
     "transactions", user?.id, { filters: pf, enabled: !!activeProfile }
   )
+  const { accounts } = useAccounts()
   const deleteMut = useDeleteMutation("liabilities")
 
   const { showConfirm } = useAppDialog()
@@ -45,10 +53,20 @@ export default function LiabilitiesPage() {
     })
   }
 
-  const totalOutstanding = liabilities.reduce((sum, l) => sum + Number(l.outstanding_amount), 0)
-  const totalOriginal = liabilities.reduce((sum, l) => sum + Number(l.original_amount), 0)
+  // Legacy "Credit Card Debt" rows are card dues, not loans — they roll into
+  // the Card Dues tile so Loans + Card Dues equals the dashboard Liabilities tile.
+  const loans = liabilities.filter(l => l.liability_type !== LEGACY_CARD_LIABILITY)
+  const legacyCardRows = liabilities.filter(l => l.liability_type === LEGACY_CARD_LIABILITY)
+  const totalOutstanding = loans.reduce((sum, l) => sum + Number(l.outstanding_amount), 0)
+  const totalOriginal = loans.reduce((sum, l) => sum + Number(l.original_amount), 0)
   const totalEmi = liabilities.reduce((sum, l) => sum + Number(l.emi_amount || 0), 0)
   const paidOff = Math.max(0, totalOriginal - totalOutstanding)
+  // Card dues come from the same helper as net worth and the dashboard tile.
+  const { cards, totalOutstanding: accountCardDues } = summarizeCards(accounts, transactions)
+  const legacyCardDues = legacyCardRows.reduce((sum, l) => sum + Number(l.outstanding_amount), 0)
+  const cardDues = accountCardDues + legacyCardDues
+  const hasCardAccount = cards.length > 0
+  const loanCount = loans.length
 
   if (loading || !user || !activeProfile) {
     return (
@@ -74,7 +92,10 @@ export default function LiabilitiesPage() {
       <div className="flex items-center justify-between" data-tour-el="liabilities-header">
         <div>
           <h1 className="text-xl font-bold text-[#1d1d1f] dark:text-white">Liabilities</h1>
-          <p className="text-sm text-[#86868b]">{liabilities.length} active loans</p>
+          <p className="text-sm text-[#86868b]">
+            {loanCount} active loan{loanCount === 1 ? "" : "s"}
+            {hasCardAccount && ` · ${cards.length} card${cards.length === 1 ? "" : "s"}`}
+          </p>
         </div>
         <button
           onClick={() => { setEditLiability(null); setShowAddModal(true) }}
@@ -86,10 +107,23 @@ export default function LiabilitiesPage() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <div className="liquid-glass rounded-2xl p-4">
-          <p className="text-xs text-[#86868b] font-medium">Total Outstanding</p>
+          <p className="text-xs text-[#86868b] font-medium">Loans Outstanding</p>
           <p className="text-xl font-bold text-[#1d1d1f] dark:text-white mt-1">{formatCurrency(totalOutstanding)}</p>
+        </div>
+        <div className="liquid-glass rounded-2xl p-4">
+          <p className="text-xs text-[#86868b] font-medium">Card Dues</p>
+          <p className="text-xl font-bold text-[#1d1d1f] dark:text-white mt-1">{formatCurrency(cardDues)}</p>
+          <p className="text-[11px] text-[#86868b] mt-1">
+            {hasCardAccount ? (
+              `across ${cards.length} card${cards.length === 1 ? "" : "s"}${legacyCardRows.length ? ` + ${legacyCardRows.length} legacy entr${legacyCardRows.length === 1 ? "y" : "ies"}` : ""}`
+            ) : legacyCardRows.length ? (
+              `${legacyCardRows.length} legacy entr${legacyCardRows.length === 1 ? "y" : "ies"}`
+            ) : (
+              <>Track cards under <Link href="/dashboard/accounts" className="underline underline-offset-2">Accounts</Link></>
+            )}
+          </p>
         </div>
         <div className="liquid-glass rounded-2xl p-4">
           <p className="text-xs text-[#86868b] font-medium">Monthly EMI</p>
@@ -148,7 +182,18 @@ export default function LiabilitiesPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-[#1d1d1f] dark:text-white truncate">{liability.name}</p>
-                    <p className="text-xs text-[#86868b]">{type?.label || liability.liability_type}</p>
+                    <p className="text-xs text-[#86868b]">
+                      {type?.label || liability.liability_type}
+                      {liability.liability_type === LEGACY_CARD_LIABILITY && hasCardAccount && (
+                        <span
+                          className="ml-1.5 inline-flex items-center gap-1 align-middle text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                          title="Card dues are already counted from your credit card accounts — this entry may double-count them"
+                        >
+                          <AlertTriangle className="w-3 h-3" />
+                          Also tracked under Accounts
+                        </span>
+                      )}
+                    </p>
                   </div>
                   <div className="text-right">
                     <p className="font-semibold text-[#1d1d1f] dark:text-white">{formatCurrency(Number(liability.outstanding_amount))}</p>
@@ -379,7 +424,8 @@ function AddLiabilityModal({
         <div>
           <label className="text-sm font-medium text-[#1d1d1f] dark:text-[#98989d]">Type</label>
           <div className="grid grid-cols-3 gap-2 mt-2">
-            {LIABILITY_TYPES.map(type => (
+            {/* Legacy types stay pickable only on rows that already use them. */}
+            {LIABILITY_TYPES.filter(type => !isLegacyType(type) || type.id === form.liability_type).map(type => (
               <button
                 key={type.id}
                 type="button"
@@ -395,6 +441,11 @@ function AddLiabilityModal({
               </button>
             ))}
           </div>
+          <p className="text-[11px] text-[#86868b] mt-2">
+            Credit cards are tracked under{" "}
+            <Link href="/dashboard/accounts" className="underline underline-offset-2">Accounts</Link>
+            {" "}— their dues count as liabilities automatically.
+          </p>
         </div>
 
         <div className="grid grid-cols-2 gap-3">

@@ -10,6 +10,7 @@ import { useQueryClient } from "@tanstack/react-query"
 import { Camera, TrendingUp, TrendingDown, Trash2 } from "lucide-react"
 import type { Snapshot, Asset, Liability, Transaction, Sip, SipPayment, Account } from "@/lib/types"
 import { computeNetWorth, NET_WORTH_SNAPSHOT_META } from "@/lib/finance/net-worth"
+import { snapshotNetWorthComparableTo } from "@/lib/finance/net-worth-baseline"
 import { ASSET_CLASSES } from "@/lib/constants"
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts"
 import { useAppDialog } from "@/components/app-dialog"
@@ -24,6 +25,20 @@ type TimeRange = "1M" | "6M" | "1Y" | "3Y" | "5Y" | "All"
 type ChartSeries = "net_worth" | "assets" | "liabilities" | string
 
 const CHART_COLORS = ["#1d1d1f", "#0071e3", "#34c759", "#ff9500", "#af52de", "#ff2d55", "#5856d6"]
+
+// total_assets = investments + cash & bank (see lib/finance/net-worth.ts), but
+// cash & bank lives under a meta key the asset-class loops skip. Surface it as
+// its own split segment / chart series so the parts add up to "Assets".
+const CASH_AND_BANK_SERIES = "cash_and_bank"
+
+function cashAndBankOf(breakdown: Record<string, number>): number {
+  return Number(breakdown[NET_WORTH_SNAPSHOT_META.cashAndBank] ?? 0)
+}
+
+function splitLabel(id: string): string {
+  if (id === CASH_AND_BANK_SERIES) return "Cash & bank"
+  return ASSET_CLASSES.find(c => c.id === id)?.label ?? id
+}
 
 function getSmartDateLabel(d: Date, diffDays: number): string {
   if (diffDays <= 60) {
@@ -156,11 +171,15 @@ export default function SnapshotsPage() {
         if (!isSnapshotMetaKey(key) && (breakdown[key] ?? 0) > 0) ids.add(key)
       }
     }
-    return [...ids].sort((a, b) => {
+    const sorted = [...ids].sort((a, b) => {
       const latest = filteredSnapshots[filteredSnapshots.length - 1]
       const bd = (latest?.asset_breakdown ?? {}) as Record<string, number>
       return (bd[b] ?? 0) - (bd[a] ?? 0)
     })
+    const hasCash = filteredSnapshots.some(
+      s => cashAndBankOf(s.asset_breakdown as Record<string, number>) > 0,
+    )
+    return hasCash ? [...sorted, CASH_AND_BANK_SERIES] : sorted
   }, [filteredSnapshots])
 
   const chartData = useMemo(() => {
@@ -179,7 +198,9 @@ export default function SnapshotsPage() {
         liabilities: Number(s.total_liabilities),
       }
       for (const classId of assetClassIds) {
-        row[classId] = breakdown[classId] ?? 0
+        row[classId] = classId === CASH_AND_BANK_SERIES
+          ? cashAndBankOf(breakdown)
+          : breakdown[classId] ?? 0
       }
       return row
     })
@@ -191,8 +212,7 @@ export default function SnapshotsPage() {
       { id: "assets", label: "Total assets" },
     ]
     for (const classId of assetClassIds) {
-      const cls = ASSET_CLASSES.find(c => c.id === classId)
-      opts.push({ id: classId, label: cls?.label ?? classId })
+      opts.push({ id: classId, label: splitLabel(classId) })
     }
     return opts
   }, [assetClassIds])
@@ -361,8 +381,9 @@ export default function SnapshotsPage() {
         <div className="space-y-3">
           {snapshots.map((snapshot, idx) => {
             const prev = snapshots[idx + 1] // previous snapshot (ordered desc)
+            // Like-for-like against a pre-formula-change baseline.
             const change = prev
-              ? Number(snapshot.net_worth) - Number(prev.net_worth)
+              ? snapshotNetWorthComparableTo(snapshot, prev) - Number(prev.net_worth)
               : 0
             const changePercent = prev && Number(prev.net_worth) > 0
               ? (change / Number(prev.net_worth)) * 100
@@ -372,7 +393,15 @@ export default function SnapshotsPage() {
             const assetClasses = Object.entries(breakdown)
               .filter(([classId]) => !isSnapshotMetaKey(classId))
               .sort(([, a], [, b]) => b - a)
-            const totalAssetValue = assetClasses.reduce((sum, [, v]) => sum + v, 0)
+            const investments = assetClasses.reduce((sum, [, v]) => sum + v, 0)
+            const usesCurrentFormula = NET_WORTH_SNAPSHOT_META.cashAndBank in breakdown
+            const cashAndBank = cashAndBankOf(breakdown)
+            // Cash & bank can be negative (overdrawn); only a positive balance
+            // is a share of assets. Card dues stay out — they are a liability.
+            const splitEntries: [string, number][] = cashAndBank > 0
+              ? [...assetClasses, [CASH_AND_BANK_SERIES, cashAndBank]]
+              : assetClasses
+            const splitTotal = splitEntries.reduce((sum, [, v]) => sum + v, 0)
 
             return (
               <div key={snapshot.id} className="liquid-glass rounded-2xl p-5">
@@ -417,6 +446,11 @@ export default function SnapshotsPage() {
                   <div className="bg-[#f5f5f7] rounded-xl p-2.5">
                     <p className="text-[10px] text-[#86868b]">Assets</p>
                     <p className="text-sm font-semibold text-[#1d1d1f]">{formatCurrency(Number(snapshot.total_assets))}</p>
+                    {usesCurrentFormula && cashAndBank !== 0 && (
+                      <p className="text-[10px] text-[#86868b] mt-0.5">
+                        {formatCurrency(investments)} investments · {formatCurrency(cashAndBank)} cash &amp; bank
+                      </p>
+                    )}
                   </div>
                   <div className="bg-[#f5f5f7] rounded-xl p-2.5">
                     <p className="text-[10px] text-[#86868b]">Liabilities</p>
@@ -424,35 +458,32 @@ export default function SnapshotsPage() {
                   </div>
                 </div>
 
-                {assetClasses.length > 0 && (
+                {splitEntries.length > 0 && (
                   <div className="space-y-2">
                     <p className="text-[10px] text-[#86868b] font-medium uppercase tracking-wide">Asset split</p>
                     <div className="flex h-2 rounded-full overflow-hidden bg-[#f5f5f7]">
-                      {assetClasses.map(([classId, value], i) => (
+                      {splitEntries.map(([classId, value], i) => (
                         <div
                           key={classId}
                           className="h-full"
                           style={{
-                            width: `${totalAssetValue > 0 ? (value / totalAssetValue) * 100 : 0}%`,
+                            width: `${splitTotal > 0 ? (value / splitTotal) * 100 : 0}%`,
                             backgroundColor: CHART_COLORS[i % CHART_COLORS.length],
                           }}
-                          title={`${ASSET_CLASSES.find(c => c.id === classId)?.label ?? classId}: ${formatCurrency(value)}`}
+                          title={`${splitLabel(classId)}: ${formatCurrency(value)}`}
                         />
                       ))}
                     </div>
                     <div className="flex gap-2 flex-wrap">
-                      {assetClasses.map(([classId, value], i) => {
-                        const cls = ASSET_CLASSES.find(c => c.id === classId)
-                        return (
-                          <span key={classId} className="text-[11px] px-2 py-0.5 bg-[#f5f5f7] rounded-lg text-[#6e6e73] inline-flex items-center gap-1.5">
-                            <span
-                              className="w-1.5 h-1.5 rounded-full flex-shrink-0"
-                              style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }}
-                            />
-                            {cls?.label}: {formatCurrency(value)}
-                          </span>
-                        )
-                      })}
+                      {splitEntries.map(([classId, value], i) => (
+                        <span key={classId} className="text-[11px] px-2 py-0.5 bg-[#f5f5f7] rounded-lg text-[#6e6e73] inline-flex items-center gap-1.5">
+                          <span
+                            className="w-1.5 h-1.5 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: CHART_COLORS[i % CHART_COLORS.length] }}
+                          />
+                          {splitLabel(classId)}: {formatCurrency(value)}
+                        </span>
+                      ))}
                     </div>
                   </div>
                 )}

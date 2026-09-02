@@ -1,12 +1,14 @@
 "use client"
 
-import { useEffect, useState, useMemo } from "react"
+import { useMemo, useSyncExternalStore } from "react"
 import { PieChart, Pie, Cell, Tooltip } from "recharts"
 import { useCurrency } from "@/hooks/use-currency"
 import { TrendingDown, TrendingUp } from "lucide-react"
 import type { Transaction } from "@/lib/types"
 import { EXPENSE_CATEGORIES } from "@/lib/constants"
 import { isAccountMovement } from "@/lib/finance/accounts"
+import { monthKeyFromDate, transactionsInMonth } from "@/lib/finance/monthly-cashflow"
+import { todayLocalISO } from "@/lib/utils"
 
 // Map raw category ids (e.g. "food_dining") to human labels ("Food & Dining").
 const EXPENSE_LABELS = new Map<string, string>(EXPENSE_CATEGORIES.map((c) => [c.id, c.label]))
@@ -27,42 +29,39 @@ const COLORS_DARK = [
   "#d1d1d6", "#c7c7cc", "#98989d", "#8e8e93", "#636366",
 ]
 
+// External-store bindings for hydration and the dark-mode class on <html>.
+const subscribeNoop = () => () => {}
+const readIsDark = () => document.documentElement.classList.contains("dark")
+function subscribeThemeClass(onChange: () => void) {
+  const observer = new MutationObserver(onChange)
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] })
+  return () => observer.disconnect()
+}
+
 export function SpendingChart({ transactions, isLoading }: Props) {
   const { formatCompact: formatCurrency } = useCurrency()
-  const [isDark, setIsDark] = useState(false)
-  const [mounted, setMounted] = useState(false)
-
-  useEffect(() => {
-    setMounted(true)
-    const check = () => setIsDark(document.documentElement.classList.contains("dark"))
-    check()
-    const observer = new MutationObserver(check)
-    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] })
-    return () => observer.disconnect()
-  }, [])
+  // Recharts can't server-render, so the pie is skipped until hydration; the
+  // theme is read from the <html> class list and re-read when it changes.
+  const mounted = useSyncExternalStore(subscribeNoop, () => true, () => false)
+  const isDark = useSyncExternalStore(subscribeThemeClass, readIsDark, () => false)
 
   const COLORS = isDark ? COLORS_DARK : COLORS_LIGHT
 
   const { currentMonthData, totalThisMonth, totalLastMonth, percentChange } = useMemo(() => {
+    // Bucket by the YYYY-MM prefix like every other screen — Date-parsing a
+    // bare ISO date is UTC midnight, which shifted the 1st into the previous
+    // month for viewers west of UTC.
     const now = new Date()
-    const currentMonth = now.getMonth()
-    const currentYear = now.getFullYear()
-
-    const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1
-    const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear
+    const thisKey = monthKeyFromDate(now)
+    const lastKey = monthKeyFromDate(new Date(now.getFullYear(), now.getMonth() - 1, 1))
+    const today = todayLocalISO()
 
     // Account movements (transfers/adjustments) are not real spending.
     const expenses = transactions.filter(t => t.type === "expense" && !isAccountMovement(t))
 
-    const thisMonthExpenses = expenses.filter(t => {
-      const d = new Date(t.date)
-      return d.getMonth() === currentMonth && d.getFullYear() === currentYear
-    })
-
-    const lastMonthExpenses = expenses.filter(t => {
-      const d = new Date(t.date)
-      return d.getMonth() === lastMonth && d.getFullYear() === lastMonthYear
-    })
+    // Month-to-date, matching the Transactions page "Expense" card.
+    const thisMonthExpenses = transactionsInMonth(expenses, thisKey).filter(t => t.date <= today)
+    const lastMonthExpenses = transactionsInMonth(expenses, lastKey)
 
     const categoryMap = new Map<string, number>()
     for (const tx of thisMonthExpenses) {

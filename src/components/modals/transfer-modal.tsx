@@ -37,9 +37,12 @@ export function TransferModal({ accounts, defaultFromId, defaultToId, defaultAmo
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState(() => {
-    const toId = defaultToId || ""
+    // Preselections come from stored ids (e.g. the starred primary account)
+    // that may point at a deleted account — only honour ones in the list.
+    const known = (id?: string) => (id && accounts.some(a => a.id === id) ? id : "")
+    const toId = known(defaultToId)
     const fromId =
-      defaultFromId ||
+      known(defaultFromId) ||
       // Paying a card: default the source to the first cash/bank account.
       (toId ? cashAndBankAccounts(accounts).find(a => a.id !== toId)?.id : undefined) ||
       accounts.find(a => a.id !== toId)?.id ||
@@ -85,8 +88,12 @@ export function TransferModal({ accounts, defaultFromId, defaultToId, defaultAmo
     // transfer would apply to one balance but be ignored by the other.
     const fromAcc = accounts.find(a => a.id === form.from_id)
     const toAcc = accounts.find(a => a.id === form.to_id)
+    if (!fromAcc || !toAcc) {
+      setError("One of these accounts no longer exists — pick again.")
+      return
+    }
     const floor = [fromAcc, toAcc]
-      .map(a => a?.opening_date || "")
+      .map(a => a.opening_date || "")
       .sort()
       .pop()!
     if (form.date < floor) {
@@ -97,8 +104,8 @@ export function TransferModal({ accounts, defaultFromId, defaultToId, defaultAmo
     setSaving(true)
 
     const amountInr = Math.round(toINR(amount, currency) * 100) / 100
-    const fromName = accounts.find(a => a.id === form.from_id)?.name || "account"
-    const toName = accounts.find(a => a.id === form.to_id)?.name || "account"
+    const fromName = fromAcc.name
+    const toName = toAcc.name
     const note = form.note.trim()
     const transferGroupId = crypto.randomUUID()
     const common = {
@@ -115,7 +122,7 @@ export function TransferModal({ accounts, defaultFromId, defaultToId, defaultAmo
     // Money leaving the source account. For a card bill, the slice that clears
     // pre-tracking dues is a real expense (those swipes were never logged);
     // anything beyond it was already expensed at swipe time, so it's a transfer.
-    const expenseInr = payingCard ? Math.min(amountInr, untrackedCardDues(toAcc!, transactions)) : 0
+    const expenseInr = payingCard ? Math.min(amountInr, untrackedCardDues(toAcc, transactions)) : 0
     const transferOutInr = Math.round((amountInr - expenseInr) * 100) / 100
     const created: string[] = []
     const rollback = async () => {

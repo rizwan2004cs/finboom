@@ -7,9 +7,10 @@ import {
   buildSnapshotBreakdown,
   isSnapshotMetaKey,
   sipStatusForMonth,
+  sipExpenseDescription,
   availableAfterUnpaidSips,
 } from "./monthly-cashflow"
-import type { Asset, Sip, Transaction } from "@/lib/types"
+import type { Asset, Sip, SipPayment, Transaction } from "@/lib/types"
 
 describe("monthKeyFromDate", () => {
   it("formats as YYYY-MM", () => {
@@ -87,7 +88,7 @@ describe("sipStatusForMonth", () => {
       { id: "b", active: true, amount: 2000 } as Sip,
       { id: "c", active: false, amount: 500 } as Sip,
     ]
-    const payments = [{ sip_id: "a", month: "2026-07" } as import("@/lib/types").SipPayment]
+    const payments = [{ sip_id: "a", month: "2026-07", transaction_id: "t1" } as SipPayment]
     const status = sipStatusForMonth(sips, payments, "2026-07")
     expect(status.unpaid).toHaveLength(1)
     expect(status.unpaid[0].id).toBe("b")
@@ -101,7 +102,7 @@ describe("sipStatusForMonth", () => {
       { id: "b", active: true, amount: 2000 } as Sip,
     ]
     const payments = [
-      { sip_id: "a", month: "2026-07", status: "skipped" } as import("@/lib/types").SipPayment,
+      { sip_id: "a", month: "2026-07", status: "skipped" } as SipPayment,
     ]
     const status = sipStatusForMonth(sips, payments, "2026-07")
     expect(status.skipped.map((s) => s.id)).toEqual(["a"])
@@ -126,6 +127,40 @@ describe("sipStatusForMonth", () => {
     expect(status.unpaid).toHaveLength(0)
     expect(status.paid).toHaveLength(1)
   })
+
+  it("heals an orphaned paid row (transaction_id null) whose expense is gone", () => {
+    const sips = [{ id: "a", active: true, amount: 1000, fund_name: "ABC Fund" } as Sip]
+    const orphan = { sip_id: "a", month: "2026-07", transaction_id: null } as SipPayment
+    // Expense deleted → FK nulled transaction_id → SIP is due again.
+    const gone = sipStatusForMonth(sips, [orphan], "2026-07", [])
+    expect(gone.paidIds.has("a")).toBe(false)
+    expect(gone.unpaid.map((s) => s.id)).toEqual(["a"])
+    expect(gone.unpaidAmount).toBe(1000)
+    // Expense still present in the month → row stands.
+    const present = sipStatusForMonth(sips, [orphan], "2026-07", [
+      { type: "expense", category: "investment", amount: 1000, date: "2026-07-05", description: "SIP: ABC Fund" } as Transaction,
+    ])
+    expect(present.paidIds.has("a")).toBe(true)
+    expect(present.unpaid).toHaveLength(0)
+    // Expense in another month doesn't count for July.
+    const otherMonth = sipStatusForMonth(sips, [orphan], "2026-07", [
+      { type: "expense", category: "investment", amount: 1000, date: "2026-08-05", description: "SIP: ABC Fund" } as Transaction,
+    ])
+    expect(otherMonth.unpaid).toHaveLength(1)
+  })
+
+  it("keeps a linked paid row as paid even without transactions", () => {
+    const sips = [{ id: "a", active: true, amount: 1000, fund_name: "ABC Fund" } as Sip]
+    const linked = { sip_id: "a", month: "2026-07", transaction_id: "t1" } as SipPayment
+    expect(sipStatusForMonth(sips, [linked], "2026-07").paidIds.has("a")).toBe(true)
+  })
+})
+
+describe("sipExpenseDescription", () => {
+  it("prefers the fund name and falls back to the SIP name", () => {
+    expect(sipExpenseDescription({ name: "Monthly", fund_name: "ABC Fund" })).toBe("SIP: ABC Fund")
+    expect(sipExpenseDescription({ name: "Monthly" })).toBe("SIP: Monthly")
+  })
 })
 
 describe("availableAfterUnpaidSips", () => {
@@ -137,5 +172,15 @@ describe("availableAfterUnpaidSips", () => {
     const sips = [{ id: "a", active: true, amount: 6000 } as Sip]
     const left = availableAfterUnpaidSips(txs, sips, [], "2026-07")
     expect(left).toBe(34000)
+  })
+})
+
+describe("sipStatusForMonth legacy rows", () => {
+  it("keeps pre-link payment rows (no transaction_id, created before 2026-07-05) as paid", () => {
+    const sips = [{ id: "a", active: true, amount: 1000, fund_name: "ABC" } as Sip]
+    const legacy = [{ sip_id: "a", month: "2026-06", created_at: "2026-06-05T00:00:00Z" } as import("@/lib/types").SipPayment]
+    expect(sipStatusForMonth(sips, legacy, "2026-06").paid.map((s) => s.id)).toEqual(["a"])
+    const orphan = [{ sip_id: "a", month: "2026-09", created_at: "2026-09-05T00:00:00Z" } as import("@/lib/types").SipPayment]
+    expect(sipStatusForMonth(sips, orphan, "2026-09").unpaid.map((s) => s.id)).toEqual(["a"])
   })
 })

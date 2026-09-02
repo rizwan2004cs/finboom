@@ -6,6 +6,7 @@ import {
   cardAvailable,
   cardOutstanding,
   cashAndBankAccounts,
+  formatLedgerBalance,
   isAccountMovement,
   nextBillDueDate,
   spendGuardError,
@@ -221,5 +222,19 @@ describe("untrackedCardDues", () => {
   it("is zero for cash/bank accounts and cards opened with no dues", () => {
     expect(untrackedCardDues(acc({ type: "bank", opening_balance: 500 }), [])).toBe(0)
     expect(untrackedCardDues(acc({ type: "credit_card", opening_balance: 0 }), [])).toBe(0)
+  })
+})
+
+describe("formatLedgerBalance", () => {
+  const fmt = (n: number) => `₹${n.toLocaleString("en-IN")}`
+  it("reads a card's negative balance as dues and positive as credit", () => {
+    expect(formatLedgerBalance(true, -6353, fmt)).toBe("₹6,353 due")
+    expect(formatLedgerBalance(true, 250, fmt)).toBe("₹250 credit")
+    expect(formatLedgerBalance(true, 0, fmt)).toBe("No dues")
+  })
+  it("formats cash/bank balances as-is, sign included", () => {
+    expect(formatLedgerBalance(false, 59000, fmt)).toBe("₹59,000")
+    expect(formatLedgerBalance(false, -120, fmt)).toBe("₹-120")
+    expect(formatLedgerBalance(false, 0, fmt)).toBe("₹0")
   })
 })

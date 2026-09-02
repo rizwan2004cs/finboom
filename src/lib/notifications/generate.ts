@@ -3,8 +3,11 @@
  * and the per-user check route (authenticated client). Keeping a single
  * implementation prevents the two paths from drifting and fixes several issues
  * the duplicated copies had:
- *  - Party alerts now use each party's NET outstanding balance, so settled or
- *    partially-repaid loans no longer alert with the original amount.
+ *  - Party alerts use each entry's remaining outstanding (same allocator as the
+ *    Parties page), so a settled or partially-repaid loan no longer alerts with
+ *    the original amount — or at all, once its own repayment has landed.
+ *  - SIP reminders consult sipStatusForMonth, so a SIP already marked paid,
+ *    skipped, or logged as an investment expense this month stays quiet.
  *  - Day boundaries are computed in IST (the app's reporting timezone) instead
  *    of the server's UTC clock.
  *  - Push delivery degrades gracefully when VAPID keys are absent and deep-links
@@ -15,6 +18,15 @@ import webpush from "web-push"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import { EXPENSE_CATEGORIES } from "@/lib/constants"
 import { isAccountMovement } from "@/lib/finance/accounts"
+import { sipStatusForMonth } from "@/lib/finance/monthly-cashflow"
+import {
+  entriesDueInWindow,
+  entryOutstanding,
+  outstandingByEntry,
+  overdueEntries,
+  type PartyEntry,
+} from "@/lib/finance/parties"
+import type { Sip, SipPayment, Transaction } from "@/lib/types"
 import { notificationDedupeKey } from "@/lib/utils"
 
 export interface NotificationToCreate {
@@ -127,11 +139,7 @@ const CATEGORY_LABEL = new Map<string, string>(EXPENSE_CATEGORIES.map((c) => [c.
 
 const inr = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`
 
-interface PartyTxRow {
-  id: string
-  party_id: string
-  type: string
-  amount: number
+interface PartyTxRow extends PartyEntry {
   due_date: string | null
   party?: { name?: string } | null
 }
@@ -144,7 +152,7 @@ interface GoalRow {
 }
 interface AssetRow { id: string; current_value: number }
 interface TxnRow { id: string; type: string; amount: number; category: string; description?: string | null }
-interface SipRow { id: string; name: string; fund_name?: string | null; amount: number; sip_day: number }
+type SipRow = Sip & { fund_name?: string | null }
 interface SubRow { id: string; endpoint: string; keys_p256dh: string; keys_auth: string }
 interface DeviceTokenRow { id: string; token: string }
 interface BudgetRow { id: string; profile_id: string | null; category: string; amount: number }
@@ -202,35 +210,42 @@ export async function processUserNotifications(
   const notifiedEver = (type: string, match: Record<string, unknown>) =>
     everList.some((n) => n.type === type && dataMatches(n.data, match))
 
-  // --- 1 & 2. Party payments — based on NET outstanding per party ---
+  // --- 1 & 2. Party payments — per-entry outstanding (same allocator as the
+  // Parties page), so a lent entry repaid via a targeted or LIFO repayment
+  // never alerts, regardless of what the party's other entries add up to. ---
   const { data: ptxData } = await supabase
     .from("party_transactions").select("*, party:parties(*)").eq("user_id", userId)
-  const parties = new Map<string, { name: string; net: number; lentDue: string[]; borrowedDue: string[] }>()
-  for (const tx of (ptxData || []) as PartyTxRow[]) {
-    const agg = parties.get(tx.party_id) || { name: tx.party?.name || "Someone", net: 0, lentDue: [], borrowedDue: [] }
-    const amt = Number(tx.amount)
-    if (tx.type === "lent") { agg.net += amt; if (tx.due_date) agg.lentDue.push(tx.due_date) }
-    else if (tx.type === "received_back") agg.net -= amt
-    else if (tx.type === "borrowed") { agg.net -= amt; if (tx.due_date) agg.borrowedDue.push(tx.due_date) }
-    else if (tx.type === "paid_back") agg.net += amt
-    if (tx.party?.name) agg.name = tx.party.name
-    parties.set(tx.party_id, agg)
+  const partyRows = (ptxData || []) as PartyTxRow[]
+  const outstanding = outstandingByEntry(partyRows)
+  const rowsByParty = new Map<string, PartyTxRow[]>()
+  for (const tx of partyRows) {
+    const list = rowsByParty.get(tx.party_id)
+    if (list) list.push(tx)
+    else rowsByParty.set(tx.party_id, [tx])
   }
-  for (const [partyId, agg] of Array.from(parties.entries())) {
-    if (Math.abs(agg.net) < 1) continue // fully settled
-    const receivable = agg.net > 0
-    const dues = (receivable ? agg.lentDue : agg.borrowedDue).filter(Boolean).sort((a, b) => a.localeCompare(b))
-    if (dues.length === 0) continue
-    const earliest = dues[0]
-    const verb = receivable ? "owes you" : "you owe"
-    if (earliest < todayStr) {
+  const byDueDate = (a: PartyTxRow, b: PartyTxRow) => (a.due_date ?? "").localeCompare(b.due_date ?? "")
+  for (const [partyId, rows] of Array.from(rowsByParty.entries())) {
+    const name = rows.find((r) => r.party?.name)?.party?.name || "Someone"
+    const overdue = overdueEntries(rows, todayStr, outstanding).sort(byDueDate)
+    const dueSoon = overdue.length > 0 ? [] : entriesDueInWindow(rows, todayStr, threeDaysStr, outstanding).sort(byDueDate)
+    const entries = overdue.length > 0 ? overdue : dueSoon
+    if (entries.length === 0) continue
+    // The earliest entry sets the direction; sum the open entries on that side
+    // so one notification covers, say, two overdue loans to the same person.
+    const earliest = entries[0]
+    const dueDate = earliest.due_date as string
+    const verb = earliest.type === "lent" ? "owes you" : "you owe"
+    const amount = entries
+      .filter((e) => e.type === earliest.type)
+      .reduce((sum, e) => sum + entryOutstanding(e, outstanding), 0)
+    if (overdue.length > 0) {
       if (!notifiedToday("overdue_payment", { party_id: partyId })) {
-        add("overdue_payment", `Overdue: ${agg.name}`, `${agg.name} ${verb} ${inr(Math.abs(agg.net))} — was due ${earliest}`, { party_id: partyId }, partyId)
+        add("overdue_payment", `Overdue: ${name}`, `${name} ${verb} ${inr(amount)} — was due ${dueDate}`, { party_id: partyId }, partyId)
       }
-    } else if (earliest <= threeDaysStr) {
-      const daysLeft = Math.round((Date.parse(earliest) - Date.UTC(y, m, d)) / 86400000)
+    } else {
+      const daysLeft = Math.round((Date.parse(dueDate) - Date.UTC(y, m, d)) / 86400000)
       if (!notifiedToday("due_approaching", { party_id: partyId })) {
-        add("due_approaching", `Due ${daysLeft === 0 ? "today" : `in ${daysLeft}d`}: ${agg.name}`, `${agg.name} ${verb} ${inr(Math.abs(agg.net))} — due ${earliest}`, { party_id: partyId }, partyId)
+        add("due_approaching", `Due ${daysLeft === 0 ? "today" : `in ${daysLeft}d`}: ${name}`, `${name} ${verb} ${inr(amount)} — due ${dueDate}`, { party_id: partyId }, partyId)
       }
     }
   }
@@ -280,11 +295,30 @@ export async function processUserNotifications(
   // --- 5. SIP reminders (due today or tomorrow) ---
   const { data: sipsData } = await supabase
     .from("sips").select("*").eq("user_id", userId).eq("active", true).eq("reminder_enabled", true)
-  for (const sip of (sipsData || []) as SipRow[]) {
-    if (daysUntilSipDay(sip.sip_day, now) > 1) continue
-    if (!notifiedToday("sip_reminder", { sip_id: sip.id })) {
+  const dueSips = ((sipsData || []) as SipRow[])
+    .map((sip) => ({ sip, days: daysUntilSipDay(sip.sip_day, now) }))
+    .filter(({ days }) => days <= 1)
+  if (dueSips.length > 0) {
+    // The debit month decides "already done": tomorrow can be next month.
+    const dueMonthFor = (days: number) => ymd(y, m, d + days).slice(0, 7)
+    const months = [...new Set(dueSips.map(({ days }) => dueMonthFor(days)))].sort()
+    const [{ data: paymentsData }, { data: sipTxData }] = await Promise.all([
+      supabase.from("sip_payments").select("*").eq("user_id", userId).in("month", months),
+      supabase
+        .from("transactions").select("*").eq("user_id", userId)
+        .eq("type", "expense").eq("category", "investment")
+        .gte("date", `${months[0]}-01`).lte("date", `${months[months.length - 1]}-31`),
+    ])
+    const payments = (paymentsData || []) as SipPayment[]
+    const sipTx = (sipTxData || []) as Transaction[]
+    for (const { sip, days } of dueSips) {
+      // Paid, skipped, or an investment expense already logged for this month
+      // (in this SIP's profile) — the checklist shows it as done, so stay quiet.
+      const profileTx = sipTx.filter((t) => t.profile_id === sip.profile_id)
+      if (sipStatusForMonth([sip], payments, dueMonthFor(days), profileTx).unpaid.length === 0) continue
+      if (notifiedToday("sip_reminder", { sip_id: sip.id })) continue
       const label = sip.fund_name || sip.name
-      const dueToday = daysUntilSipDay(sip.sip_day, now) === 0
+      const dueToday = days === 0
       add(
         "sip_reminder",
         dueToday ? `SIP due today: ${label}` : `SIP tomorrow: ${label}`,

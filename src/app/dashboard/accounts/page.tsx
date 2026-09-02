@@ -8,15 +8,16 @@ import { useOfflineQuery } from "@/hooks/use-offline-query"
 import { deleteRow, updateRow } from "@/lib/offline"
 import { useQueryClient } from "@tanstack/react-query"
 import {
-  Plus, Landmark, Banknote, CreditCard, Trash2, Edit2, ArrowLeftRight,
+  Plus, Landmark, Trash2, Edit2, ArrowLeftRight,
   SlidersHorizontal, ChevronDown, Star, Download,
 } from "lucide-react"
 import { StatementModal } from "@/components/modals/statement-modal"
-import { getPrimaryAccountId, setPrimaryAccountId } from "@/lib/accounts/default-account"
+import { AccountTypeIcon } from "@/components/account-type-icon"
+import { forgetAccountId, getPrimaryAccountId, setPrimaryAccountId } from "@/lib/accounts/default-account"
 import type { Account, Transaction } from "@/lib/types"
 import {
   accountBalance, accountLedger, cardAvailable, cardOutstanding,
-  cashAndBankAccounts, daysUntil, isCreditCard, nextBillDueDate,
+  cashAndBankAccounts, daysUntil, formatLedgerBalance, isCreditCard, nextBillDueDate,
 } from "@/lib/finance/accounts"
 import { useAppDialog } from "@/components/app-dialog"
 import { useCurrency } from "@/hooks/use-currency"
@@ -50,15 +51,20 @@ export default function AccountsPage() {
   // in the transaction modals and the assistant. Derived from storage with a
   // version bump on writes (a setState-in-effect here trips the lint rule).
   const [primaryVersion, setPrimaryVersion] = useState(0)
-  const primaryId = useMemo(
-    () => (activeProfile ? getPrimaryAccountId(activeProfile.id) : ""),
+  // A stored id may belong to a deleted account (or, from before cards were
+  // excluded, a card) — only a cash/bank account in the list counts.
+  const primaryId = useMemo(() => {
+    const stored = activeProfile ? getPrimaryAccountId(activeProfile.id) : ""
+    const match = accounts.find((a) => a.id === stored)
+    return match && !isCreditCard(match) ? stored : ""
     // eslint-disable-next-line react-hooks/exhaustive-deps -- primaryVersion invalidates the storage read
-    [activeProfile, primaryVersion]
-  )
+  }, [activeProfile, accounts, primaryVersion])
 
-  function togglePrimary(accountId: string) {
-    if (!activeProfile) return
-    setPrimaryAccountId(activeProfile.id, primaryId === accountId ? null : accountId)
+  function togglePrimary(account: Account) {
+    // Cards are never a default money source: income "received in" a card
+    // would silently reduce its dues instead of landing in cash & bank.
+    if (!activeProfile || isCreditCard(account)) return
+    setPrimaryAccountId(activeProfile.id, primaryId === account.id ? null : account.id)
     setPrimaryVersion((v) => v + 1)
   }
 
@@ -95,6 +101,10 @@ export default function AccountsPage() {
             await updateRow("transactions", t.id, { account_id: null })
           }
           await deleteRow("accounts", account.id)
+          // A stale primary/last-used id would keep shadowing the default
+          // account resolution until the user stars something else.
+          forgetAccountId(activeProfile!.id, account.id)
+          setPrimaryVersion((v) => v + 1)
           invalidate()
         },
       },
@@ -172,7 +182,6 @@ export default function AccountsPage() {
           {accounts.map((account) => {
             const balance = balances.get(account.id) ?? 0
             const card = isCreditCard(account)
-            const Icon = card ? CreditCard : account.type === "cash" ? Banknote : Landmark
             const ledgerOpen = openLedgerId === account.id
             const ledger = ledgerOpen ? accountLedger(account, transactions) : []
             const outstanding = card ? cardOutstanding(balance) : 0
@@ -191,7 +200,7 @@ export default function AccountsPage() {
                     aria-expanded={ledgerOpen}
                   >
                     <div className="w-10 h-10 rounded-xl bg-white/50 backdrop-blur-sm flex items-center justify-center flex-shrink-0">
-                      <Icon className="w-5 h-5 text-[#1d1d1f]" strokeWidth={1.5} />
+                      <AccountTypeIcon type={account.type} className="w-5 h-5 text-[#1d1d1f]" />
                     </div>
                     <div className="min-w-0">
                       <p className="font-semibold text-[#1d1d1f] truncate">
@@ -218,34 +227,31 @@ export default function AccountsPage() {
                     />
                   </button>
                   <div className="text-right flex-shrink-0">
-                    {card ? (
-                      <p className={`font-semibold ${outstanding > 0 ? "text-red-600 dark:text-red-400" : "text-[#1d1d1f]"}`}>
-                        {outstanding > 0 ? `${formatCurrency(outstanding)} due` : balance > 0 ? `${formatCurrency(balance)} credit` : "No dues"}
-                      </p>
-                    ) : (
-                      <p className={`font-semibold ${balance < 0 ? "text-red-600 dark:text-red-400" : "text-[#1d1d1f]"}`}>
-                        {formatCurrency(balance)}
-                      </p>
-                    )}
+                    {/* Cards show dues (balance < 0 is money owed); cash/bank go red when overdrawn. */}
+                    <p className={`font-semibold ${balance < 0 ? "text-red-600 dark:text-red-400" : "text-[#1d1d1f]"}`}>
+                      {formatLedgerBalance(card, balance, formatCurrency)}
+                    </p>
                     <div className="flex gap-1 mt-1 justify-end">
-                      <button
-                        onClick={() => togglePrimary(account.id)}
-                        className="p-1.5 rounded-lg hover:bg-[#f5f5f7] transition-all"
-                        aria-label={
-                          primaryId === account.id
-                            ? `Unset ${account.name} as default account`
-                            : `Set ${account.name} as default account`
-                        }
-                        title={primaryId === account.id ? "Default account" : "Set as default"}
-                      >
-                        <Star
-                          className={`w-3.5 h-3.5 ${
+                      {!card && (
+                        <button
+                          onClick={() => togglePrimary(account)}
+                          className="p-1.5 rounded-lg hover:bg-[#f5f5f7] transition-all"
+                          aria-label={
                             primaryId === account.id
-                              ? "text-amber-500 fill-amber-500"
-                              : "text-[#86868b]"
-                          }`}
-                        />
-                      </button>
+                              ? `Unset ${account.name} as default account`
+                              : `Set ${account.name} as default account`
+                          }
+                          title={primaryId === account.id ? "Default account" : "Set as default"}
+                        >
+                          <Star
+                            className={`w-3.5 h-3.5 ${
+                              primaryId === account.id
+                                ? "text-amber-500 fill-amber-500"
+                                : "text-[#86868b]"
+                            }`}
+                          />
+                        </button>
+                      )}
                       <button
                         onClick={() => setStatementAccountId(account.id)}
                         className="p-1.5 rounded-lg hover:bg-[#f5f5f7] transition-all"
@@ -324,7 +330,7 @@ export default function AccountsPage() {
                               {t.type === "income" ? "+" : "-"}{formatCurrency(Number(t.amount))}
                             </p>
                             <p className="w-24 text-right text-[11px] text-[#86868b] tabular-nums">
-                              {formatCurrency(balanceAfter)}
+                              {formatLedgerBalance(card, balanceAfter, formatCurrency)}
                             </p>
                           </div>
                         ))}
@@ -332,10 +338,10 @@ export default function AccountsPage() {
                     )}
                     <div className="flex items-center justify-between mt-3 pt-2 border-t border-dashed border-black/[0.06] dark:border-white/[0.08]">
                       <span className="text-[11px] text-[#86868b]">
-                        Opening balance ({new Date(`${account.opening_date}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })})
+                        Opening {card ? "outstanding" : "balance"} ({new Date(`${account.opening_date}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })})
                       </span>
                       <span className="text-[11px] text-[#86868b] tabular-nums">
-                        {formatCurrency(Number(account.opening_balance))}
+                        {formatLedgerBalance(card, Number(account.opening_balance), formatCurrency)}
                       </span>
                     </div>
                   </div>
@@ -367,6 +373,7 @@ export default function AccountsPage() {
         <TransferModal
           accounts={accounts}
           transactions={transactions}
+          // primaryId is already validated as an existing cash/bank account.
           defaultFromId={primaryId && primaryId !== payCard.id ? primaryId : undefined}
           defaultToId={payCard.id}
           defaultAmountInr={cardOutstanding(balances.get(payCard.id) ?? 0)}

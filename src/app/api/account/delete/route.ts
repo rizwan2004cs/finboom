@@ -14,6 +14,9 @@ const OWNER_TABLES = [
   "assets",
   "liabilities",
   "transactions",
+  // accounts after transactions: transactions.account_id is on delete set null,
+  // so deleting accounts first would churn every transaction row for nothing.
+  "accounts",
   "goals",
   "snapshots",
   "party_transactions",
@@ -25,6 +28,8 @@ const OWNER_TABLES = [
   "notifications",
   "push_subscriptions",
   "device_tokens",
+  "feature_ideas",
+  "email_preferences",
   "profiles",
 ]
 
